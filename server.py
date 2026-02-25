@@ -516,14 +516,22 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="set_viewport",
-            description="Change the viewport size of a session page. Use to switch between device sizes (mobile, tablet, desktop) during interactive testing. Common presets: mobile (375x812), tablet (768x1024), desktop (1920x1080).",
+            description="Change the viewport size of a session page to test at different screen sizes. Use device presets or custom width/height. Takes a screenshot after resizing.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "width": {"type": "integer", "description": "Viewport width in pixels"},
-                    "height": {"type": "integer", "description": "Viewport height in pixels"},
-                    "device": {"type": "string", "enum": ["mobile", "tablet", "desktop"], "description": "Device preset (alternative to width/height). mobile=375x812, tablet=768x1024, desktop=1920x1080"}
+                    "width": {"type": "integer", "description": "Viewport width in pixels (custom size)"},
+                    "height": {"type": "integer", "description": "Viewport height in pixels (custom size)"},
+                    "device": {
+                        "type": "string",
+                        "enum": [
+                            "mobile_sm", "mobile", "mobile_lg",
+                            "tablet", "tablet_lg",
+                            "laptop", "desktop", "desktop_lg"
+                        ],
+                        "description": "Device preset: mobile_sm (320x568 iPhone SE), mobile (375x812 iPhone 12), mobile_lg (428x926 iPhone 14 Pro Max), tablet (768x1024 iPad), tablet_lg (1024x1366 iPad Pro), laptop (1366x768), desktop (1920x1080), desktop_lg (2560x1440)"
+                    }
                 },
                 "required": ["session_id"]
             }
@@ -1123,9 +1131,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
     elif name == "set_viewport":
         session = session_manager.get_session(args["session_id"])
         device_presets = {
-            "mobile": {"width": 375, "height": 812},
-            "tablet": {"width": 768, "height": 1024},
-            "desktop": {"width": 1920, "height": 1080},
+            "mobile_sm": {"width": 320, "height": 568},    # iPhone SE
+            "mobile": {"width": 375, "height": 812},        # iPhone 12
+            "mobile_lg": {"width": 428, "height": 926},     # iPhone 14 Pro Max
+            "tablet": {"width": 768, "height": 1024},       # iPad
+            "tablet_lg": {"width": 1024, "height": 1366},   # iPad Pro
+            "laptop": {"width": 1366, "height": 768},       # Common laptop
+            "desktop": {"width": 1920, "height": 1080},     # Full HD
+            "desktop_lg": {"width": 2560, "height": 1440},  # QHD
         }
         device = args.get("device")
         if device and device in device_presets:
