@@ -87,6 +87,15 @@ close_session(session_id)
 - `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
 - `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
 
+### Advanced Testing Tools
+- `intercept_network(session_id, url_pattern, status?, body?, content_type?, once?)` — Mock API responses to test error/empty/loading states
+- `get_local_storage(session_id, storage?, keys?)` / `set_local_storage(session_id, entries, storage?, clear_first?)` — Read/write localStorage or sessionStorage
+- `select_iframe(session_id, selector)` — Switch into iframe, returns new session scoped to iframe content
+- `reload_page(session_id)` — Refresh page, test state persistence
+- `get_computed_style(session_id, selector, properties[])` — Get actual rendered CSS values (color, font-size, display, etc.)
+- `emulate_network(session_id, preset)` — Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset`
+- `test_dark_mode(session_id, mode)` — Toggle `prefers-color-scheme` to `dark` or `light`
+
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 

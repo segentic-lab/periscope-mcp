@@ -667,6 +667,128 @@ async def list_tools() -> list[Tool]:
                 "required": ["session_id", "url_pattern"]
             }
         ),
+
+        # Advanced Testing Tools
+        Tool(
+            name="intercept_network",
+            description="Mock API responses on a session. Intercept requests matching a URL pattern and return custom responses. Use to test error states, empty states, loading states without needing the real backend. Call BEFORE the action that triggers the request.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "url_pattern": {"type": "string", "description": "URL substring to match (e.g. '/api/tasks', 'graphql')"},
+                    "status": {"type": "integer", "description": "HTTP status code to return (default: 200)"},
+                    "body": {"type": "string", "description": "Response body (JSON string or plain text)"},
+                    "content_type": {"type": "string", "description": "Content-Type header (default: 'application/json')"},
+                    "method": {"type": "string", "description": "HTTP method filter (optional, e.g. 'GET', 'POST')"},
+                    "once": {"type": "boolean", "description": "Only intercept the first matching request (default: false)"}
+                },
+                "required": ["session_id", "url_pattern"]
+            }
+        ),
+        Tool(
+            name="get_local_storage",
+            description="Read localStorage or sessionStorage from a session page. Returns all entries or specific keys.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "storage": {"type": "string", "enum": ["local", "session"], "description": "Storage type (default: 'local')"},
+                    "keys": {
+                        "type": "array",
+                        "description": "Specific keys to read (optional, reads all if omitted)",
+                        "items": {"type": "string"}
+                    }
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="set_local_storage",
+            description="Write to localStorage or sessionStorage on a session page.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "storage": {"type": "string", "enum": ["local", "session"], "description": "Storage type (default: 'local')"},
+                    "entries": {
+                        "type": "object",
+                        "description": "Key-value pairs to set (e.g. {\"theme\": \"dark\", \"token\": \"abc\"})"
+                    },
+                    "clear_first": {"type": "boolean", "description": "Clear all entries before setting new ones (default: false)"}
+                },
+                "required": ["session_id", "entries"]
+            }
+        ),
+        Tool(
+            name="select_iframe",
+            description="Switch into an iframe to interact with embedded content. Returns a new session scoped to the iframe. Use close_session on the returned session when done.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Parent session ID"},
+                    "selector": {"type": "string", "description": "CSS selector for the iframe element"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
+            name="reload_page",
+            description="Reload the current session page. Useful for testing if state persists after refresh.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="get_computed_style",
+            description="Get actual rendered CSS property values for elements matching a selector. Verify colors, fonts, spacing, display, opacity programmatically.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector"},
+                    "properties": {
+                        "type": "array",
+                        "description": "CSS properties to read (e.g. ['color', 'font-size', 'display', 'opacity', 'background-color'])",
+                        "items": {"type": "string"}
+                    },
+                    "max_results": {"type": "integer", "description": "Max elements to check (default: 10)"}
+                },
+                "required": ["session_id", "selector", "properties"]
+            }
+        ),
+        Tool(
+            name="emulate_network",
+            description="Throttle network speed on a session to simulate slow connections. Use to test loading spinners, offline fallbacks, timeout handling.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "preset": {
+                        "type": "string",
+                        "enum": ["slow_3g", "fast_3g", "offline", "reset"],
+                        "description": "Network preset: slow_3g (500kbps/400ms), fast_3g (1.5Mbps/150ms), offline (no network), reset (back to normal)"
+                    }
+                },
+                "required": ["session_id", "preset"]
+            }
+        ),
+        Tool(
+            name="test_dark_mode",
+            description="Toggle prefers-color-scheme between light and dark on a session. Takes a screenshot showing the result.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "mode": {"type": "string", "enum": ["dark", "light"], "description": "Color scheme to emulate"}
+                },
+                "required": ["session_id", "mode"]
+            }
+        ),
     ]
 
 
@@ -1553,6 +1675,238 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "url_pattern": url_pattern,
                 "timeout_ms": timeout,
             }
+
+    # Advanced Testing Tools
+    elif name == "intercept_network":
+        session = session_manager.get_session(args["session_id"])
+        url_pattern = args["url_pattern"]
+        status = args.get("status", 200)
+        body = args.get("body", "")
+        content_type = args.get("content_type", "application/json")
+        method_filter = args.get("method")
+        once = args.get("once", False)
+
+        intercepted = {"count": 0}
+
+        async def handle_route(route):
+            if method_filter and route.request.method.upper() != method_filter.upper():
+                await route.continue_()
+                return
+            intercepted["count"] += 1
+            await route.fulfill(
+                status=status,
+                body=body,
+                content_type=content_type,
+            )
+            if once:
+                await session.page.unroute(f"**/*{url_pattern}*", handle_route)
+
+        await session.page.route(f"**/*{url_pattern}*", handle_route)
+
+        return {
+            "success": True,
+            "message": f"Intercepting requests matching '{url_pattern}' → {status}",
+            "url_pattern": url_pattern,
+            "status": status,
+            "once": once,
+        }
+
+    elif name == "get_local_storage":
+        session = session_manager.get_session(args["session_id"])
+        storage_type = args.get("storage", "local")
+        keys = args.get("keys")
+
+        storage_obj = "localStorage" if storage_type == "local" else "sessionStorage"
+
+        if keys:
+            data = await session.page.evaluate(f"""(keys) => {{
+                const result = {{}};
+                for (const key of keys) {{
+                    result[key] = {storage_obj}.getItem(key);
+                }}
+                return result;
+            }}""", keys)
+        else:
+            data = await session.page.evaluate(f"""() => {{
+                const result = {{}};
+                for (let i = 0; i < {storage_obj}.length; i++) {{
+                    const key = {storage_obj}.key(i);
+                    result[key] = {storage_obj}.getItem(key);
+                }}
+                return result;
+            }}""")
+
+        return {
+            "storage": storage_type,
+            "entries": data,
+            "count": len(data),
+        }
+
+    elif name == "set_local_storage":
+        session = session_manager.get_session(args["session_id"])
+        storage_type = args.get("storage", "local")
+        entries = args["entries"]
+        clear_first = args.get("clear_first", False)
+
+        storage_obj = "localStorage" if storage_type == "local" else "sessionStorage"
+
+        if clear_first:
+            await session.page.evaluate(f"{storage_obj}.clear()")
+
+        await session.page.evaluate(f"""(entries) => {{
+            for (const [key, value] of Object.entries(entries)) {{
+                {storage_obj}.setItem(key, value);
+            }}
+        }}""", entries)
+
+        return {
+            "success": True,
+            "storage": storage_type,
+            "keys_set": list(entries.keys()),
+            "cleared_first": clear_first,
+        }
+
+    elif name == "select_iframe":
+        session = session_manager.get_session(args["session_id"])
+        frame_locator = session.page.frame_locator(args["selector"])
+
+        # Get the actual frame from the page
+        iframe_element = session.page.locator(args["selector"]).first
+        await iframe_element.wait_for(state="attached", timeout=10000)
+        content_frame = await iframe_element.content_frame()
+
+        if not content_frame:
+            return {"success": False, "error": f"Could not access iframe content for '{args['selector']}'"}
+
+        # Create a new session entry pointing to the iframe's frame as a page-like object
+        import uuid, time
+        iframe_session_id = uuid.uuid4().hex[:12]
+        from sessions import PageSession
+        now = time.time()
+
+        # The frame object supports most Page methods (evaluate, locator, etc.)
+        iframe_session = PageSession(
+            session_id=iframe_session_id,
+            project_name=session.project_name,
+            page=content_frame,
+            url=content_frame.url,
+            created_at=now,
+            last_accessed=now,
+        )
+        session_manager.sessions[iframe_session_id] = iframe_session
+
+        return {
+            "success": True,
+            "iframe_session_id": iframe_session_id,
+            "parent_session_id": session.session_id,
+            "iframe_url": content_frame.url,
+            "selector": args["selector"],
+        }
+
+    elif name == "reload_page":
+        session = session_manager.get_session(args["session_id"])
+        await session.page.reload(wait_until="networkidle")
+        session.url = session.page.url
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_reload"
+        )
+        return {
+            "url": session.url,
+            "title": await session.page.title(),
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "get_computed_style":
+        session = session_manager.get_session(args["session_id"])
+        css_props = args["properties"]
+        max_results = args.get("max_results", 10)
+
+        elements = await session.page.evaluate("""(args) => {
+            const [selector, props, maxResults] = args;
+            const els = document.querySelectorAll(selector);
+            const results = [];
+            for (let i = 0; i < Math.min(els.length, maxResults); i++) {
+                const el = els[i];
+                const style = window.getComputedStyle(el);
+                const entry = {
+                    index: i,
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    text: (el.textContent || '').trim().substring(0, 60),
+                };
+                for (const prop of props) {
+                    entry[prop] = style.getPropertyValue(prop);
+                }
+                results.push(entry);
+            }
+            return results;
+        }""", [args["selector"], css_props, max_results])
+
+        return {
+            "selector": args["selector"],
+            "properties_requested": css_props,
+            "count": len(elements),
+            "elements": elements,
+        }
+
+    elif name == "emulate_network":
+        session = session_manager.get_session(args["session_id"])
+        preset = args["preset"]
+
+        cdp = await session.page.context.new_cdp_session(session.page)
+
+        if preset == "offline":
+            await cdp.send("Network.emulateNetworkConditions", {
+                "offline": True,
+                "downloadThroughput": 0,
+                "uploadThroughput": 0,
+                "latency": 0,
+            })
+        elif preset == "slow_3g":
+            await cdp.send("Network.emulateNetworkConditions", {
+                "offline": False,
+                "downloadThroughput": 500 * 1024 // 8,
+                "uploadThroughput": 500 * 1024 // 8,
+                "latency": 400,
+            })
+        elif preset == "fast_3g":
+            await cdp.send("Network.emulateNetworkConditions", {
+                "offline": False,
+                "downloadThroughput": 1500 * 1024 // 8,
+                "uploadThroughput": 750 * 1024 // 8,
+                "latency": 150,
+            })
+        elif preset == "reset":
+            await cdp.send("Network.emulateNetworkConditions", {
+                "offline": False,
+                "downloadThroughput": -1,
+                "uploadThroughput": -1,
+                "latency": 0,
+            })
+
+        return {
+            "success": True,
+            "preset": preset,
+            "message": f"Network emulation set to '{preset}'",
+        }
+
+    elif name == "test_dark_mode":
+        session = session_manager.get_session(args["session_id"])
+        mode = args["mode"]
+
+        await session.page.emulate_media(color_scheme=mode)
+        # Give page a moment to re-render
+        import asyncio as _asyncio
+        await _asyncio.sleep(0.3)
+
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, f"dark_mode_{mode}"
+        )
+        return {
+            "mode": mode,
+            "screenshot_path": screenshot_path,
+            "url": session.url,
+        }
 
     else:
         return {"error": f"Unknown tool: {name}"}
