@@ -56,11 +56,12 @@ close_session(session_id)
 - `open_session(url, project?)` — Create persistent session, returns session_id + screenshot
 - `close_session(session_id)` — Close session and free resources
 - `list_sessions()` — List all active sessions with URLs/idle times
+- `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile` (375x812), `tablet` (768x1024), `desktop` (1920x1080)
 
 ### Interactive Tools
-- `click_element(session_id, selector)` — Click element, return screenshot + new URL/title
+- `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
 - `fill_form(session_id, fields[], submit_selector?)` — Fill fields, optionally submit
-- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow (click/fill/type/select/wait/navigate/hover/press_key/check/uncheck)
+- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 16 actions: click, force_click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js
 - `get_page_elements(selector, url|session_id, max_results?)` — List matching elements with attributes
 
 ### Analysis Tools
@@ -75,6 +76,7 @@ close_session(session_id)
 - `test_keyboard_navigation(url|session_id, max_tabs?)` — Tab-order and focus indicator audit
 - `extract_text(selector, url|session_id)` — Get text content from elements
 - `check_console_during_interaction(session_id, steps[])` — Capture console output during workflow
+- `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
 
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 10` — Max concurrent sessions

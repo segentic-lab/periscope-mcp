@@ -258,12 +258,13 @@ async def list_tools() -> list[Tool]:
         # Interactive Tools
         Tool(
             name="click_element",
-            description="Click an element in a session page. Returns a screenshot and the new URL/title after click.",
+            description="Click an element in a session page. Returns a screenshot and the new URL/title after click. Use force=true to bypass actionability checks (useful when overlays intercept pointer events).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "selector": {"type": "string", "description": "CSS selector of element to click"}
+                    "selector": {"type": "string", "description": "CSS selector of element to click"},
+                    "force": {"type": "boolean", "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."}
                 },
                 "required": ["session_id", "selector"]
             }
@@ -294,7 +295,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="interact_and_test",
-            description="Execute a multi-step interaction workflow. Supports click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck actions. Can work on an existing session or create an ephemeral page.",
+            description="Execute a multi-step interaction workflow. Supports click, force_click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js actions. Can work on an existing session or create an ephemeral page.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -308,17 +309,21 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "fill", "type", "select", "wait", "wait_for", "screenshot", "navigate", "hover", "press_key", "check", "uncheck"],
+                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js"],
                                     "description": "Action to perform"
                                 },
-                                "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for)"},
+                                "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click)"},
                                 "value": {"type": "string", "description": "Value (for fill, select)"},
                                 "text": {"type": "string", "description": "Text to type (for type action)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
                                 "url": {"type": "string", "description": "URL (for navigate)"},
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
-                                "label": {"type": "string", "description": "Label for screenshot filename"}
+                                "label": {"type": "string", "description": "Label for screenshot filename"},
+                                "force": {"type": "boolean", "description": "Bypass actionability checks on click (default: false)"},
+                                "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
+                                "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
+                                "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"}
                             },
                             "required": ["action"]
                         }
@@ -495,6 +500,32 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["session_id", "steps"]
+            }
+        ),
+        Tool(
+            name="get_console_errors",
+            description="Get all console errors and logs captured on a session since it was opened (or since last call to this tool). Useful for passive monitoring without running steps.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "clear": {"type": "boolean", "description": "Clear the console buffers after reading (default: true)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="set_viewport",
+            description="Change the viewport size of a session page. Use to switch between device sizes (mobile, tablet, desktop) during interactive testing. Common presets: mobile (375x812), tablet (768x1024), desktop (1920x1080).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "width": {"type": "integer", "description": "Viewport width in pixels"},
+                    "height": {"type": "integer", "description": "Viewport height in pixels"},
+                    "device": {"type": "string", "enum": ["mobile", "tablet", "desktop"], "description": "Device preset (alternative to width/height). mobile=375x812, tablet=768x1024, desktop=1920x1080"}
+                },
+                "required": ["session_id"]
             }
         ),
     ]
@@ -738,7 +769,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
     # Interactive Tools
     elif name == "click_element":
         session = session_manager.get_session(args["session_id"])
-        result = await interactions.click_element(session.page, args["selector"])
+        result = await interactions.click_element(
+            session.page, args["selector"], force=args.get("force", False)
+        )
         session.url = result["url"]
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_click"
@@ -1067,6 +1100,52 @@ async def _handle_tool(name: str, args: dict) -> dict:
         result["console_log_count"] = len(new_logs)
         result["console_error_count"] = len(new_errors)
         return result
+
+    elif name == "get_console_errors":
+        session = session_manager.get_session(args["session_id"])
+        clear = args.get("clear", True)
+
+        result = {
+            "session_id": session.session_id,
+            "url": session.url,
+            "console_log": list(session.console_log),
+            "console_errors": list(session.console_errors),
+            "console_log_count": len(session.console_log),
+            "console_error_count": len(session.console_errors),
+        }
+
+        if clear:
+            session.console_log.clear()
+            session.console_errors.clear()
+
+        return result
+
+    elif name == "set_viewport":
+        session = session_manager.get_session(args["session_id"])
+        device_presets = {
+            "mobile": {"width": 375, "height": 812},
+            "tablet": {"width": 768, "height": 1024},
+            "desktop": {"width": 1920, "height": 1080},
+        }
+        device = args.get("device")
+        if device and device in device_presets:
+            width = device_presets[device]["width"]
+            height = device_presets[device]["height"]
+        else:
+            width = args.get("width", config.VIEWPORT_WIDTH)
+            height = args.get("height", config.VIEWPORT_HEIGHT)
+
+        await session.page.set_viewport_size({"width": width, "height": height})
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, f"viewport_{width}x{height}"
+        )
+        return {
+            "success": True,
+            "viewport": {"width": width, "height": height},
+            "device": device,
+            "screenshot_path": screenshot_path,
+            "url": session.url,
+        }
 
     else:
         return {"error": f"Unknown tool: {name}"}

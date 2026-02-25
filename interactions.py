@@ -5,11 +5,18 @@ from playwright.async_api import Page
 import config
 
 
-async def click_element(page: Page, selector: str) -> dict:
-    """Click an element and return post-click state."""
+async def click_element(page: Page, selector: str, force: bool = False) -> dict:
+    """Click an element and return post-click state.
+
+    Args:
+        page: Playwright page
+        selector: CSS selector
+        force: If True, bypass actionability checks (useful for overlays)
+    """
     locator = page.locator(selector).first
-    await locator.wait_for(state="visible", timeout=10000)
-    await locator.click()
+    if not force:
+        await locator.wait_for(state="visible", timeout=10000)
+    await locator.click(force=force)
     try:
         await page.wait_for_load_state("networkidle", timeout=5000)
     except Exception:
@@ -108,7 +115,8 @@ async def execute_steps(
     """Execute a sequence of interaction steps.
 
     Supported step actions:
-        click: {action: "click", selector: str}
+        click: {action: "click", selector: str, force: bool?}
+        force_click: {action: "force_click", selector: str} — click bypassing actionability checks
         fill: {action: "fill", selector: str, value: str}
         type: {action: "type", selector: str, text: str}
         select: {action: "select", selector: str, value: str}
@@ -120,6 +128,9 @@ async def execute_steps(
         press_key: {action: "press_key", key: str}
         check: {action: "check", selector: str}
         uncheck: {action: "uncheck", selector: str}
+        scroll_to: {action: "scroll_to", selector: str} — scroll element into view
+        scroll_within: {action: "scroll_within", selector: str, direction: "up"|"down"|"left"|"right", amount: int?}
+        evaluate_js: {action: "evaluate_js", script: str} — run JS snippet, result stored in step_result
 
     Returns dict with step results and screenshots.
     """
@@ -132,9 +143,20 @@ async def execute_steps(
 
         try:
             if action == "click":
+                force = step.get("force", False)
                 locator = page.locator(step["selector"]).first
-                await locator.wait_for(state="visible", timeout=10000)
-                await locator.click()
+                if not force:
+                    await locator.wait_for(state="visible", timeout=10000)
+                await locator.click(force=force)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+                step_result["url"] = page.url
+
+            elif action == "force_click":
+                locator = page.locator(step["selector"]).first
+                await locator.click(force=True)
                 try:
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
@@ -193,6 +215,32 @@ async def execute_steps(
                 locator = page.locator(step["selector"]).first
                 await locator.wait_for(state="visible", timeout=10000)
                 await locator.uncheck()
+
+            elif action == "scroll_to":
+                locator = page.locator(step["selector"]).first
+                await locator.scroll_into_view_if_needed(timeout=10000)
+
+            elif action == "scroll_within":
+                direction = step.get("direction", "down")
+                amount = step.get("amount", 300)
+                dx, dy = 0, 0
+                if direction == "down":
+                    dy = amount
+                elif direction == "up":
+                    dy = -amount
+                elif direction == "right":
+                    dx = amount
+                elif direction == "left":
+                    dx = -amount
+                await page.evaluate("""(args) => {
+                    const [selector, dx, dy] = args;
+                    const el = document.querySelector(selector);
+                    if (el) el.scrollBy(dx, dy);
+                }""", [step["selector"], dx, dy])
+
+            elif action == "evaluate_js":
+                result = await page.evaluate(step["script"])
+                step_result["result"] = result
 
             else:
                 step_result["success"] = False
