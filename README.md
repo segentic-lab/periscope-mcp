@@ -452,6 +452,8 @@ async def check_something(page: Page) -> list[dict]:
 - No parallel page testing (pages are tested sequentially)
 - Interactive sessions auto-expire after 300s idle (configurable via `SESSION_TIMEOUT`)
 - Max 10 concurrent sessions (configurable via `MAX_SESSIONS`)
+- Drag and drop doesn't work via Playwright automation with some libraries (known limitation with `@hello-pangea/dnd` and similar React DnD libs — not a bug in this tool)
+- Native browser date pickers (`<input type="date">`) are hard to automate — use `evaluate_js` to set `.value` directly as a workaround
 
 ## Troubleshooting
 

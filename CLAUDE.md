@@ -86,6 +86,10 @@ close_session(session_id)
 - `MAX_SESSIONS = 10` — Max concurrent sessions
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle
 
+## Known Limitations
+- Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
+- Native date pickers (`<input type="date">`) — use `evaluate_js` to set `.value` directly
+
 ## Data
 - Projects: `data/projects.json` (contains credentials - never commit)
 - Screenshots: `data/screenshots/{project}/*.png`
