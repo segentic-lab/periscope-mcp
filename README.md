@@ -18,22 +18,27 @@ Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
 
 ```
 WebsiteTesterAI/
-├── server.py              # MCP server entry point + tool definitions
-├── tester.py              # Playwright browser control + test orchestration
+├── server.py              # MCP server entry point + tool definitions (30 tools)
+├── tester.py              # Playwright browser control + test orchestration + responsive testing
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
 ├── auth.py                # Authentication handlers (form, basic, cookies)
-├── config.py              # Global settings (timeouts, paths, defaults)
+├── sessions.py            # SessionManager + PageSession — persistent page lifecycle
+├── interactions.py        # Interaction primitives (click, fill, get_elements, execute_steps)
+├── utils.py               # Screenshot comparison (Pillow pixel diff)
+├── config.py              # Global settings (timeouts, paths, defaults, session limits)
 ├── requirements.txt       # Python dependencies
 ├── checks/
 │   ├── __init__.py
 │   ├── visual.py          # Broken images, favicon, overflow, small text
-│   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA
-│   └── functionality.py   # Broken links, forms, SEO, performance metrics
+│   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA, keyboard navigation
+│   └── functionality.py   # Broken links, forms, SEO, performance metrics, link checker
 ├── data/                  # Created at runtime
 │   ├── projects.json      # Project configurations
 │   ├── screenshots/       # Per-project screenshot directories
-│   └── reports/           # JSON test reports
+│   ├── reports/           # JSON test reports
+│   ├── videos/            # Recorded session videos
+│   └── diffs/             # Screenshot diff images
 ├── Dockerfile
 ├── docker-compose.yml
 └── .mcp.json              # Claude Code MCP server registration
@@ -137,6 +142,44 @@ After configuring, restart Claude Code.
 | `list_reports` | List saved test reports | _(optional: `project`)_ |
 | `get_report` | Read a report file | `report_path` |
 
+### Interactive Testing — Session Management
+
+Sessions keep browser pages alive across tool calls, enabling multi-step interactive workflows.
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `open_session` | Open persistent browser session | `url` |
+| `close_session` | Close session and free resources | `session_id` |
+| `list_sessions` | List all active sessions | _(none)_ |
+
+### Interactive Testing — Actions
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `click_element` | Click element, return screenshot + new state | `session_id`, `selector` |
+| `fill_form` | Fill form fields, optionally submit | `session_id`, `fields` |
+| `interact_and_test` | Multi-step workflow (click/fill/type/select/wait/navigate/hover/press_key/check/uncheck) | `steps` |
+| `get_page_elements` | List matching elements with attributes | `selector` |
+
+### Interactive Testing — Analysis
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `test_form_validation` | Analyze form validation messages | _(url or session_id)_ |
+| `compare_screenshots` | Pixel diff between two screenshots | `screenshot1`, `screenshot2` |
+| `test_responsive` | Test at mobile/tablet/desktop viewports | `url` |
+| `check_links` | Comprehensive link checker (internal + external) | _(url or session_id)_ |
+| `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
+
+### Interactive Testing — Advanced
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `record_session` | Record workflow as video | `url`, `steps` |
+| `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
+| `extract_text` | Get text content from matching elements | `selector` |
+| `check_console_during_interaction` | Capture console output during workflow | `session_id`, `steps` |
+
 ## Test Checks
 
 ### Visual (`checks/visual.py`)
@@ -156,9 +199,11 @@ After configuring, restart Claude Code.
 - Buttons without accessible names
 - Missing skip navigation link
 - Elements with `tabindex > 0`
+- Keyboard navigation audit (tab order, visible focus indicators) — via `test_keyboard_navigation` tool
 
 ### Functionality (`checks/functionality.py`)
-- Broken internal links (HTTP HEAD check, up to 20 links)
+- Broken internal links (HTTP HEAD check, up to 20 links in `check_functionality`)
+- Comprehensive link checker with external link support (up to 100 links) — via `check_links` tool
 - Forms without action or submit button
 - Orphan buttons outside forms
 - External links missing `target="_blank"`
@@ -264,6 +309,50 @@ Claude Code calls:
 2. test_project(project="myapp")
 ```
 
+### Interactive testing (session-based)
+```
+User: "Go to myapp.com, click the login button, fill in the form, and check what happens"
+
+Claude Code calls:
+1. open_session(url="https://myapp.com") → session_id
+2. get_page_elements(session_id=..., selector="button, a") → see clickable elements
+3. click_element(session_id=..., selector="#login-btn") → screenshot after click
+4. fill_form(session_id=..., fields=[
+     {"selector": "#email", "value": "user@test.com"},
+     {"selector": "#password", "value": "test123"}
+   ], submit_selector="button[type='submit']")
+5. Analyzes screenshot to see result
+6. close_session(session_id=...)
+```
+
+### Scripted multi-step workflow (no session needed)
+```
+User: "Test the checkout flow on myshop.com"
+
+Claude Code calls:
+1. interact_and_test(
+     url="https://myshop.com/products/1",
+     steps=[
+       {"action": "click", "selector": "#add-to-cart"},
+       {"action": "wait", "timeout": 1000},
+       {"action": "click", "selector": "#checkout-btn"},
+       {"action": "fill", "selector": "#email", "value": "test@test.com"},
+       {"action": "screenshot", "label": "checkout_form"},
+       {"action": "click", "selector": "#submit-order"}
+     ],
+     run_checks=["visual", "accessibility"]
+   )
+```
+
+### Responsive testing
+```
+User: "Check how example.com looks on mobile, tablet, and desktop"
+
+Claude Code calls:
+1. test_responsive(url="https://example.com", run_checks=["visual"])
+→ Returns screenshots at 375x812, 768x1024, and 1920x1080
+```
+
 ## Configuration
 
 Edit `config.py` to change defaults:
@@ -276,14 +365,18 @@ Edit `config.py` to change defaults:
 | `VIEWPORT_HEIGHT` | `1080` | Browser viewport height |
 | `MAX_PAGES` | `20` | Default max pages to crawl |
 | `MAX_DEPTH` | `3` | Default max crawl depth |
+| `MAX_SESSIONS` | `10` | Max concurrent interactive sessions |
+| `SESSION_TIMEOUT` | `300` | Auto-expire idle sessions after N seconds |
 
 ## Data Storage
 
 All data is stored in the `data/` directory:
 
 - **`data/projects.json`** - Project configs (name, URL, auth, settings). Auth credentials are stored in plaintext - do not commit this file.
-- **`data/screenshots/{project}/`** - PNG screenshots per project. Filenames are `{domain}_{path}_{hash}.png`.
+- **`data/screenshots/{project}/`** - PNG screenshots per project. Filenames are `{domain}_{path}_{hash}.png` for static tests, `interactive_{timestamp}_{label}.png` for session screenshots.
 - **`data/reports/{project}_{timestamp}.json`** - Full test reports with all findings.
+- **`data/videos/{project}/`** - Recorded session videos (WebM format from Playwright).
+- **`data/diffs/`** - Screenshot comparison diff images.
 
 ## Docker Deployment
 
@@ -324,6 +417,10 @@ The `docker-compose.yml` mounts `./data` as a volume so screenshots, reports, an
 
 5. **JSON storage** - Projects are stored in a single `projects.json` file. No database needed for the expected scale (dozens of projects, not thousands).
 
+6. **Persistent sessions** - Interactive testing uses a `SessionManager` that keeps Playwright pages alive in a dict keyed by session ID. Sessions auto-expire after idle timeout and are capped at a configurable maximum to prevent resource leaks.
+
+7. **Ephemeral vs session mode** - Tools like `get_page_elements`, `interact_and_test`, and `check_links` accept either a `session_id` (reuses an existing page) or a `url` (creates a temporary page that's closed after use). This makes them flexible for both interactive and one-shot use.
+
 ## Adding New Checks
 
 1. Create a function in the appropriate `checks/*.py` file:
@@ -350,9 +447,11 @@ async def check_something(page: Page) -> list[dict]:
 
 - No JavaScript SPA routing support (relies on `<a href>` for crawling)
 - No color contrast ratio checking (would need computed styles analysis)
-- Link checking limited to 20 links per page to avoid rate limiting; timeout/network errors are silently ignored (not counted as broken)
+- Default `check_functionality` link checking limited to 20 internal links (use `check_links` tool for up to 100 with external support)
 - Form login detection uses CSS selectors, may need customization for non-standard forms
 - No parallel page testing (pages are tested sequentially)
+- Interactive sessions auto-expire after 300s idle (configurable via `SESSION_TIMEOUT`)
+- Max 10 concurrent sessions (configurable via `MAX_SESSIONS`)
 
 ## Troubleshooting
 
