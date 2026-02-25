@@ -247,9 +247,9 @@ async def check_seo(page: Page) -> list[dict]:
 
 
 async def get_performance_metrics(page: Page) -> dict:
-    """Get page performance metrics."""
+    """Get page performance metrics using Navigation Timing Level 2 API."""
     metrics = await page.evaluate("""() => {
-        const timing = performance.timing;
+        const [nav] = performance.getEntriesByType('navigation');
         const paint = performance.getEntriesByType('paint');
         const resources = performance.getEntriesByType('resource');
 
@@ -260,8 +260,8 @@ async def get_performance_metrics(page: Page) -> dict:
         });
 
         return {
-            dom_content_loaded_ms: timing.domContentLoadedEventEnd - timing.navigationStart,
-            load_complete_ms: timing.loadEventEnd - timing.navigationStart,
+            dom_content_loaded_ms: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
+            load_complete_ms: nav ? Math.round(nav.loadEventEnd) : null,
             first_paint_ms: paint.find(p => p.name === 'first-paint')?.startTime || null,
             first_contentful_paint_ms: paint.find(p => p.name === 'first-contentful-paint')?.startTime || null,
             resource_count: resources.length,

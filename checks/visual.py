@@ -104,10 +104,3 @@ async def check_visual(page: Page) -> list[dict]:
         })
 
     return issues
-
-
-async def get_console_errors(page: Page) -> list[str]:
-    """Get any console errors that occurred."""
-    # Note: This should be called with errors collected during page load
-    # The page.on("console") handler should be set up before navigation
-    return []

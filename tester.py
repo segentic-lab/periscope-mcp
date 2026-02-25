@@ -132,7 +132,7 @@ class WebsiteTester:
             # Add console errors as issues
             if console_errors:
                 all_issues.append({
-                    "type": "visual",
+                    "type": "functionality",
                     "severity": "error",
                     "message": f"{len(console_errors)} console errors",
                     "details": console_errors[:5]

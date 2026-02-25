@@ -125,7 +125,7 @@ After configuring, restart Claude Code.
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `test_url` | Test a single URL (screenshot + checks) | `url` |
+| `test_url` | Test a single URL (screenshot + checks) | `url` (optional: `project`, defaults to `"default"`) |
 | `crawl_project` | Discover all pages from base URL | `project` |
 | `test_project` | Full audit: crawl + test all pages | `project` |
 
@@ -242,6 +242,17 @@ Claude Code calls:
 4. test_project(project="myapp")
 ```
 
+### Test with Basic Auth
+```
+User: "Test https://staging.example.com, it uses basic auth admin/secret"
+
+Claude Code calls:
+1. create_project(name="staging", base_url="https://staging.example.com")
+2. set_basic_auth(project="staging", username="admin", password="secret")
+3. login_project(project="staging")
+4. test_project(project="staging")
+```
+
 ### Test with cookies
 ```
 User: "Test myapp using this session cookie: session=abc123"
@@ -338,9 +349,8 @@ async def check_something(page: Page) -> list[dict]:
 ## Known Limitations
 
 - No JavaScript SPA routing support (relies on `<a href>` for crawling)
-- Performance metrics use deprecated `performance.timing` API
 - No color contrast ratio checking (would need computed styles analysis)
-- Link checking limited to 20 links per page to avoid rate limiting
+- Link checking limited to 20 links per page to avoid rate limiting; timeout/network errors are silently ignored (not counted as broken)
 - Form login detection uses CSS selectors, may need customization for non-standard forms
 - No parallel page testing (pages are tested sequentially)
 

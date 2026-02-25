@@ -15,6 +15,8 @@ python server.py  # Runs as MCP stdio server (not a web server)
 - `crawler.py` - BFS page discovery
 - `projects.py` - Project/auth data models + JSON persistence
 - `auth.py` - Login handlers (form, basic auth, cookies)
+- `config.py` - Global settings (timeouts, viewport, paths, crawl limits)
+- `requirements.txt` - Python dependencies
 - `checks/` - Individual test check modules
 
 ## Adding a New MCP Tool
@@ -24,6 +26,8 @@ python server.py  # Runs as MCP stdio server (not a web server)
 ## Adding a New Check
 1. Add function in `checks/*.py` returning `list[dict]` with keys: type, severity, message
 2. Import + call it in `tester.py` -> `test_url()`
+
+Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionality.py`, not separate files.
 
 ## Issue Format
 ```python
