@@ -1,0 +1,8 @@
+services:
+  website-tester:
+    build: .
+    container_name: website-tester
+    stdin_open: true
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
