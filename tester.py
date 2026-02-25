@@ -203,6 +203,85 @@ class WebsiteTester:
             "all_issues": all_issues
         }
 
+    async def test_responsive(
+        self,
+        url: str,
+        project_name: str = "default",
+        viewports: list[dict] = None,
+        checks: list[str] = None,
+    ) -> dict:
+        """Test a URL at multiple viewport sizes.
+
+        Args:
+            url: URL to test
+            project_name: Project name for screenshots
+            viewports: List of {name, width, height} dicts. Defaults to mobile/tablet/desktop.
+            checks: Check types to run at each viewport (optional)
+
+        Returns dict with results per viewport.
+        """
+        if viewports is None:
+            viewports = [
+                {"name": "mobile", "width": 375, "height": 812},
+                {"name": "tablet", "width": 768, "height": 1024},
+                {"name": "desktop", "width": 1920, "height": 1080},
+            ]
+
+        context = await self.get_context(project_name)
+        page = await context.new_page()
+        page.set_default_timeout(config.TIMEOUT)
+
+        results_list = []
+        try:
+            for vp in viewports:
+                await page.set_viewport_size(
+                    {"width": vp["width"], "height": vp["height"]}
+                )
+                await page.goto(url, wait_until="networkidle")
+
+                # Screenshot
+                project_dir = os.path.join(config.SCREENSHOT_DIR, project_name)
+                os.makedirs(project_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                screenshot_path = os.path.join(
+                    project_dir,
+                    f"responsive_{vp['name']}_{vp['width']}x{vp['height']}_{timestamp}.png"
+                )
+                await page.screenshot(path=screenshot_path, full_page=True)
+
+                vp_result = {
+                    "viewport": vp,
+                    "screenshot_path": screenshot_path,
+                    "title": await page.title(),
+                }
+
+                # Run checks if requested
+                if checks:
+                    all_issues = []
+                    if "visual" in checks:
+                        all_issues.extend(await check_visual(page))
+                    if "accessibility" in checks:
+                        all_issues.extend(await check_accessibility(page))
+                    if "functionality" in checks:
+                        all_issues.extend(await check_functionality(page))
+                    if "seo" in checks:
+                        all_issues.extend(await check_seo(page))
+                    if "performance" in checks:
+                        vp_result["performance"] = await get_performance_metrics(page)
+
+                    vp_result["issues"] = all_issues
+                    vp_result["issue_count"] = len(all_issues)
+
+                results_list.append(vp_result)
+
+            return {
+                "url": url,
+                "viewports_tested": len(results_list),
+                "results": results_list,
+            }
+        finally:
+            await page.close()
+
     async def save_report(self, results: dict, project_name: str) -> str:
         """Save test results to a JSON report file."""
         import json

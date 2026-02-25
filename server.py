@@ -9,6 +9,8 @@ from tester import WebsiteTester
 from crawler import Crawler
 from projects import ProjectManager
 from auth import AuthHandler
+from sessions import SessionManager
+import interactions
 import config
 
 # Initialize
@@ -16,6 +18,7 @@ server = Server("website-tester")
 project_manager = ProjectManager()
 tester: WebsiteTester = None
 auth_handler = AuthHandler()
+session_manager = SessionManager()
 
 
 async def get_tester() -> WebsiteTester:
@@ -218,7 +221,282 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["report_path"]
             }
-        )
+        ),
+
+        # ==================== Interactive Testing ====================
+
+        # Session Management
+        Tool(
+            name="open_session",
+            description="Open a persistent browser session for interactive testing. The session stays alive across tool calls so you can observe, click, fill forms, and decide next actions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to open"},
+                    "project": {"type": "string", "description": "Project name (optional, uses 'default')"}
+                },
+                "required": ["url"]
+            }
+        ),
+        Tool(
+            name="close_session",
+            description="Close a persistent browser session and free its resources.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID to close"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="list_sessions",
+            description="List all active browser sessions with their URLs and idle times.",
+            inputSchema={"type": "object", "properties": {}}
+        ),
+
+        # Interactive Tools
+        Tool(
+            name="click_element",
+            description="Click an element in a session page. Returns a screenshot and the new URL/title after click.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of element to click"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
+            name="fill_form",
+            description="Fill form fields in a session page and optionally submit.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "fields": {
+                        "type": "array",
+                        "description": "Fields to fill: [{selector, value}]",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "selector": {"type": "string", "description": "CSS selector for the field"},
+                                "value": {"type": "string", "description": "Value to fill"}
+                            },
+                            "required": ["selector", "value"]
+                        }
+                    },
+                    "submit_selector": {"type": "string", "description": "CSS selector for submit button (optional)"}
+                },
+                "required": ["session_id", "fields"]
+            }
+        ),
+        Tool(
+            name="interact_and_test",
+            description="Execute a multi-step interaction workflow. Supports click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck actions. Can work on an existing session or create an ephemeral page.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to open (creates ephemeral page if no session_id)"},
+                    "session_id": {"type": "string", "description": "Existing session ID (alternative to url)"},
+                    "steps": {
+                        "type": "array",
+                        "description": "Steps to execute. Each step has 'action' and action-specific fields.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["click", "fill", "type", "select", "wait", "wait_for", "screenshot", "navigate", "hover", "press_key", "check", "uncheck"],
+                                    "description": "Action to perform"
+                                },
+                                "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for)"},
+                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "text": {"type": "string", "description": "Text to type (for type action)"},
+                                "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
+                                "url": {"type": "string", "description": "URL (for navigate)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
+                                "label": {"type": "string", "description": "Label for screenshot filename"}
+                            },
+                            "required": ["action"]
+                        }
+                    },
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "run_checks": {
+                        "type": "array",
+                        "description": "Checks to run after steps complete (visual, accessibility, functionality, seo, performance)",
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                    },
+                    "screenshot_after": {"type": "boolean", "description": "Take a screenshot after all steps complete (default: true)"},
+                    "continue_on_error": {"type": "boolean", "description": "Continue executing steps even if one fails (default: false)"}
+                },
+                "required": ["steps"]
+            }
+        ),
+        Tool(
+            name="get_page_elements",
+            description="List elements matching a CSS selector with their attributes (tag, text, id, class, href, value, visible, enabled, aria_label, role). Works on a session or a URL.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector to match elements"},
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "url": {"type": "string", "description": "URL to open (use this or session_id)"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"}
+                },
+                "required": ["selector"]
+            }
+        ),
+
+        # Phase 2: Medium Priority
+        Tool(
+            name="test_form_validation",
+            description="Analyze forms on a page: find all forms, check required fields, collect validation messages from :invalid fields and custom error elements.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to test (use this or session_id)"},
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "form_selector": {"type": "string", "description": "CSS selector to target specific form(s) (default: 'form')"}
+                }
+            }
+        ),
+        Tool(
+            name="compare_screenshots",
+            description="Compare two screenshots pixel-by-pixel. Returns difference percentage and a diff image highlighting changes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "screenshot1": {"type": "string", "description": "Path to first screenshot"},
+                    "screenshot2": {"type": "string", "description": "Path to second screenshot"},
+                    "threshold": {"type": "number", "description": "Color difference threshold 0-255 (default: 10)"}
+                },
+                "required": ["screenshot1", "screenshot2"]
+            }
+        ),
+        Tool(
+            name="test_responsive",
+            description="Test a URL at multiple viewport sizes (mobile, tablet, desktop). Takes screenshots at each size and optionally runs checks.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to test"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "viewports": {
+                        "type": "array",
+                        "description": "Custom viewports [{name, width, height}]. Default: mobile (375x812), tablet (768x1024), desktop (1920x1080)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "width": {"type": "integer"},
+                                "height": {"type": "integer"}
+                            },
+                            "required": ["name", "width", "height"]
+                        }
+                    },
+                    "run_checks": {
+                        "type": "array",
+                        "description": "Checks to run at each viewport",
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                    }
+                },
+                "required": ["url"]
+            }
+        ),
+        Tool(
+            name="check_links",
+            description="Comprehensive link checker. Finds all links on a page and checks their status. Can check external links too.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to check (use this or session_id)"},
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "check_external": {"type": "boolean", "description": "Also check external links (default: false)"},
+                    "max_links": {"type": "integer", "description": "Max links to check (default: 100)"}
+                }
+            }
+        ),
+        Tool(
+            name="measure_interaction",
+            description="Click an element and measure time until a condition is met (networkidle or a selector appears). Returns timing in ms.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of element to click"},
+                    "wait_for": {"type": "string", "description": "CSS selector to wait for (default: waits for networkidle)"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+
+        # Phase 3: Nice-to-Have
+        Tool(
+            name="record_session",
+            description="Record a workflow as video. Executes steps while recording with Playwright's built-in video capture.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to open"},
+                    "steps": {
+                        "type": "array",
+                        "description": "Steps to execute (same format as interact_and_test)",
+                        "items": {"type": "object"}
+                    },
+                    "project": {"type": "string", "description": "Project name (optional)"}
+                },
+                "required": ["url", "steps"]
+            }
+        ),
+        Tool(
+            name="test_keyboard_navigation",
+            description="Tab through a page and track focus order. Checks for visible focus indicators and reports the tab sequence.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to test (use this or session_id)"},
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "max_tabs": {"type": "integer", "description": "Max Tab presses (default: 50)"}
+                }
+            }
+        ),
+        Tool(
+            name="extract_text",
+            description="Extract text content from elements matching a CSS selector.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector to match elements"},
+                    "url": {"type": "string", "description": "URL to open (use this or session_id)"},
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "project": {"type": "string", "description": "Project name (optional)"}
+                },
+                "required": ["selector"]
+            }
+        ),
+        Tool(
+            name="check_console_during_interaction",
+            description="Execute interaction steps and capture all console output (logs, warnings, errors) that occur during the workflow.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "steps": {
+                        "type": "array",
+                        "description": "Steps to execute (same format as interact_and_test)",
+                        "items": {"type": "object"}
+                    }
+                },
+                "required": ["session_id", "steps"]
+            }
+        ),
     ]
 
 
@@ -427,6 +705,368 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 report = json.load(f)
             return {"success": True, "report": report}
         return {"success": False, "error": "Report not found"}
+
+    # ==================== Interactive Testing ====================
+
+    # Session Management
+    elif name == "open_session":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        context = await t.get_context(project_name)
+        session = await session_manager.create_session(context, args["url"], project_name)
+        screenshot_path = await interactions.take_screenshot(
+            session.page, project_name, "session_open"
+        )
+        return {
+            "success": True,
+            "session_id": session.session_id,
+            "url": session.url,
+            "title": await session.page.title(),
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "close_session":
+        closed = await session_manager.close_session(args["session_id"])
+        if closed:
+            return {"success": True, "message": f"Session '{args['session_id']}' closed"}
+        return {"success": False, "error": f"Session '{args['session_id']}' not found"}
+
+    elif name == "list_sessions":
+        sessions = session_manager.list_sessions()
+        return {"sessions": sessions, "count": len(sessions)}
+
+    # Interactive Tools
+    elif name == "click_element":
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.click_element(session.page, args["selector"])
+        session.url = result["url"]
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_click"
+        )
+        result["screenshot_path"] = screenshot_path
+        return result
+
+    elif name == "fill_form":
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.fill_form(
+            session.page,
+            args["fields"],
+            args.get("submit_selector"),
+        )
+        if result.get("submitted"):
+            session.url = result.get("url", session.url)
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_fill"
+        )
+        result["screenshot_path"] = screenshot_path
+        return result
+
+    elif name == "interact_and_test":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        steps = args["steps"]
+        run_checks = args.get("run_checks")
+        screenshot_after = args.get("screenshot_after", True)
+        continue_on_error = args.get("continue_on_error", False)
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await interactions.execute_steps(
+                page, steps, project_name, continue_on_error
+            )
+
+            if screenshot_after:
+                path = await interactions.take_screenshot(page, project_name, "after_steps")
+                result["screenshot_path"] = path
+
+            if run_checks and result["success"]:
+                from checks.visual import check_visual
+                from checks.accessibility import check_accessibility
+                from checks.functionality import check_functionality, check_seo, get_performance_metrics
+
+                all_issues = []
+                if "visual" in run_checks:
+                    all_issues.extend(await check_visual(page))
+                if "accessibility" in run_checks:
+                    all_issues.extend(await check_accessibility(page))
+                if "functionality" in run_checks:
+                    all_issues.extend(await check_functionality(page))
+                if "seo" in run_checks:
+                    all_issues.extend(await check_seo(page))
+                if "performance" in run_checks:
+                    result["performance"] = await get_performance_metrics(page)
+
+                result["issues"] = all_issues
+                result["issue_count"] = len(all_issues)
+
+            if session_id:
+                session.url = page.url
+
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+    elif name == "get_page_elements":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        max_results = args.get("max_results", 50)
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            elements = await interactions.get_elements(page, args["selector"], max_results)
+            return {
+                "selector": args["selector"],
+                "count": len(elements),
+                "elements": elements,
+                "url": page.url,
+            }
+        finally:
+            if ephemeral:
+                await page.close()
+
+    # Phase 2: Medium Priority
+    elif name == "test_form_validation":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        form_selector = args.get("form_selector")
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await interactions.test_form_validation(page, form_selector)
+            result["url"] = page.url
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+    elif name == "compare_screenshots":
+        from utils import compare_screenshots as do_compare
+        result = do_compare(
+            args["screenshot1"],
+            args["screenshot2"],
+            threshold=args.get("threshold", 10),
+        )
+        return result
+
+    elif name == "test_responsive":
+        t = await get_tester()
+        result = await t.test_responsive(
+            url=args["url"],
+            project_name=args.get("project", "default"),
+            viewports=args.get("viewports"),
+            checks=args.get("run_checks"),
+        )
+        return result
+
+    elif name == "check_links":
+        from checks.functionality import check_all_links
+
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await check_all_links(
+                page,
+                page.url,
+                check_external=args.get("check_external", False),
+                max_links=args.get("max_links", 100),
+            )
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+    elif name == "measure_interaction":
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.measure_interaction_timing(
+            session.page,
+            args["selector"],
+            wait_for=args.get("wait_for"),
+        )
+        session.url = result["url"]
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_measure"
+        )
+        result["screenshot_path"] = screenshot_path
+        return result
+
+    # Phase 3: Nice-to-Have
+    elif name == "record_session":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        video_dir = os.path.join(config.DATA_DIR, "videos", project_name)
+        os.makedirs(video_dir, exist_ok=True)
+
+        context = await t.browser.new_context(
+            viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+            record_video_dir=video_dir,
+        )
+        page = await context.new_page()
+        page.set_default_timeout(config.TIMEOUT)
+
+        try:
+            await page.goto(args["url"], wait_until="networkidle")
+            result = await interactions.execute_steps(
+                page, args["steps"], project_name
+            )
+            # Close page to finalize video
+            video_path = await page.video.path()
+            await page.close()
+            await context.close()
+            result["video_path"] = video_path
+            return result
+        except Exception as e:
+            await page.close()
+            await context.close()
+            return {"success": False, "error": str(e)}
+
+    elif name == "test_keyboard_navigation":
+        from checks.accessibility import check_keyboard_navigation
+
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        max_tabs = args.get("max_tabs", 50)
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await check_keyboard_navigation(page, max_tabs)
+            result["url"] = page.url
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+    elif name == "extract_text":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            texts = await page.evaluate("""(selector) => {
+                const els = document.querySelectorAll(selector);
+                return Array.from(els).map(el => ({
+                    tag: el.tagName.toLowerCase(),
+                    text: el.textContent.trim(),
+                    id: el.id || null,
+                    class: el.className || null,
+                }));
+            }""", args["selector"])
+            return {
+                "selector": args["selector"],
+                "count": len(texts),
+                "elements": texts,
+                "url": page.url,
+            }
+        finally:
+            if ephemeral:
+                await page.close()
+
+    elif name == "check_console_during_interaction":
+        session = session_manager.get_session(args["session_id"])
+        # Clear existing console buffers
+        pre_log_count = len(session.console_log)
+        pre_error_count = len(session.console_errors)
+
+        result = await interactions.execute_steps(
+            session.page, args["steps"], session.project_name
+        )
+        session.url = session.page.url
+
+        # Capture console output that occurred during steps
+        new_logs = session.console_log[pre_log_count:]
+        new_errors = session.console_errors[pre_error_count:]
+
+        result["console_log"] = new_logs
+        result["console_errors"] = new_errors
+        result["console_log_count"] = len(new_logs)
+        result["console_error_count"] = len(new_errors)
+        return result
 
     else:
         return {"error": f"Unknown tool: {name}"}

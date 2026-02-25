@@ -10,6 +10,10 @@ VIEWPORT_HEIGHT = 1080
 MAX_PAGES = 20
 MAX_DEPTH = 3
 
+# Session settings
+MAX_SESSIONS = 10
+SESSION_TIMEOUT = 300  # seconds
+
 # Storage paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")

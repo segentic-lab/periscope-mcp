@@ -158,6 +158,85 @@ async def _check_links(page: Page, base_url: str) -> list[str]:
     return broken
 
 
+async def check_all_links(
+    page: Page,
+    base_url: str,
+    check_external: bool = False,
+    max_links: int = 100,
+) -> dict:
+    """Comprehensive link checker.
+
+    Args:
+        page: Playwright page
+        base_url: Base URL for determining internal vs external
+        check_external: Also check external links
+        max_links: Maximum links to check
+
+    Returns dict with link status results.
+    """
+    links = await page.evaluate("""() => {
+        const anchors = document.querySelectorAll('a[href]');
+        return Array.from(anchors).map(a => ({
+            href: a.href,
+            text: (a.textContent || '').trim().substring(0, 100),
+        })).filter(l => l.href && !l.href.startsWith('javascript:') && !l.href.startsWith('mailto:') && !l.href.startsWith('tel:'));
+    }""")
+
+    base_netloc = urlparse(base_url).netloc
+    checked = set()
+    internal_results = []
+    external_results = []
+
+    for link_info in links:
+        href = link_info["href"]
+        if href in checked or len(checked) >= max_links:
+            continue
+        checked.add(href)
+
+        is_internal = urlparse(href).netloc == base_netloc
+
+        if not is_internal and not check_external:
+            continue
+
+        try:
+            response = await page.context.request.head(href, timeout=10000)
+            status = response.status
+        except Exception as e:
+            status = f"error: {str(e)[:60]}"
+
+        entry = {
+            "url": href,
+            "text": link_info["text"],
+            "status": status,
+            "ok": isinstance(status, int) and status < 400,
+        }
+
+        if is_internal:
+            internal_results.append(entry)
+        else:
+            external_results.append(entry)
+
+    broken_internal = [r for r in internal_results if not r["ok"]]
+    broken_external = [r for r in external_results if not r["ok"]]
+
+    return {
+        "url": base_url,
+        "total_links_found": len(links),
+        "links_checked": len(checked),
+        "internal": {
+            "total": len(internal_results),
+            "broken": len(broken_internal),
+            "results": internal_results,
+        },
+        "external": {
+            "total": len(external_results),
+            "broken": len(broken_external),
+            "results": external_results,
+        },
+        "broken_count": len(broken_internal) + len(broken_external),
+    }
+
+
 async def check_seo(page: Page) -> list[dict]:
     """
     Run SEO checks on a page.
