@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -787,6 +788,152 @@ async def list_tools() -> list[Tool]:
                     "mode": {"type": "string", "enum": ["dark", "light"], "description": "Color scheme to emulate"}
                 },
                 "required": ["session_id", "mode"]
+            }
+        ),
+
+        # AI Agent Speed Tools
+        Tool(
+            name="assert_condition",
+            description="Programmatic assertion — check a condition on the page and return pass/fail instantly without needing a screenshot. Supports: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "assertion": {
+                        "type": "string",
+                        "enum": ["text_contains", "text_equals", "element_exists", "element_visible", "element_count", "url_contains", "title_contains", "attribute_equals"],
+                        "description": "Type of assertion"
+                    },
+                    "selector": {"type": "string", "description": "CSS selector (for element-based assertions)"},
+                    "expected": {"type": "string", "description": "Expected value (text, count as string, URL substring, attribute value)"},
+                    "attribute": {"type": "string", "description": "Attribute name (for attribute_equals)"}
+                },
+                "required": ["session_id", "assertion"]
+            }
+        ),
+        Tool(
+            name="find_element",
+            description="Smart element finder — search by text content, role, or partial match. Returns the best CSS selector to use. Saves the agent from guessing selectors.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "text": {"type": "string", "description": "Text content to search for (partial match)"},
+                    "tag": {"type": "string", "description": "HTML tag filter (e.g. 'button', 'a', 'input')"},
+                    "role": {"type": "string", "description": "ARIA role filter (e.g. 'button', 'link', 'textbox')"},
+                    "near": {"type": "string", "description": "CSS selector of a nearby element (find elements near this one)"},
+                    "max_results": {"type": "integer", "description": "Max results (default: 5)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="auto_fill_form",
+            description="Auto-detect all form fields, infer their types (email, phone, name, address, etc.), fill with smart test data, and optionally submit. Replaces 5-10 tool calls with one.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "form_selector": {"type": "string", "description": "CSS selector for the form (default: first form on page)"},
+                    "overrides": {
+                        "type": "object",
+                        "description": "Override auto-detected values: {selector: value} (e.g. {\"#email\": \"custom@test.com\"})"
+                    },
+                    "submit": {"type": "boolean", "description": "Submit the form after filling (default: false)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="get_network_log",
+            description="Get all network requests/responses captured during a session. See what API calls were made, status codes, methods, and response sizes. Optionally filter by URL pattern.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "url_filter": {"type": "string", "description": "URL substring filter (optional, e.g. '/api/')"},
+                    "clear": {"type": "boolean", "description": "Clear the log after reading (default: false)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="snapshot_page_state",
+            description="Save the current page state (URL, cookies, localStorage, sessionStorage) as a named checkpoint. Use restore_page_state to return to it later. Enables testing multiple paths from the same starting point.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "name": {"type": "string", "description": "Name for this snapshot (e.g. 'before_submit', 'logged_in')"}
+                },
+                "required": ["session_id", "name"]
+            }
+        ),
+        Tool(
+            name="restore_page_state",
+            description="Restore a previously saved page state snapshot. Navigates to the saved URL and restores cookies, localStorage, and sessionStorage.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "name": {"type": "string", "description": "Name of the snapshot to restore"}
+                },
+                "required": ["session_id", "name"]
+            }
+        ),
+        Tool(
+            name="diff_page_state",
+            description="Compare the current DOM state with a previous snapshot. Shows elements added, removed, and changed. Much more precise than screenshot diff for understanding what an action changed.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "name": {"type": "string", "description": "Snapshot name to compare against (from snapshot_page_state)"}
+                },
+                "required": ["session_id", "name"]
+            }
+        ),
+        Tool(
+            name="get_cookies",
+            description="Read all cookies from a session. Essential for debugging auth issues.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "domain_filter": {"type": "string", "description": "Filter by domain (optional)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="check_color_contrast",
+            description="Check WCAG color contrast ratios for text elements on the page. Reports elements that fail AA or AAA standards.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector to check (default: all text elements)"},
+                    "level": {"type": "string", "enum": ["AA", "AAA"], "description": "WCAG level to check against (default: AA)"},
+                    "max_results": {"type": "integer", "description": "Max elements to check (default: 50)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+
+        # Discovery
+        Tool(
+            name="describe_tools",
+            description="Get a structured guide to all available tools — grouped by category, with workflow examples and tips. Call this first if you've never used this server before.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["all", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed"],
+                        "description": "Filter by category (default: 'all')"
+                    }
+                },
+                "required": []
             }
         ),
     ]
@@ -1907,6 +2054,772 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "screenshot_path": screenshot_path,
             "url": session.url,
         }
+
+    # ------------------------------------------------------------------
+    # AI Agent Speed Tools
+    # ------------------------------------------------------------------
+
+    elif name == "assert_condition":
+        session = session_manager.get_session(args["session_id"])
+        assertion = args["assertion"]
+        selector = args.get("selector", "body")
+        expected = args.get("expected", "")
+        attribute = args.get("attribute", "")
+        page = session.page
+
+        passed = False
+        actual = None
+
+        if assertion == "text_contains":
+            actual = await page.locator(selector).first.text_content() or ""
+            passed = expected in actual
+
+        elif assertion == "text_equals":
+            actual = (await page.locator(selector).first.text_content() or "").strip()
+            passed = actual == expected
+
+        elif assertion == "element_exists":
+            count = await page.locator(selector).count()
+            actual = count
+            passed = count > 0
+
+        elif assertion == "element_visible":
+            try:
+                visible = await page.locator(selector).first.is_visible()
+                actual = visible
+                passed = visible
+            except Exception:
+                actual = False
+                passed = False
+
+        elif assertion == "element_count":
+            count = await page.locator(selector).count()
+            actual = count
+            passed = count == int(expected)
+
+        elif assertion == "url_contains":
+            actual = page.url
+            passed = expected in actual
+
+        elif assertion == "title_contains":
+            actual = await page.title()
+            passed = expected in actual
+
+        elif assertion == "attribute_equals":
+            actual = await page.locator(selector).first.get_attribute(attribute)
+            passed = actual == expected
+
+        return {
+            "assertion": assertion,
+            "selector": selector,
+            "expected": expected,
+            "actual": actual if not isinstance(actual, str) or len(str(actual)) < 200 else str(actual)[:200] + "...",
+            "passed": passed,
+        }
+
+    elif name == "find_element":
+        session = session_manager.get_session(args["session_id"])
+        text = args.get("text", "")
+        tag = args.get("tag", "")
+        role = args.get("role", "")
+        near = args.get("near", "")
+        max_results = args.get("max_results", 5)
+
+        results = await session.page.evaluate("""(args) => {
+            const [text, tag, role, near, maxResults] = args;
+            let candidates = [];
+
+            // Start with all elements or filtered by tag
+            const selector = tag || '*';
+            const allEls = document.querySelectorAll(selector);
+
+            // If near is specified, get nearby element's bounding box
+            let nearRect = null;
+            if (near) {
+                const nearEl = document.querySelector(near);
+                if (nearEl) nearRect = nearEl.getBoundingClientRect();
+            }
+
+            for (const el of allEls) {
+                // Filter by role
+                if (role && el.getAttribute('role') !== role) continue;
+
+                // Filter by text
+                const elText = (el.textContent || '').trim();
+                if (text && !elText.toLowerCase().includes(text.toLowerCase())) continue;
+
+                // Skip invisible
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) continue;
+
+                // Build best selector
+                let bestSelector = el.tagName.toLowerCase();
+                if (el.id) {
+                    bestSelector = '#' + el.id;
+                } else if (el.getAttribute('data-testid')) {
+                    bestSelector = `[data-testid="${el.getAttribute('data-testid')}"]`;
+                } else if (el.name) {
+                    bestSelector = `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+                } else if (el.className && typeof el.className === 'string' && el.className.trim()) {
+                    bestSelector = el.tagName.toLowerCase() + '.' + el.className.trim().split(/\\s+/).join('.');
+                }
+
+                let distance = 0;
+                if (nearRect) {
+                    const cx = rect.x + rect.width / 2;
+                    const cy = rect.y + rect.height / 2;
+                    const nx = nearRect.x + nearRect.width / 2;
+                    const ny = nearRect.y + nearRect.height / 2;
+                    distance = Math.sqrt((cx - nx) ** 2 + (cy - ny) ** 2);
+                }
+
+                candidates.push({
+                    selector: bestSelector,
+                    tag: el.tagName.toLowerCase(),
+                    text: elText.substring(0, 100),
+                    id: el.id || null,
+                    role: el.getAttribute('role') || null,
+                    type: el.getAttribute('type') || null,
+                    name: el.getAttribute('name') || null,
+                    aria_label: el.getAttribute('aria-label') || null,
+                    distance: nearRect ? Math.round(distance) : null,
+                });
+            }
+
+            // Sort: nearest first if near is specified, otherwise by DOM order
+            if (nearRect) {
+                candidates.sort((a, b) => a.distance - b.distance);
+            }
+
+            return candidates.slice(0, maxResults);
+        }""", [text, tag, role, near, max_results])
+
+        return {
+            "found": len(results),
+            "elements": results,
+        }
+
+    elif name == "auto_fill_form":
+        session = session_manager.get_session(args["session_id"])
+        form_selector = args.get("form_selector", "form")
+        overrides = args.get("overrides", {})
+        submit = args.get("submit", False)
+
+        # Detect fields and infer types
+        fields = await session.page.evaluate("""(formSelector) => {
+            const form = document.querySelector(formSelector);
+            if (!form) return [];
+            const inputs = form.querySelectorAll('input, select, textarea');
+            return Array.from(inputs).map(el => {
+                const name = (el.name || el.id || '').toLowerCase();
+                const type = el.type || el.tagName.toLowerCase();
+                const placeholder = (el.placeholder || '').toLowerCase();
+                const label_el = el.id ? document.querySelector(`label[for="${el.id}"]`) : el.closest('label');
+                const label = label_el ? label_el.textContent.trim().toLowerCase() : '';
+                const all_hints = name + ' ' + placeholder + ' ' + label;
+
+                // Build best selector
+                let selector = el.tagName.toLowerCase();
+                if (el.id) selector = '#' + el.id;
+                else if (el.name) selector = `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+
+                return {
+                    selector: selector,
+                    type: type,
+                    name: el.name || null,
+                    id: el.id || null,
+                    required: el.required,
+                    hints: all_hints,
+                    tag: el.tagName.toLowerCase(),
+                    options: el.tagName === 'SELECT' ? Array.from(el.options).map(o => o.value).filter(v => v) : null,
+                };
+            }).filter(f => f.type !== 'hidden' && f.type !== 'submit' && f.type !== 'button');
+        }""", form_selector)
+
+        if not fields:
+            return {"success": False, "error": f"No form fields found in '{form_selector}'"}
+
+        # Infer values based on field type and hints
+        test_data = {
+            "email": "test@example.com",
+            "password": "TestPassword123!",
+            "tel": "+1234567890",
+            "phone": "+1234567890",
+            "url": "https://example.com",
+            "number": "42",
+            "date": "2025-01-15",
+            "time": "10:30",
+            "datetime-local": "2025-01-15T10:30",
+            "month": "2025-01",
+            "week": "2025-W03",
+            "color": "#3366cc",
+            "range": "50",
+            "search": "test search",
+        }
+        name_hints = {
+            "first": "John", "last": "Doe", "name": "John Doe",
+            "company": "Test Corp", "organization": "Test Corp", "org": "Test Corp",
+            "address": "123 Test Street", "street": "123 Test Street",
+            "city": "San Francisco", "state": "CA", "zip": "94105", "postal": "94105",
+            "country": "US", "username": "testuser", "user": "testuser",
+            "comment": "This is a test comment.", "message": "This is a test message.",
+            "description": "Test description for automated testing.",
+            "title": "Test Title", "subject": "Test Subject",
+            "age": "30", "quantity": "1", "amount": "100",
+        }
+
+        filled = []
+        for f in fields:
+            selector = f["selector"]
+
+            # Check for override
+            if selector in overrides:
+                value = overrides[selector]
+            elif f["type"] in test_data:
+                value = test_data[f["type"]]
+            else:
+                # Infer from name/placeholder/label hints
+                value = "Test input"
+                for hint_key, hint_value in name_hints.items():
+                    if hint_key in f["hints"]:
+                        value = hint_value
+                        break
+
+            try:
+                if f["tag"] == "select" and f["options"]:
+                    # Pick first non-empty option
+                    await session.page.locator(selector).first.select_option(f["options"][0])
+                    filled.append({"selector": selector, "value": f["options"][0], "type": "select"})
+                elif f["type"] == "checkbox":
+                    await session.page.locator(selector).first.check()
+                    filled.append({"selector": selector, "value": "checked", "type": "checkbox"})
+                elif f["type"] == "radio":
+                    await session.page.locator(selector).first.check()
+                    filled.append({"selector": selector, "value": "checked", "type": "radio"})
+                elif f["type"] == "file":
+                    filled.append({"selector": selector, "value": "skipped", "type": "file"})
+                else:
+                    locator = session.page.locator(selector).first
+                    await locator.click()
+                    await locator.fill(str(value))
+                    filled.append({"selector": selector, "value": str(value), "type": f["type"]})
+            except Exception as e:
+                filled.append({"selector": selector, "error": str(e), "type": f["type"]})
+
+        result = {"success": True, "fields_filled": filled, "submitted": False}
+
+        if submit:
+            try:
+                submit_btn = session.page.locator(f"{form_selector} [type='submit'], {form_selector} button:not([type='button'])").first
+                await submit_btn.click()
+                try:
+                    await session.page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+                result["submitted"] = True
+                result["url"] = session.page.url
+                result["title"] = await session.page.title()
+            except Exception as e:
+                result["submit_error"] = str(e)
+
+        return result
+
+    elif name == "get_network_log":
+        session = session_manager.get_session(args["session_id"])
+        url_filter = args.get("url_filter", "")
+        clear = args.get("clear", False)
+
+        log = session.network_log
+        if url_filter:
+            log = [entry for entry in log if url_filter in entry["url"]]
+
+        result = {
+            "total_requests": len(session.network_log),
+            "filtered_count": len(log),
+            "requests": log[-200:],  # Cap at last 200
+        }
+
+        if clear:
+            session.network_log.clear()
+            result["cleared"] = True
+
+        return result
+
+    elif name == "snapshot_page_state":
+        session = session_manager.get_session(args["session_id"])
+        snap_name = args["name"]
+
+        state = await session.page.evaluate("""() => {
+            const ls = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                ls[key] = localStorage.getItem(key);
+            }
+            const ss = {};
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                ss[key] = sessionStorage.getItem(key);
+            }
+            // Capture a DOM signature for diff
+            const elements = document.querySelectorAll('*');
+            const domSig = [];
+            for (let i = 0; i < Math.min(elements.length, 2000); i++) {
+                const el = elements[i];
+                domSig.push({
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    class: el.className && typeof el.className === 'string' ? el.className : null,
+                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 100) : null,
+                });
+            }
+            return { localStorage: ls, sessionStorage: ss, domSignature: domSig };
+        }""")
+
+        cookies = await session.page.context.cookies()
+
+        session.snapshots[snap_name] = {
+            "url": session.page.url,
+            "title": await session.page.title(),
+            "cookies": cookies,
+            "localStorage": state["localStorage"],
+            "sessionStorage": state["sessionStorage"],
+            "domSignature": state["domSignature"],
+            "timestamp": time.time(),
+        }
+
+        return {
+            "success": True,
+            "name": snap_name,
+            "url": session.page.url,
+            "snapshot_count": len(session.snapshots),
+        }
+
+    elif name == "restore_page_state":
+        session = session_manager.get_session(args["session_id"])
+        snap_name = args["name"]
+
+        if snap_name not in session.snapshots:
+            return {"success": False, "error": f"Snapshot '{snap_name}' not found. Available: {list(session.snapshots.keys())}"}
+
+        snap = session.snapshots[snap_name]
+
+        # Restore cookies
+        await session.page.context.clear_cookies()
+        if snap["cookies"]:
+            await session.page.context.add_cookies(snap["cookies"])
+
+        # Navigate to saved URL
+        await session.page.goto(snap["url"], wait_until="networkidle")
+
+        # Restore storage
+        await session.page.evaluate("""(state) => {
+            localStorage.clear();
+            for (const [k, v] of Object.entries(state.localStorage || {})) {
+                localStorage.setItem(k, v);
+            }
+            sessionStorage.clear();
+            for (const [k, v] of Object.entries(state.sessionStorage || {})) {
+                sessionStorage.setItem(k, v);
+            }
+        }""", snap)
+
+        session.url = session.page.url
+        return {
+            "success": True,
+            "name": snap_name,
+            "restored_url": session.page.url,
+            "title": await session.page.title(),
+        }
+
+    elif name == "diff_page_state":
+        session = session_manager.get_session(args["session_id"])
+        snap_name = args["name"]
+
+        if snap_name not in session.snapshots:
+            return {"success": False, "error": f"Snapshot '{snap_name}' not found. Available: {list(session.snapshots.keys())}"}
+
+        snap = session.snapshots[snap_name]
+        old_dom = snap["domSignature"]
+
+        # Get current DOM signature
+        current_dom = await session.page.evaluate("""() => {
+            const elements = document.querySelectorAll('*');
+            const domSig = [];
+            for (let i = 0; i < Math.min(elements.length, 2000); i++) {
+                const el = elements[i];
+                domSig.push({
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    class: el.className && typeof el.className === 'string' ? el.className : null,
+                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 100) : null,
+                });
+            }
+            return domSig;
+        }""")
+
+        # Build index by id for comparison
+        old_by_id = {e["id"]: e for e in old_dom if e.get("id")}
+        new_by_id = {e["id"]: e for e in current_dom if e.get("id")}
+
+        added_ids = set(new_by_id.keys()) - set(old_by_id.keys())
+        removed_ids = set(old_by_id.keys()) - set(new_by_id.keys())
+        common_ids = set(old_by_id.keys()) & set(new_by_id.keys())
+
+        changed = []
+        for eid in common_ids:
+            old_e = old_by_id[eid]
+            new_e = new_by_id[eid]
+            diffs = {}
+            for key in ["tag", "class", "text"]:
+                if old_e.get(key) != new_e.get(key):
+                    diffs[key] = {"old": old_e.get(key), "new": new_e.get(key)}
+            if diffs:
+                changed.append({"id": eid, "changes": diffs})
+
+        # Also compare counts by tag
+        from collections import Counter
+        old_tags = Counter(e["tag"] for e in old_dom)
+        new_tags = Counter(e["tag"] for e in current_dom)
+        tag_diffs = {}
+        for tag in set(list(old_tags.keys()) + list(new_tags.keys())):
+            if old_tags.get(tag, 0) != new_tags.get(tag, 0):
+                tag_diffs[tag] = {"old": old_tags.get(tag, 0), "new": new_tags.get(tag, 0)}
+
+        return {
+            "snapshot_name": snap_name,
+            "url_changed": snap["url"] != session.page.url,
+            "old_url": snap["url"],
+            "current_url": session.page.url,
+            "elements_added_ids": list(added_ids)[:20],
+            "elements_removed_ids": list(removed_ids)[:20],
+            "elements_changed": changed[:20],
+            "tag_count_changes": tag_diffs,
+            "old_element_count": len(old_dom),
+            "new_element_count": len(current_dom),
+        }
+
+    elif name == "get_cookies":
+        session = session_manager.get_session(args["session_id"])
+        domain_filter = args.get("domain_filter", "")
+
+        cookies = await session.page.context.cookies()
+
+        if domain_filter:
+            cookies = [c for c in cookies if domain_filter in c.get("domain", "")]
+
+        return {
+            "total": len(cookies),
+            "cookies": cookies,
+        }
+
+    elif name == "check_color_contrast":
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector", "p, span, a, li, td, th, h1, h2, h3, h4, h5, h6, label, button")
+        level = args.get("level", "AA")
+        max_results = args.get("max_results", 50)
+
+        # Get computed colors for text elements
+        elements = await session.page.evaluate("""(args) => {
+            const [selector, maxResults] = args;
+            const els = document.querySelectorAll(selector);
+            const results = [];
+
+            function parseColor(color) {
+                // Parse rgb/rgba string to [r, g, b]
+                const match = color.match(/rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)/);
+                if (match) return [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
+                return null;
+            }
+
+            function luminance(r, g, b) {
+                const [rs, gs, bs] = [r, g, b].map(c => {
+                    c = c / 255;
+                    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+                });
+                return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+            }
+
+            function contrastRatio(l1, l2) {
+                const lighter = Math.max(l1, l2);
+                const darker = Math.min(l1, l2);
+                return (lighter + 0.05) / (darker + 0.05);
+            }
+
+            for (let i = 0; i < Math.min(els.length, maxResults); i++) {
+                const el = els[i];
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+
+                const style = window.getComputedStyle(el);
+                const fg = parseColor(style.color);
+                const bg = parseColor(style.backgroundColor);
+
+                if (!fg || !bg) continue;
+                // Skip transparent backgrounds (alpha check)
+                const bgAlpha = style.backgroundColor.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([\\d.]+)/);
+                if (bgAlpha && parseFloat(bgAlpha[1]) < 0.1) continue;
+
+                const fgLum = luminance(fg[0], fg[1], fg[2]);
+                const bgLum = luminance(bg[0], bg[1], bg[2]);
+                const ratio = contrastRatio(fgLum, bgLum);
+                const fontSize = parseFloat(style.fontSize);
+                const fontWeight = parseInt(style.fontWeight) || 400;
+                const isLargeText = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+
+                let selector_str = el.tagName.toLowerCase();
+                if (el.id) selector_str = '#' + el.id;
+                else if (el.className && typeof el.className === 'string')
+                    selector_str += '.' + el.className.trim().split(/\\s+/)[0];
+
+                results.push({
+                    selector: selector_str,
+                    text: (el.textContent || '').trim().substring(0, 60),
+                    foreground: style.color,
+                    background: style.backgroundColor,
+                    ratio: Math.round(ratio * 100) / 100,
+                    font_size: fontSize,
+                    is_large_text: isLargeText,
+                });
+            }
+            return results;
+        }""", [selector, max_results])
+
+        # Evaluate against WCAG thresholds
+        aa_normal = 4.5
+        aa_large = 3.0
+        aaa_normal = 7.0
+        aaa_large = 4.5
+
+        failures = []
+        for el in elements:
+            ratio = el["ratio"]
+            is_large = el["is_large_text"]
+
+            if level == "AA":
+                threshold = aa_large if is_large else aa_normal
+            else:
+                threshold = aaa_large if is_large else aaa_normal
+
+            if ratio < threshold:
+                el["required_ratio"] = threshold
+                el["level"] = level
+                el["passed"] = False
+                failures.append(el)
+            else:
+                el["passed"] = True
+
+        return {
+            "level": level,
+            "elements_checked": len(elements),
+            "failures": len(failures),
+            "failing_elements": failures[:30],
+        }
+
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+
+    elif name == "describe_tools":
+        category = args.get("category", "all")
+
+        catalog = {
+            "project": {
+                "name": "Project Management",
+                "description": "Create and manage testing projects. Each project represents a website.",
+                "tools": {
+                    "create_project": {"params": "name, base_url, max_pages?, max_depth?", "note": "Start here — creates a project for a website"},
+                    "list_projects": {"params": "(none)", "note": "See all projects"},
+                    "get_project": {"params": "name", "note": "Project details and config"},
+                    "delete_project": {"params": "name", "note": "Remove project and data"},
+                },
+            },
+            "auth": {
+                "name": "Authentication",
+                "description": "Configure login for protected sites. Set credentials first, then call login_project.",
+                "tools": {
+                    "set_form_login": {"params": "project, login_url, username, password, selectors?", "note": "For sites with login forms"},
+                    "set_basic_auth": {"params": "project, username, password", "note": "For HTTP Basic Auth"},
+                    "set_cookies": {"params": "project, cookies[]", "note": "Bypass login with session cookies"},
+                    "login_project": {"params": "project", "note": "Execute login using configured credentials"},
+                    "copy_auth": {"params": "from_project, to_project", "note": "Copy auth config between projects on same domain"},
+                },
+            },
+            "static_testing": {
+                "name": "Static Testing",
+                "description": "Crawl and test pages without interaction. Good for broad site audits.",
+                "tools": {
+                    "test_url": {"params": "url, project?, checks?[]", "note": "Test a single URL (screenshot + checks)"},
+                    "crawl_project": {"params": "project, max_depth?, max_pages?", "note": "Discover all pages from base URL"},
+                    "test_project": {"params": "project, checks?[], max_pages?", "note": "Full crawl + test all pages"},
+                },
+            },
+            "results": {
+                "name": "Results & Reports",
+                "description": "Retrieve screenshots and test reports.",
+                "tools": {
+                    "get_screenshot": {"params": "project, url", "note": "Get screenshot path for a tested URL"},
+                    "list_reports": {"params": "project?", "note": "List all test reports"},
+                    "get_report": {"params": "report_path", "note": "Read a specific report"},
+                },
+            },
+            "sessions": {
+                "name": "Session Management",
+                "description": "Persistent browser sessions that survive across tool calls. Required for interactive testing.",
+                "tools": {
+                    "open_session": {"params": "url, project?", "note": "Create session — returns session_id + screenshot"},
+                    "close_session": {"params": "session_id", "note": "Close session and free resources"},
+                    "list_sessions": {"params": "(none)", "note": "All active sessions with idle times"},
+                    "set_viewport": {"params": "session_id, width?, height?, device?", "note": "Switch viewport. Presets: mobile, tablet, desktop, iphone_12, iphone_14_pro, pixel_7, ipad, ipad_pro"},
+                },
+            },
+            "interactive": {
+                "name": "Interactive Actions",
+                "description": "Click, type, fill forms, and query elements on a session page.",
+                "tools": {
+                    "click_element": {"params": "session_id, selector, force?", "note": "Click and get screenshot. force=true bypasses overlays."},
+                    "fill_form": {"params": "session_id, fields[{selector,value}], submit_selector?", "note": "Fill fields, optionally submit"},
+                    "interact_and_test": {"params": "url|session_id, steps[], run_checks?[]", "note": "Multi-step scripted workflow (23 actions)"},
+                    "get_page_elements": {"params": "selector, url|session_id, max_results?", "note": "List elements with attributes"},
+                    "get_attribute": {"params": "selector, attributes[], url|session_id", "note": "Read specific HTML attributes"},
+                    "extract_text": {"params": "selector, url|session_id", "note": "Get text content from elements"},
+                },
+            },
+            "analysis": {
+                "name": "Analysis & Validation",
+                "description": "Deep checks on forms, links, responsiveness, screenshots, and timing.",
+                "tools": {
+                    "test_form_validation": {"params": "url|session_id, form_selector?", "note": "Submit empty forms, collect validation messages"},
+                    "compare_screenshots": {"params": "screenshot1, screenshot2, threshold?", "note": "Pixel diff — returns % changed + diff image"},
+                    "test_responsive": {"params": "url, viewports?[], run_checks?[]", "note": "Test at mobile/tablet/desktop viewports"},
+                    "check_links": {"params": "url|session_id, check_external?, max_links?", "note": "Comprehensive link status checker"},
+                    "measure_interaction": {"params": "session_id, selector, wait_for?", "note": "Measure click-to-result timing (ms)"},
+                },
+            },
+            "workflow": {
+                "name": "Workflow Speed Tools",
+                "description": "Quick actions to speed up testing workflows.",
+                "tools": {
+                    "screenshot_session": {"params": "session_id, full_page?", "note": "Quick screenshot, no actions"},
+                    "run_checks_on_session": {"params": "session_id, checks?[]", "note": "Run checks on active session page"},
+                    "go_back": {"params": "session_id", "note": "Browser back button"},
+                    "go_forward": {"params": "session_id", "note": "Browser forward button"},
+                    "handle_dialog": {"params": "session_id, action, prompt_text?", "note": "Accept/dismiss JS dialogs (call BEFORE triggering)"},
+                    "upload_file": {"params": "session_id, selector, files[]", "note": "Set files on <input type=file>"},
+                    "wait_for_network": {"params": "session_id, url_pattern, method?, timeout?", "note": "Wait for specific API request"},
+                },
+            },
+            "advanced": {
+                "name": "Advanced Testing",
+                "description": "Network mocking, storage manipulation, iframes, CSS inspection, device emulation.",
+                "tools": {
+                    "intercept_network": {"params": "session_id, url_pattern, status?, body?, content_type?, once?", "note": "Mock API responses"},
+                    "get_local_storage": {"params": "session_id, storage?, keys?", "note": "Read localStorage or sessionStorage"},
+                    "set_local_storage": {"params": "session_id, entries, storage?, clear_first?", "note": "Write to localStorage or sessionStorage"},
+                    "select_iframe": {"params": "session_id, selector", "note": "Enter iframe — returns new session_id"},
+                    "reload_page": {"params": "session_id", "note": "Refresh page"},
+                    "get_computed_style": {"params": "session_id, selector, properties[]", "note": "Get rendered CSS values"},
+                    "emulate_network": {"params": "session_id, preset", "note": "Throttle: slow_3g, fast_3g, offline, reset"},
+                    "test_dark_mode": {"params": "session_id, mode", "note": "Toggle prefers-color-scheme dark/light"},
+                },
+            },
+            "recording": {
+                "name": "Recording & Console",
+                "description": "Record video, audit keyboard navigation, capture console output.",
+                "tools": {
+                    "record_session": {"params": "url, steps[], project?", "note": "Record workflow as video (.webm)"},
+                    "test_keyboard_navigation": {"params": "url|session_id, max_tabs?", "note": "Tab-order + focus indicator audit"},
+                    "check_console_during_interaction": {"params": "session_id, steps[]", "note": "Console output captured during steps"},
+                    "get_console_errors": {"params": "session_id, clear?", "note": "All console errors/logs since session opened"},
+                },
+            },
+            "agent_speed": {
+                "name": "AI Agent Speed Tools",
+                "description": "Assertions, smart finders, auto-fill, network log, snapshots, cookies, contrast checks. Designed to replace multiple tool calls with one.",
+                "tools": {
+                    "assert_condition": {"params": "session_id, assertion, selector?, expected?, attribute?", "note": "Instant pass/fail: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals"},
+                    "find_element": {"params": "session_id, text?, tag?, role?, near?", "note": "Smart finder — search by text, tag, role, or proximity"},
+                    "auto_fill_form": {"params": "session_id, form_selector?, overrides?, submit?", "note": "Auto-detect fields, infer types, fill with test data"},
+                    "get_network_log": {"params": "session_id, url_filter?, clear?", "note": "All network requests (URL, status, method, type)"},
+                    "snapshot_page_state": {"params": "session_id, name", "note": "Save URL + cookies + storage + DOM as checkpoint"},
+                    "restore_page_state": {"params": "session_id, name", "note": "Restore a saved snapshot"},
+                    "diff_page_state": {"params": "session_id, name", "note": "Compare current DOM vs snapshot"},
+                    "get_cookies": {"params": "session_id, domain_filter?", "note": "Read all session cookies"},
+                    "check_color_contrast": {"params": "session_id, selector?, level?, max_results?", "note": "WCAG AA/AAA contrast ratio checks"},
+                },
+            },
+        }
+
+        # Filter by category
+        if category != "all" and category in catalog:
+            filtered = {category: catalog[category]}
+        else:
+            filtered = catalog
+
+        # Build response
+        result = {
+            "total_tools": 59,
+            "categories": len(catalog),
+        }
+
+        # Add workflow guide
+        result["recommended_workflows"] = {
+            "quick_static_audit": [
+                "create_project(name, base_url)",
+                "test_project(project) — crawl + test all pages",
+                "list_reports(project) → get_report(path)",
+            ],
+            "interactive_testing": [
+                "open_session(url) → session_id",
+                "find_element(session_id, text='Login') → get selector",
+                "click_element(session_id, selector)",
+                "auto_fill_form(session_id, submit=true)",
+                "assert_condition(session_id, 'url_contains', expected='/dashboard')",
+                "close_session(session_id)",
+            ],
+            "regression_testing": [
+                "open_session(url) → session_id",
+                "snapshot_page_state(session_id, 'before')",
+                "click_element / fill_form / etc.",
+                "diff_page_state(session_id, 'before') → see what changed",
+                "assert_condition(session_id, ...) → verify expected state",
+            ],
+            "responsive_testing": [
+                "open_session(url) → session_id",
+                "screenshot_session(session_id) — desktop",
+                "set_viewport(session_id, device='mobile')",
+                "screenshot_session(session_id) — mobile",
+                "set_viewport(session_id, device='tablet')",
+                "screenshot_session(session_id) — tablet",
+            ],
+            "api_mocking": [
+                "open_session(url) → session_id",
+                "intercept_network(session_id, '/api/data', status=500, body='{\"error\":\"fail\"}')",
+                "click_element(session_id, '#load-btn') — triggers the mocked API",
+                "assert_condition(session_id, 'element_visible', '.error-message')",
+            ],
+        }
+
+        result["tips"] = [
+            "Tools accepting 'url|session_id': pass session_id to reuse an open page, or url for ephemeral (one-shot) testing.",
+            "Use find_element before click_element to discover the right selector.",
+            "Use auto_fill_form instead of multiple fill_form calls — it infers field types.",
+            "Use assert_condition instead of screenshots when you just need pass/fail.",
+            "Use snapshot_page_state + diff_page_state to detect exactly what changed after an action.",
+            "Use handle_dialog BEFORE the action that triggers the dialog.",
+            "Network log is captured automatically — call get_network_log anytime to see API calls.",
+            "force=true on click_element bypasses overlay interception (cookie banners, modals).",
+        ]
+
+        result["catalog"] = {}
+        for cat_key, cat_data in filtered.items():
+            result["catalog"][cat_key] = {
+                "name": cat_data["name"],
+                "description": cat_data["description"],
+                "tool_count": len(cat_data["tools"]),
+                "tools": cat_data["tools"],
+            }
+
+        return result
 
     else:
         return {"error": f"Unknown tool: {name}"}

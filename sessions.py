@@ -15,6 +15,8 @@ class PageSession:
     last_accessed: float
     console_log: list = field(default_factory=list)
     console_errors: list = field(default_factory=list)
+    network_log: list = field(default_factory=list)
+    snapshots: dict = field(default_factory=dict)
 
 
 class SessionManager:
@@ -38,6 +40,7 @@ class SessionManager:
 
         console_log = []
         console_errors = []
+        network_log = []
 
         def on_console(msg):
             if msg.type == "error":
@@ -45,8 +48,18 @@ class SessionManager:
             else:
                 console_log.append(msg.text)
 
+        def on_response(response):
+            network_log.append({
+                "url": response.url,
+                "status": response.status,
+                "method": response.request.method,
+                "resource_type": response.request.resource_type,
+                "timestamp": time.time(),
+            })
+
         page.on("console", on_console)
         page.on("pageerror", lambda err: console_errors.append(str(err)))
+        page.on("response", on_response)
 
         await page.goto(url, wait_until="networkidle")
 
@@ -60,6 +73,7 @@ class SessionManager:
             last_accessed=now,
             console_log=console_log,
             console_errors=console_errors,
+            network_log=network_log,
         )
         self.sessions[session_id] = session
         return session

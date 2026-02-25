@@ -96,6 +96,17 @@ close_session(session_id)
 - `emulate_network(session_id, preset)` — Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset`
 - `test_dark_mode(session_id, mode)` — Toggle `prefers-color-scheme` to `dark` or `light`
 
+### AI Agent Speed Tools
+- `assert_condition(session_id, assertion, selector?, expected?, attribute?)` — Programmatic pass/fail assertions: `text_contains`, `text_equals`, `element_exists`, `element_visible`, `element_count`, `url_contains`, `title_contains`, `attribute_equals`
+- `find_element(session_id, text?, tag?, role?, near?, max_results?)` — Smart element finder by text/role/proximity. Returns best CSS selectors.
+- `auto_fill_form(session_id, form_selector?, overrides?, submit?)` — Auto-detect fields, infer types (email/phone/name/etc.), fill with test data. One call replaces 5-10.
+- `get_network_log(session_id, url_filter?, clear?)` — All network requests captured during session (URL, status, method, type)
+- `snapshot_page_state(session_id, name)` — Save URL + cookies + storage + DOM as named checkpoint
+- `restore_page_state(session_id, name)` — Restore a saved snapshot (navigate + cookies + storage)
+- `diff_page_state(session_id, name)` — Compare current DOM vs snapshot: added/removed/changed elements + tag count changes
+- `get_cookies(session_id, domain_filter?)` — Read all cookies from session context
+- `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
+
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 

@@ -1,6 +1,6 @@
 # WebsiteTesterAI
 
-An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 49 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 59 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
 ## Architecture
 
@@ -13,13 +13,13 @@ Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
                        +-- Videos (WebM)
 ```
 
-**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 49 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
+**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 59 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
 
 ## Project Structure
 
 ```
 WebsiteTesterAI/
-├── server.py              # MCP server entry point + tool definitions (49 tools)
+├── server.py              # MCP server entry point + tool definitions (59 tools)
 ├── tester.py              # Playwright browser control + test orchestration + responsive testing
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
@@ -107,7 +107,7 @@ Add to `~/.claude.json` under the project's `mcpServers` key:
 
 After configuring, restart Claude Code.
 
-## MCP Tools Reference (49 tools)
+## MCP Tools Reference (59 tools)
 
 ### Project Management (4 tools)
 
@@ -214,6 +214,20 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
 | `check_console_during_interaction` | Capture console output during workflow | `session_id`, `steps` |
 | `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
+
+### AI Agent Speed Tools (9 tools)
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `assert_condition` | Programmatic pass/fail: text_contains, element_exists, url_contains, etc. | `session_id`, `assertion` |
+| `find_element` | Smart finder by text, tag, role, or proximity to another element | `session_id` |
+| `auto_fill_form` | Auto-detect fields, infer types, fill with test data. One call = many fills. | `session_id` |
+| `get_network_log` | All captured network requests (URL, status, method, type) | `session_id` |
+| `snapshot_page_state` | Save URL + cookies + storage + DOM as named checkpoint | `session_id`, `name` |
+| `restore_page_state` | Restore a previously saved snapshot | `session_id`, `name` |
+| `diff_page_state` | Compare current DOM vs snapshot: added/removed/changed elements | `session_id`, `name` |
+| `get_cookies` | Read all cookies from session | `session_id` |
+| `check_color_contrast` | WCAG AA/AAA contrast ratio checks on text elements | `session_id` |
 
 ## Test Checks
 
