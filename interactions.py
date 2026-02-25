@@ -131,6 +131,9 @@ async def execute_steps(
         scroll_to: {action: "scroll_to", selector: str} — scroll element into view
         scroll_within: {action: "scroll_within", selector: str, direction: "up"|"down"|"left"|"right", amount: int?}
         evaluate_js: {action: "evaluate_js", script: str} — run JS snippet, result stored in step_result
+        drag: {action: "drag", selector: str, target: str} — drag element to target
+        right_click: {action: "right_click", selector: str} — right-click / context menu
+        wait_for_text: {action: "wait_for_text", text: str, selector?: str, timeout?: int} — wait for text to appear
 
     Returns dict with step results and screenshots.
     """
@@ -241,6 +244,29 @@ async def execute_steps(
             elif action == "evaluate_js":
                 result = await page.evaluate(step["script"])
                 step_result["result"] = result
+
+            elif action == "drag":
+                source = page.locator(step["selector"]).first
+                target = page.locator(step["target"]).first
+                await source.drag_to(target)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+
+            elif action == "right_click":
+                locator = page.locator(step["selector"]).first
+                force = step.get("force", False)
+                if not force:
+                    await locator.wait_for(state="visible", timeout=10000)
+                await locator.click(button="right", force=force)
+
+            elif action == "wait_for_text":
+                text = step["text"]
+                container = step.get("selector", "body")
+                timeout = step.get("timeout", 30000)
+                locator = page.locator(container).locator(f"text={text}").first
+                await locator.wait_for(state="visible", timeout=timeout)
 
             else:
                 step_result["success"] = False

@@ -295,7 +295,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="interact_and_test",
-            description="Execute a multi-step interaction workflow. Supports click, force_click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js actions. Can work on an existing session or create an ephemeral page.",
+            description="Execute a multi-step interaction workflow. Supports 19 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click. Can work on an existing session or create an ephemeral page.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -309,12 +309,13 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js"],
+                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click"],
                                     "description": "Action to perform"
                                 },
-                                "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click)"},
+                                "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click, drag, right_click, wait_for_text container)"},
                                 "value": {"type": "string", "description": "Value (for fill, select)"},
-                                "text": {"type": "string", "description": "Text to type (for type action)"},
+                                "text": {"type": "string", "description": "Text to type (for type action), or text to wait for (for wait_for_text)"},
+                                "target": {"type": "string", "description": "CSS selector of drop target (for drag action)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
                                 "url": {"type": "string", "description": "URL (for navigate)"},
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
@@ -512,6 +513,38 @@ async def list_tools() -> list[Tool]:
                     "clear": {"type": "boolean", "description": "Clear the console buffers after reading (default: true)"}
                 },
                 "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="copy_auth",
+            description="Copy authentication config from one project to another. Useful when multiple projects share the same domain/credentials.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "from_project": {"type": "string", "description": "Source project name to copy auth from"},
+                    "to_project": {"type": "string", "description": "Target project name to copy auth to"}
+                },
+                "required": ["from_project", "to_project"]
+            }
+        ),
+        Tool(
+            name="get_attribute",
+            description="Get specific attribute values from elements matching a selector. Returns any HTML attribute (data-*, aria-*, style, etc.).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector to match elements"},
+                    "attributes": {
+                        "type": "array",
+                        "description": "Attribute names to extract (e.g. ['data-id', 'aria-expanded', 'style'])",
+                        "items": {"type": "string"}
+                    },
+                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
+                    "url": {"type": "string", "description": "URL to open (use this or session_id)"},
+                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"}
+                },
+                "required": ["selector", "attributes"]
             }
         ),
         Tool(
@@ -1127,6 +1160,92 @@ async def _handle_tool(name: str, args: dict) -> dict:
             session.console_errors.clear()
 
         return result
+
+    elif name == "copy_auth":
+        source = project_manager.get(args["from_project"])
+        if not source:
+            return {"success": False, "error": f"Source project '{args['from_project']}' not found"}
+        target = project_manager.get(args["to_project"])
+        if not target:
+            return {"success": False, "error": f"Target project '{args['to_project']}' not found"}
+        if not source.auth or not source.auth.method:
+            return {"success": False, "error": f"Source project '{args['from_project']}' has no auth configured"}
+
+        import copy
+        target.auth = copy.deepcopy(source.auth)
+        target.is_logged_in = False
+        project_manager._save()
+
+        # Also copy browser context cookies if source is logged in
+        if source.is_logged_in:
+            t = await get_tester()
+            if source.name in t.contexts:
+                source_ctx = t.contexts[source.name]
+                cookies = await source_ctx.cookies()
+                target_ctx = await t.get_context(target.name)
+                await target_ctx.add_cookies(cookies)
+                target.is_logged_in = True
+                project_manager._save()
+
+        return {
+            "success": True,
+            "message": f"Auth copied from '{args['from_project']}' to '{args['to_project']}'",
+            "method": target.auth.method,
+            "session_copied": target.is_logged_in,
+        }
+
+    elif name == "get_attribute":
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        max_results = args.get("max_results", 50)
+        attributes = args["attributes"]
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until="networkidle")
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            elements = await page.evaluate("""(args) => {
+                const [selector, attrs, maxResults] = args;
+                const els = document.querySelectorAll(selector);
+                const results = [];
+                for (let i = 0; i < Math.min(els.length, maxResults); i++) {
+                    const el = els[i];
+                    const entry = {
+                        tag: el.tagName.toLowerCase(),
+                        index: i,
+                    };
+                    for (const attr of attrs) {
+                        entry[attr] = el.getAttribute(attr);
+                    }
+                    // Always include identifying info
+                    entry.id = el.id || null;
+                    entry.text = (el.textContent || '').trim().substring(0, 80);
+                    results.push(entry);
+                }
+                return results;
+            }""", [args["selector"], attributes, max_results])
+            return {
+                "selector": args["selector"],
+                "attributes_requested": attributes,
+                "count": len(elements),
+                "elements": elements,
+                "url": page.url,
+            }
+        finally:
+            if ephemeral:
+                await page.close()
 
     elif name == "set_viewport":
         session = session_manager.get_session(args["session_id"])

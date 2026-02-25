@@ -61,8 +61,9 @@ close_session(session_id)
 ### Interactive Tools
 - `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
 - `fill_form(session_id, fields[], submit_selector?)` — Fill fields, optionally submit
-- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 16 actions: click, force_click, fill, type, select, wait, wait_for, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js
+- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 19 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click
 - `get_page_elements(selector, url|session_id, max_results?)` — List matching elements with attributes
+- `get_attribute(selector, attributes[], url|session_id)` — Get specific HTML attribute values (data-*, aria-*, style, etc.)
 
 ### Analysis Tools
 - `test_form_validation(url|session_id, form_selector?)` — Analyze form validation
@@ -77,6 +78,9 @@ close_session(session_id)
 - `extract_text(selector, url|session_id)` — Get text content from elements
 - `check_console_during_interaction(session_id, steps[])` — Capture console output during workflow
 - `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
+
+### Utility Tools
+- `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 10` — Max concurrent sessions
