@@ -1,24 +1,25 @@
 # WebsiteTesterAI
 
-An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, and run automated checks for visual issues, accessibility, SEO, performance, and functionality.
+An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 49 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
 ## Architecture
 
 ```
 Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
-                       |
-                       +-- Projects (JSON storage)
-                       +-- Screenshots (PNG files)
-                       +-- Reports (JSON files)
+                       |                         |
+                       +-- Projects (JSON)       +-- Persistent Sessions
+                       +-- Screenshots (PNG)     +-- Network Interception
+                       +-- Reports (JSON)        +-- Device Emulation
+                       +-- Videos (WebM)
 ```
 
-**How it works:** Claude Code connects to this MCP server over stdio. The server exposes tools that Claude Code can call to create projects, configure authentication, crawl websites, and run tests. Results (JSON + screenshots) are returned to Claude Code for analysis.
+**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 49 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
 
 ## Project Structure
 
 ```
 WebsiteTesterAI/
-├── server.py              # MCP server entry point + tool definitions (30 tools)
+├── server.py              # MCP server entry point + tool definitions (49 tools)
 ├── tester.py              # Playwright browser control + test orchestration + responsive testing
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
@@ -106,9 +107,9 @@ Add to `~/.claude.json` under the project's `mcpServers` key:
 
 After configuring, restart Claude Code.
 
-## MCP Tools Reference
+## MCP Tools Reference (49 tools)
 
-### Project Management
+### Project Management (4 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -117,7 +118,7 @@ After configuring, restart Claude Code.
 | `get_project` | Get project details | `name` |
 | `delete_project` | Delete project + data | `name` |
 
-### Authentication
+### Authentication (5 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -125,16 +126,17 @@ After configuring, restart Claude Code.
 | `set_basic_auth` | Configure HTTP Basic Auth | `project`, `username`, `password` |
 | `set_cookies` | Inject session cookies | `project`, `cookies` (array) |
 | `login_project` | Execute login using configured auth | `project` |
+| `copy_auth` | Copy auth config + session cookies between projects | `from_project`, `to_project` |
 
-### Testing
+### Static Testing (3 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `test_url` | Test a single URL (screenshot + checks) | `url` (optional: `project`, defaults to `"default"`) |
+| `test_url` | Test a single URL (screenshot + checks) | `url` |
 | `crawl_project` | Discover all pages from base URL | `project` |
 | `test_project` | Full audit: crawl + test all pages | `project` |
 
-### Results
+### Results (3 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -142,7 +144,7 @@ After configuring, restart Claude Code.
 | `list_reports` | List saved test reports | _(optional: `project`)_ |
 | `get_report` | Read a report file | `report_path` |
 
-### Interactive Testing — Session Management
+### Session Management (4 tools)
 
 Sessions keep browser pages alive across tool calls, enabling multi-step interactive workflows.
 
@@ -151,17 +153,25 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `open_session` | Open persistent browser session | `url` |
 | `close_session` | Close session and free resources | `session_id` |
 | `list_sessions` | List all active sessions | _(none)_ |
+| `set_viewport` | Switch viewport size (8 device presets or custom w/h) | `session_id` |
 
-### Interactive Testing — Actions
+`set_viewport` presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
+
+### Interactive Actions (6 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `click_element` | Click element, return screenshot + new state | `session_id`, `selector` |
+| `click_element` | Click element (`force=true` bypasses overlays) | `session_id`, `selector` |
 | `fill_form` | Fill form fields, optionally submit | `session_id`, `fields` |
-| `interact_and_test` | Multi-step workflow (click/fill/type/select/wait/navigate/hover/press_key/check/uncheck) | `steps` |
+| `interact_and_test` | Multi-step workflow with 23 actions (see below) | `steps` |
 | `get_page_elements` | List matching elements with attributes | `selector` |
+| `get_attribute` | Get specific HTML attribute values (data-*, aria-*, style, etc.) | `selector`, `attributes` |
+| `extract_text` | Get text content from matching elements | `selector` |
 
-### Interactive Testing — Analysis
+**`interact_and_test` supports 23 step actions:**
+`click`, `force_click`, `fill`, `type`, `select`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
+
+### Analysis (5 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -171,14 +181,39 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `check_links` | Comprehensive link checker (internal + external) | _(url or session_id)_ |
 | `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
 
-### Interactive Testing — Advanced
+### Workflow Speed (7 tools)
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `screenshot_session` | Quick screenshot of current page state | `session_id` |
+| `run_checks_on_session` | Run checks on active session (no new page) | `session_id` |
+| `go_back` | Browser back button | `session_id` |
+| `go_forward` | Browser forward button | `session_id` |
+| `handle_dialog` | Accept/dismiss JS alert/confirm/prompt (call BEFORE trigger) | `session_id`, `action` |
+| `upload_file` | Set file(s) on `<input type="file">` | `session_id`, `selector`, `files` |
+| `wait_for_network` | Wait for specific API URL pattern to complete | `session_id`, `url_pattern` |
+
+### Advanced Testing (8 tools)
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `intercept_network` | Mock API responses (test error/empty/loading states) | `session_id`, `url_pattern` |
+| `get_local_storage` | Read localStorage or sessionStorage | `session_id` |
+| `set_local_storage` | Write to localStorage or sessionStorage | `session_id`, `entries` |
+| `select_iframe` | Switch into iframe content (returns new session) | `session_id`, `selector` |
+| `reload_page` | Refresh page, test state persistence | `session_id` |
+| `get_computed_style` | Get actual rendered CSS values | `session_id`, `selector`, `properties` |
+| `emulate_network` | Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset` | `session_id`, `preset` |
+| `test_dark_mode` | Toggle `prefers-color-scheme` dark/light | `session_id`, `mode` |
+
+### Recording & Console (4 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `record_session` | Record workflow as video | `url`, `steps` |
 | `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
-| `extract_text` | Get text content from matching elements | `selector` |
 | `check_console_during_interaction` | Capture console output during workflow | `session_id`, `steps` |
+| `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
 
 ## Test Checks
 
@@ -351,6 +386,58 @@ User: "Check how example.com looks on mobile, tablet, and desktop"
 Claude Code calls:
 1. test_responsive(url="https://example.com", run_checks=["visual"])
 → Returns screenshots at 375x812, 768x1024, and 1920x1080
+```
+
+### Switch viewport during a session
+```
+User: "Show me how this page looks on mobile"
+
+Claude Code calls:
+1. set_viewport(session_id=..., device="mobile")
+→ Returns screenshot at 375x812
+```
+
+### Test error handling by mocking an API
+```
+User: "What happens when the API returns a 500 error?"
+
+Claude Code calls:
+1. intercept_network(session_id=..., url_pattern="/api/tasks", status=500,
+     body='{"error": "Internal server error"}')
+2. reload_page(session_id=...)
+3. screenshot_session(session_id=...)
+→ Shows how the app handles the error state
+```
+
+### Test dark mode
+```
+User: "Does this site support dark mode?"
+
+Claude Code calls:
+1. open_session(url="https://example.com") → session_id
+2. test_dark_mode(session_id=..., mode="dark")
+→ Screenshot shows the page with prefers-color-scheme: dark
+```
+
+### Wait for dynamic content
+```
+User: "Submit this form and wait for the success message"
+
+Claude Code calls:
+1. fill_form(session_id=..., fields=[...], submit_selector="#submit")
+2. wait_for_network(session_id=..., url_pattern="/api/submit")
+3. screenshot_session(session_id=...)
+```
+
+### Test on slow network
+```
+User: "How does this page load on a slow connection?"
+
+Claude Code calls:
+1. emulate_network(session_id=..., preset="slow_3g")
+2. reload_page(session_id=...)
+3. screenshot_session(session_id=...)
+4. emulate_network(session_id=..., preset="reset")
 ```
 
 ## Configuration
