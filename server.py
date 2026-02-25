@@ -295,7 +295,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="interact_and_test",
-            description="Execute a multi-step interaction workflow. Supports 19 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click. Can work on an existing session or create an ephemeral page.",
+            description="Execute a multi-step interaction workflow. Supports 23 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network. Can work on an existing session or create an ephemeral page.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -309,7 +309,7 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click"],
+                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click, drag, right_click, wait_for_text container)"},
@@ -324,7 +324,9 @@ async def list_tools() -> list[Tool]:
                                 "force": {"type": "boolean", "description": "Bypass actionability checks on click (default: false)"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
-                                "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"}
+                                "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
+                                "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
+                                "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"}
                             },
                             "required": ["action"]
                         }
@@ -567,6 +569,102 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["session_id"]
+            }
+        ),
+
+        # Workflow Speed Tools
+        Tool(
+            name="screenshot_session",
+            description="Take a screenshot of the current session page state. No actions performed — just captures what's on screen.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="run_checks_on_session",
+            description="Run visual/accessibility/functionality/seo/performance checks on an active session page. Unlike test_url, this doesn't open a new page — it checks the current state after interactions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "checks": {
+                        "type": "array",
+                        "description": "Check types to run (default: all)",
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                    }
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="go_back",
+            description="Navigate back in session browser history. Like clicking the browser back button.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="go_forward",
+            description="Navigate forward in session browser history.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="handle_dialog",
+            description="Set up handling for JavaScript dialogs (alert, confirm, prompt) on a session. Must be called BEFORE the action that triggers the dialog.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "action": {"type": "string", "enum": ["accept", "dismiss"], "description": "Accept or dismiss the dialog"},
+                    "prompt_text": {"type": "string", "description": "Text to enter for prompt() dialogs (optional)"}
+                },
+                "required": ["session_id", "action"]
+            }
+        ),
+        Tool(
+            name="upload_file",
+            description="Set file(s) on a file input element. Works with <input type='file'> elements.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector for the file input"},
+                    "files": {
+                        "type": "array",
+                        "description": "File paths to upload",
+                        "items": {"type": "string"}
+                    }
+                },
+                "required": ["session_id", "selector", "files"]
+            }
+        ),
+        Tool(
+            name="wait_for_network",
+            description="Wait for a specific network request to complete. Use URL pattern matching (substring) to wait for API calls instead of blind timeouts.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "url_pattern": {"type": "string", "description": "Substring to match in request URL (e.g. '/api/tasks', 'graphql')"},
+                    "method": {"type": "string", "description": "HTTP method filter (optional, e.g. 'POST', 'GET')"},
+                    "timeout": {"type": "integer", "description": "Max wait time in ms (default: 30000)"}
+                },
+                "required": ["session_id", "url_pattern"]
             }
         ),
     ]
@@ -1278,6 +1376,183 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "screenshot_path": screenshot_path,
             "url": session.url,
         }
+
+    # Workflow Speed Tools
+    elif name == "screenshot_session":
+        session = session_manager.get_session(args["session_id"])
+        full_page = args.get("full_page", True)
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "session_state"
+        )
+        if not full_page:
+            # Retake as viewport-only screenshot
+            project_dir = os.path.join(config.SCREENSHOT_DIR, session.project_name)
+            os.makedirs(project_dir, exist_ok=True)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            screenshot_path = os.path.join(project_dir, f"interactive_{timestamp}_viewport.png")
+            await session.page.screenshot(path=screenshot_path, full_page=False)
+        return {
+            "screenshot_path": screenshot_path,
+            "url": session.url,
+            "title": await session.page.title(),
+        }
+
+    elif name == "run_checks_on_session":
+        from checks.visual import check_visual
+        from checks.accessibility import check_accessibility
+        from checks.functionality import check_functionality, check_seo, get_performance_metrics
+
+        session = session_manager.get_session(args["session_id"])
+        checks = args.get("checks", ["visual", "accessibility", "functionality", "seo", "performance"])
+        page = session.page
+
+        all_issues = []
+        performance = {}
+
+        if "visual" in checks:
+            all_issues.extend(await check_visual(page))
+        if "accessibility" in checks:
+            all_issues.extend(await check_accessibility(page))
+        if "functionality" in checks:
+            all_issues.extend(await check_functionality(page))
+        if "seo" in checks:
+            all_issues.extend(await check_seo(page))
+        if "performance" in checks:
+            performance = await get_performance_metrics(page)
+
+        screenshot_path = await interactions.take_screenshot(
+            page, session.project_name, "after_checks"
+        )
+
+        issues_by_severity = {}
+        issues_by_type = {}
+        for issue in all_issues:
+            sev = issue.get("severity", "unknown")
+            typ = issue.get("type", "unknown")
+            issues_by_severity[sev] = issues_by_severity.get(sev, 0) + 1
+            issues_by_type[typ] = issues_by_type.get(typ, 0) + 1
+
+        return {
+            "url": session.url,
+            "title": await page.title(),
+            "issues": all_issues,
+            "issue_count": len(all_issues),
+            "issues_by_severity": issues_by_severity,
+            "issues_by_type": issues_by_type,
+            "performance": performance,
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "go_back":
+        session = session_manager.get_session(args["session_id"])
+        await session.page.go_back(wait_until="networkidle")
+        session.url = session.page.url
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_back"
+        )
+        return {
+            "url": session.url,
+            "title": await session.page.title(),
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "go_forward":
+        session = session_manager.get_session(args["session_id"])
+        await session.page.go_forward(wait_until="networkidle")
+        session.url = session.page.url
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_forward"
+        )
+        return {
+            "url": session.url,
+            "title": await session.page.title(),
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "handle_dialog":
+        session = session_manager.get_session(args["session_id"])
+        action = args["action"]
+        prompt_text = args.get("prompt_text")
+
+        dialog_info = {}
+
+        def on_dialog(dialog):
+            dialog_info["type"] = dialog.type
+            dialog_info["message"] = dialog.message
+            dialog_info["default_value"] = dialog.default_value
+
+        async def handle(dialog):
+            on_dialog(dialog)
+            if action == "accept":
+                if prompt_text is not None:
+                    await dialog.accept(prompt_text)
+                else:
+                    await dialog.accept()
+            else:
+                await dialog.dismiss()
+
+        session.page.once("dialog", handle)
+
+        return {
+            "success": True,
+            "message": f"Dialog handler set: will {action} next dialog",
+            "prompt_text": prompt_text,
+        }
+
+    elif name == "upload_file":
+        session = session_manager.get_session(args["session_id"])
+        locator = session.page.locator(args["selector"]).first
+        files = args["files"]
+
+        # Verify files exist
+        missing = [f for f in files if not os.path.exists(f)]
+        if missing:
+            return {"success": False, "error": f"Files not found: {missing}"}
+
+        await locator.set_input_files(files)
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_upload"
+        )
+        return {
+            "success": True,
+            "files_set": files,
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "wait_for_network":
+        session = session_manager.get_session(args["session_id"])
+        url_pattern = args["url_pattern"]
+        method_filter = args.get("method")
+        timeout = args.get("timeout", 30000)
+
+        async def match_request(response):
+            if url_pattern not in response.url:
+                return False
+            if method_filter and response.request.method.upper() != method_filter.upper():
+                return False
+            return True
+
+        try:
+            response = await session.page.wait_for_event(
+                "response",
+                predicate=match_request,
+                timeout=timeout,
+            )
+            return {
+                "success": True,
+                "matched_url": response.url,
+                "method": response.request.method,
+                "status": response.status,
+                "url_pattern": url_pattern,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Timeout waiting for network request matching '{url_pattern}': {e}",
+                "url_pattern": url_pattern,
+                "timeout_ms": timeout,
+            }
 
     else:
         return {"error": f"Unknown tool: {name}"}

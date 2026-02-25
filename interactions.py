@@ -134,6 +134,10 @@ async def execute_steps(
         drag: {action: "drag", selector: str, target: str} — drag element to target
         right_click: {action: "right_click", selector: str} — right-click / context menu
         wait_for_text: {action: "wait_for_text", text: str, selector?: str, timeout?: int} — wait for text to appear
+        go_back: {action: "go_back"} — browser back button
+        go_forward: {action: "go_forward"} — browser forward button
+        upload_file: {action: "upload_file", selector: str, files: [str]} — set files on file input
+        wait_for_network: {action: "wait_for_network", url_pattern: str, method?: str, timeout?: int}
 
     Returns dict with step results and screenshots.
     """
@@ -267,6 +271,36 @@ async def execute_steps(
                 timeout = step.get("timeout", 30000)
                 locator = page.locator(container).locator(f"text={text}").first
                 await locator.wait_for(state="visible", timeout=timeout)
+
+            elif action == "go_back":
+                await page.go_back(wait_until="networkidle")
+                step_result["url"] = page.url
+
+            elif action == "go_forward":
+                await page.go_forward(wait_until="networkidle")
+                step_result["url"] = page.url
+
+            elif action == "upload_file":
+                locator = page.locator(step["selector"]).first
+                await locator.set_input_files(step["files"])
+
+            elif action == "wait_for_network":
+                url_pattern = step["url_pattern"]
+                method_filter = step.get("method")
+                timeout = step.get("timeout", 30000)
+
+                async def match_request(response):
+                    if url_pattern not in response.url:
+                        return False
+                    if method_filter and response.request.method.upper() != method_filter.upper():
+                        return False
+                    return True
+
+                response = await page.wait_for_event(
+                    "response", predicate=match_request, timeout=timeout
+                )
+                step_result["matched_url"] = response.url
+                step_result["status"] = response.status
 
             else:
                 step_result["success"] = False

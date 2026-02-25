@@ -61,7 +61,7 @@ close_session(session_id)
 ### Interactive Tools
 - `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
 - `fill_form(session_id, fields[], submit_selector?)` — Fill fields, optionally submit
-- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 19 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click
+- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 23 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
 - `get_page_elements(selector, url|session_id, max_results?)` — List matching elements with attributes
 - `get_attribute(selector, attributes[], url|session_id)` — Get specific HTML attribute values (data-*, aria-*, style, etc.)
 
@@ -78,6 +78,14 @@ close_session(session_id)
 - `extract_text(selector, url|session_id)` — Get text content from elements
 - `check_console_during_interaction(session_id, steps[])` — Capture console output during workflow
 - `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
+
+### Workflow Speed Tools
+- `screenshot_session(session_id, full_page?)` — Quick screenshot of current page state, no actions performed
+- `run_checks_on_session(session_id, checks?[])` — Run checks on active session page (no new page opened)
+- `go_back(session_id)` / `go_forward(session_id)` — Browser history navigation
+- `handle_dialog(session_id, action, prompt_text?)` — Accept/dismiss JS alert/confirm/prompt (call BEFORE triggering)
+- `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
+- `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
 
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
