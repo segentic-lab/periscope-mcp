@@ -296,7 +296,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="interact_and_test",
-            description="Execute a multi-step interaction workflow. Supports 23 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network. Can work on an existing session or create an ephemeral page.",
+            description="Execute a multi-step interaction workflow. Supports 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network. Can work on an existing session or create an ephemeral page.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -310,7 +310,7 @@ async def list_tools() -> list[Tool]:
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "type", "select", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click, drag, right_click, wait_for_text container)"},
@@ -327,7 +327,9 @@ async def list_tools() -> list[Tool]:
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
-                                "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"}
+                                "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"},
+                                "label": {"type": "string", "description": "Option label text (for select_option)"},
+                                "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
                         }
@@ -917,6 +919,113 @@ async def list_tools() -> list[Tool]:
                     "max_results": {"type": "integer", "description": "Max elements to check (default: 50)"}
                 },
                 "required": ["session_id"]
+            }
+        ),
+
+        # New Tools — Friction Reducers
+        Tool(
+            name="force_fill",
+            description="Fill an input bypassing actionability checks. Uses Playwright's force=True. Useful when overlays or dialogs block normal fill.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector for the input"},
+                    "value": {"type": "string", "description": "Value to fill"}
+                },
+                "required": ["session_id", "selector", "value"]
+            }
+        ),
+        Tool(
+            name="scroll_into_view",
+            description="Scroll an element into the viewport without clicking it. Useful for lazy-loaded content or scrolling to a section.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of element to scroll to"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
+            name="wait_for_gone",
+            description="Wait for an element to disappear (removed from DOM or hidden). Useful for waiting for modals/dialogs/spinners to close.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of element to wait for disappearance"},
+                    "timeout": {"type": "integer", "description": "Max wait time in ms (default: 30000)"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
+            name="get_page_html",
+            description="Return raw outerHTML of matching elements, or full page HTML if no selector. Useful for inspecting component structure.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector (optional — omit for full page HTML)"},
+                    "max_length": {"type": "integer", "description": "Max characters to return (default: 50000)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="get_table_data",
+            description="Parse an HTML table into structured JSON with headers mapped to cell values. Returns {headers, rows, total_rows}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector for the table (default: 'table')"},
+                    "max_rows": {"type": "integer", "description": "Max rows to return (default: 100)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="get_toast_messages",
+            description="Capture visible toast/notification/alert messages on page. Checks common toast selectors ([role=alert], [role=status], [aria-live], .toast, .notification, Toastify, Sonner, Radix).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "wait_ms": {"type": "integer", "description": "Wait this many ms before capturing (lets toast animate in, default: 0)"},
+                    "selector": {"type": "string", "description": "Override default toast selectors with a custom CSS selector"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="select_option",
+            description="Select from native <select> or custom dropdown (Radix/shadcn combobox). Auto-detects type. For custom dropdowns: clicks to open, then finds option by text cascade.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector for the <select> or combobox trigger"},
+                    "value": {"type": "string", "description": "Option value to select"},
+                    "label": {"type": "string", "description": "Option label text to select"},
+                    "index": {"type": "integer", "description": "Option index to select (0-based)"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
+            name="get_response_body",
+            description="Get the actual API response body text for a request matching a URL pattern. Critical for diagnosing 400/500 errors. Response bodies are captured automatically for fetch/xhr/document requests.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "url_pattern": {"type": "string", "description": "URL substring to match (e.g. '/api/quotes', 'graphql')"},
+                    "method": {"type": "string", "description": "HTTP method filter (optional, e.g. 'POST', 'GET')"}
+                },
+                "required": ["session_id", "url_pattern"]
             }
         ),
 
@@ -2616,6 +2725,278 @@ async def _handle_tool(name: str, args: dict) -> dict:
         }
 
     # ------------------------------------------------------------------
+    # New Tools — Friction Reducers
+    # ------------------------------------------------------------------
+
+    elif name == "force_fill":
+        session = session_manager.get_session(args["session_id"])
+        await interactions.force_fill(session.page, args["selector"], args["value"])
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_force_fill"
+        )
+        return {
+            "success": True,
+            "selector": args["selector"],
+            "value": args["value"],
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "scroll_into_view":
+        session = session_manager.get_session(args["session_id"])
+        locator = session.page.locator(args["selector"]).first
+        await locator.scroll_into_view_if_needed(timeout=10000)
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_scroll"
+        )
+        return {
+            "success": True,
+            "selector": args["selector"],
+            "screenshot_path": screenshot_path,
+        }
+
+    elif name == "wait_for_gone":
+        session = session_manager.get_session(args["session_id"])
+        timeout = args.get("timeout", 30000)
+        start = time.time()
+        try:
+            locator = session.page.locator(args["selector"]).first
+            await locator.wait_for(state="hidden", timeout=timeout)
+            elapsed_ms = round((time.time() - start) * 1000)
+            return {
+                "success": True,
+                "selector": args["selector"],
+                "elapsed_ms": elapsed_ms,
+            }
+        except Exception as e:
+            elapsed_ms = round((time.time() - start) * 1000)
+            return {
+                "success": False,
+                "selector": args["selector"],
+                "elapsed_ms": elapsed_ms,
+                "error": str(e),
+            }
+
+    elif name == "get_page_html":
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector")
+        max_length = args.get("max_length", 50000)
+
+        if selector:
+            elements = await session.page.evaluate("""(args) => {
+                const [selector, maxLen] = args;
+                const els = document.querySelectorAll(selector);
+                const results = [];
+                let totalLen = 0;
+                for (const el of els) {
+                    const html = el.outerHTML;
+                    if (totalLen + html.length > maxLen) {
+                        results.push({
+                            tag: el.tagName.toLowerCase(),
+                            id: el.id || null,
+                            outer_html: html.substring(0, maxLen - totalLen) + '... [truncated]',
+                        });
+                        break;
+                    }
+                    results.push({
+                        tag: el.tagName.toLowerCase(),
+                        id: el.id || null,
+                        outer_html: html,
+                    });
+                    totalLen += html.length;
+                }
+                return results;
+            }""", [selector, max_length])
+            return {
+                "selector": selector,
+                "count": len(elements),
+                "elements": elements,
+            }
+        else:
+            html = await session.page.content()
+            truncated = len(html) > max_length
+            return {
+                "html": html[:max_length] + ("... [truncated]" if truncated else ""),
+                "truncated": truncated,
+                "full_length": len(html),
+            }
+
+    elif name == "get_table_data":
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector", "table")
+        max_rows = args.get("max_rows", 100)
+
+        table_data = await session.page.evaluate("""(args) => {
+            const [selector, maxRows] = args;
+            const table = document.querySelector(selector);
+            if (!table) return null;
+
+            // Extract headers
+            let headers = [];
+            const thead = table.querySelector('thead');
+            if (thead) {
+                const headerRow = thead.querySelector('tr');
+                if (headerRow) {
+                    headers = Array.from(headerRow.querySelectorAll('th, td')).map(
+                        cell => cell.textContent.trim()
+                    );
+                }
+            }
+
+            // If no thead, use first row as headers
+            if (headers.length === 0) {
+                const firstRow = table.querySelector('tr');
+                if (firstRow) {
+                    headers = Array.from(firstRow.querySelectorAll('th, td')).map(
+                        cell => cell.textContent.trim()
+                    );
+                }
+            }
+
+            // Extract body rows
+            const rows = [];
+            const tbody = table.querySelector('tbody') || table;
+            const trs = tbody.querySelectorAll('tr');
+            const startIdx = (!thead && trs.length > 0) ? 1 : 0;  // skip header row if no thead
+
+            for (let i = startIdx; i < trs.length && rows.length < maxRows; i++) {
+                const cells = trs[i].querySelectorAll('td, th');
+                if (cells.length === 0) continue;
+                const row = {};
+                for (let j = 0; j < cells.length; j++) {
+                    const key = j < headers.length ? headers[j] : `col_${j}`;
+                    row[key] = cells[j].textContent.trim();
+                }
+                rows.push(row);
+            }
+
+            // Total rows count
+            const allBodyRows = tbody.querySelectorAll('tr');
+            const totalRows = allBodyRows.length - ((!thead && allBodyRows.length > 0) ? 1 : 0);
+
+            return { headers, rows, total_rows: totalRows };
+        }""", [selector, max_rows])
+
+        if table_data is None:
+            return {"success": False, "error": f"No table found matching '{selector}'"}
+
+        return {
+            "success": True,
+            "selector": selector,
+            "headers": table_data["headers"],
+            "rows": table_data["rows"],
+            "rows_returned": len(table_data["rows"]),
+            "total_rows": table_data["total_rows"],
+        }
+
+    elif name == "get_toast_messages":
+        session = session_manager.get_session(args["session_id"])
+        wait_ms = args.get("wait_ms", 0)
+        custom_selector = args.get("selector")
+
+        if wait_ms > 0:
+            await asyncio.sleep(wait_ms / 1000)
+
+        if custom_selector:
+            js_selectors = f'["{custom_selector}"]'
+        else:
+            js_selectors = """[
+                '[role="alert"]',
+                '[role="status"]',
+                '[aria-live="polite"]',
+                '[aria-live="assertive"]',
+                '.toast',
+                '.notification',
+                '[data-sonner-toast]',
+                '[data-radix-toast-announce]',
+                '.Toastify__toast',
+                '[class*="toast"]',
+                '[class*="notification"]',
+                '[class*="snackbar"]',
+            ]"""
+
+        messages = await session.page.evaluate("""(selectors) => {
+            const seen = new Set();
+            const results = [];
+            for (const sel of selectors) {
+                try {
+                    const els = document.querySelectorAll(sel);
+                    for (const el of els) {
+                        const text = el.textContent.trim();
+                        if (!text || seen.has(text)) continue;
+                        seen.add(text);
+                        const rect = el.getBoundingClientRect();
+                        results.push({
+                            text: text.substring(0, 500),
+                            selector_matched: sel,
+                            role: el.getAttribute('role') || null,
+                            visible: rect.width > 0 && rect.height > 0,
+                        });
+                    }
+                } catch(e) {}
+            }
+            return results;
+        }""", json.loads(js_selectors) if custom_selector else [
+            '[role="alert"]', '[role="status"]',
+            '[aria-live="polite"]', '[aria-live="assertive"]',
+            '.toast', '.notification',
+            '[data-sonner-toast]', '[data-radix-toast-announce]',
+            '.Toastify__toast',
+            '[class*="toast"]', '[class*="notification"]', '[class*="snackbar"]',
+        ])
+
+        return {
+            "count": len(messages),
+            "messages": messages,
+        }
+
+    elif name == "select_option":
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.select_option(
+            session.page,
+            args["selector"],
+            value=args.get("value"),
+            label=args.get("label"),
+            index=args.get("index"),
+        )
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_select_option"
+        )
+        result["screenshot_path"] = screenshot_path
+        return result
+
+    elif name == "get_response_body":
+        session = session_manager.get_session(args["session_id"])
+        url_pattern = args["url_pattern"]
+        method_filter = args.get("method")
+
+        matching = [
+            entry for entry in session.response_bodies
+            if url_pattern in entry["url"]
+            and (not method_filter or entry["method"].upper() == method_filter.upper())
+        ]
+
+        if not matching:
+            return {
+                "success": False,
+                "error": f"No response bodies found matching '{url_pattern}'",
+                "url_pattern": url_pattern,
+                "total_captured": len(session.response_bodies),
+            }
+
+        # Return the last matching entry
+        last = matching[-1]
+        return {
+            "success": True,
+            "url": last["url"],
+            "status": last["status"],
+            "method": last["method"],
+            "content_type": last["content_type"],
+            "body_text": last["body_text"],
+            "timestamp": last["timestamp"],
+            "match_count": len(matching),
+        }
+
+    # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
 
@@ -2678,7 +3059,10 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "tools": {
                     "click_element": {"params": "session_id, selector, force?", "note": "Click and get screenshot. force=true bypasses overlays."},
                     "fill_form": {"params": "session_id, fields[{selector,value}], submit_selector?", "note": "Fill fields, optionally submit"},
-                    "interact_and_test": {"params": "url|session_id, steps[], run_checks?[]", "note": "Multi-step scripted workflow (23 actions)"},
+                    "interact_and_test": {"params": "url|session_id, steps[], run_checks?[]", "note": "Multi-step scripted workflow (25 actions incl. force_fill, select_option)"},
+                    "force_fill": {"params": "session_id, selector, value", "note": "Fill input bypassing actionability checks (overlays, dialogs)"},
+                    "select_option": {"params": "session_id, selector, value?, label?, index?", "note": "Native <select> or custom dropdown (Radix/shadcn)"},
+                    "scroll_into_view": {"params": "session_id, selector", "note": "Scroll element into viewport without clicking"},
                     "get_page_elements": {"params": "selector, url|session_id, max_results?", "note": "List elements with attributes"},
                     "get_attribute": {"params": "selector, attributes[], url|session_id", "note": "Read specific HTML attributes"},
                     "extract_text": {"params": "selector, url|session_id", "note": "Get text content from elements"},
@@ -2693,6 +3077,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     "test_responsive": {"params": "url, viewports?[], run_checks?[]", "note": "Test at mobile/tablet/desktop viewports"},
                     "check_links": {"params": "url|session_id, check_external?, max_links?", "note": "Comprehensive link status checker"},
                     "measure_interaction": {"params": "session_id, selector, wait_for?", "note": "Measure click-to-result timing (ms)"},
+                    "get_table_data": {"params": "session_id, selector?, max_rows?", "note": "Parse HTML table into structured JSON with headers"},
+                    "get_toast_messages": {"params": "session_id, wait_ms?, selector?", "note": "Capture visible toast/notification messages"},
                 },
             },
             "workflow": {
@@ -2706,6 +3092,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     "handle_dialog": {"params": "session_id, action, prompt_text?", "note": "Accept/dismiss JS dialogs (call BEFORE triggering)"},
                     "upload_file": {"params": "session_id, selector, files[]", "note": "Set files on <input type=file>"},
                     "wait_for_network": {"params": "session_id, url_pattern, method?, timeout?", "note": "Wait for specific API request"},
+                    "wait_for_gone": {"params": "session_id, selector, timeout?", "note": "Wait for element to disappear (modal/spinner close)"},
+                    "get_page_html": {"params": "session_id, selector?, max_length?", "note": "Get raw outerHTML of elements or full page HTML"},
                 },
             },
             "advanced": {
@@ -2745,6 +3133,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     "diff_page_state": {"params": "session_id, name", "note": "Compare current DOM vs snapshot"},
                     "get_cookies": {"params": "session_id, domain_filter?", "note": "Read all session cookies"},
                     "check_color_contrast": {"params": "session_id, selector?, level?, max_results?", "note": "WCAG AA/AAA contrast ratio checks"},
+                    "get_response_body": {"params": "session_id, url_pattern, method?", "note": "Get actual API response body text (diagnose 400/500 errors)"},
                 },
             },
         }
@@ -2757,7 +3146,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Build response
         result = {
-            "total_tools": 59,
+            "total_tools": 67,
             "categories": len(catalog),
         }
 

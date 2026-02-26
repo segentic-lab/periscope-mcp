@@ -16,6 +16,7 @@ class PageSession:
     console_log: list = field(default_factory=list)
     console_errors: list = field(default_factory=list)
     network_log: list = field(default_factory=list)
+    response_bodies: list = field(default_factory=list)
     snapshots: dict = field(default_factory=dict)
 
 
@@ -41,6 +42,7 @@ class SessionManager:
         console_log = []
         console_errors = []
         network_log = []
+        response_bodies = []
 
         def on_console(msg):
             if msg.type == "error":
@@ -48,7 +50,7 @@ class SessionManager:
             else:
                 console_log.append(msg.text)
 
-        def on_response(response):
+        async def on_response(response):
             network_log.append({
                 "url": response.url,
                 "status": response.status,
@@ -56,6 +58,26 @@ class SessionManager:
                 "resource_type": response.request.resource_type,
                 "timestamp": time.time(),
             })
+            # Capture response bodies for fetch/xhr/document requests
+            if response.request.resource_type in ("fetch", "xhr", "document"):
+                try:
+                    body = await response.text()
+                    if len(body) > config.MAX_RESPONSE_BODY_SIZE:
+                        body = body[:config.MAX_RESPONSE_BODY_SIZE] + "... [truncated]"
+                    content_type = response.headers.get("content-type", "")
+                    response_bodies.append({
+                        "url": response.url,
+                        "status": response.status,
+                        "method": response.request.method,
+                        "content_type": content_type,
+                        "body_text": body,
+                        "timestamp": time.time(),
+                    })
+                    # Cap at 100 entries
+                    if len(response_bodies) > 100:
+                        response_bodies.pop(0)
+                except Exception:
+                    pass
 
         page.on("console", on_console)
         page.on("pageerror", lambda err: console_errors.append(str(err)))
@@ -74,6 +96,7 @@ class SessionManager:
             console_log=console_log,
             console_errors=console_errors,
             network_log=network_log,
+            response_bodies=response_bodies,
         )
         self.sessions[session_id] = session
         return session

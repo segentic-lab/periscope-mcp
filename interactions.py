@@ -24,6 +24,12 @@ async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     return {"url": page.url, "title": await page.title()}
 
 
+async def force_fill(page: Page, selector: str, value: str):
+    """Fill an input bypassing actionability checks. Uses force=True."""
+    locator = page.locator(selector).first
+    await locator.fill(value, force=True)
+
+
 async def fill_field(page: Page, selector: str, value: str):
     """Fill a single form field."""
     locator = page.locator(selector).first
@@ -62,6 +68,82 @@ async def fill_form(page: Page, fields: list[dict], submit_selector: str = None)
         result["title"] = await page.title()
 
     return result
+
+
+async def select_option(
+    page: Page, selector: str, value: str = None, label: str = None, index: int = None
+) -> dict:
+    """Select from native <select> or custom dropdown (Radix/shadcn combobox).
+
+    Detection: checks el.tagName == 'SELECT' vs role='combobox' / aria-haspopup.
+    Native: uses locator.select_option().
+    Custom: clicks to open, then finds option via cascade of selectors.
+    """
+    el_info = await page.evaluate("""(selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        return {
+            tagName: el.tagName.toLowerCase(),
+            role: el.getAttribute('role'),
+            ariaHasPopup: el.getAttribute('aria-haspopup'),
+        };
+    }""", selector)
+
+    if not el_info:
+        return {"success": False, "error": f"Element not found: {selector}"}
+
+    locator = page.locator(selector).first
+
+    # Native <select>
+    if el_info["tagName"] == "select":
+        if value is not None:
+            await locator.select_option(value=value)
+        elif label is not None:
+            await locator.select_option(label=label)
+        elif index is not None:
+            await locator.select_option(index=index)
+        else:
+            return {"success": False, "error": "Provide value, label, or index"}
+        return {"success": True, "method": "native_select"}
+
+    # Custom dropdown (combobox, radix, shadcn, etc.)
+    await locator.click()
+    await page.wait_for_timeout(300)  # let dropdown animate open
+
+    search_text = label or value or ""
+    if not search_text and index is not None:
+        # Try to pick by index from visible options
+        option = page.locator('[role="option"]').nth(index)
+        try:
+            await option.wait_for(state="visible", timeout=5000)
+            await option.click()
+            return {"success": True, "method": "custom_dropdown", "matched_by": "index"}
+        except Exception:
+            return {"success": False, "error": f"Could not find option at index {index}"}
+
+    # Cascade of selectors for finding the option by text
+    option_selectors = [
+        f'[role="option"]:has-text("{search_text}")',
+        f'[role="menuitem"]:has-text("{search_text}")',
+        f'li:has-text("{search_text}")',
+        f'[data-value="{value}"]' if value else None,
+        f'text="{search_text}"',
+    ]
+
+    for opt_sel in option_selectors:
+        if not opt_sel:
+            continue
+        try:
+            option = page.locator(opt_sel).first
+            await option.wait_for(state="visible", timeout=3000)
+            await option.click()
+            return {"success": True, "method": "custom_dropdown", "matched_by": opt_sel}
+        except Exception:
+            continue
+
+    # Fallback failed — close dropdown by pressing Escape
+    await page.keyboard.press("Escape")
+    return {"success": False, "error": f"Could not find option matching '{search_text}' in custom dropdown"}
 
 
 async def get_elements(page: Page, selector: str, max_results: int = 50) -> list[dict]:
@@ -138,6 +220,8 @@ async def execute_steps(
         go_forward: {action: "go_forward"} — browser forward button
         upload_file: {action: "upload_file", selector: str, files: [str]} — set files on file input
         wait_for_network: {action: "wait_for_network", url_pattern: str, method?: str, timeout?: int}
+        force_fill: {action: "force_fill", selector: str, value: str} — fill bypassing actionability checks
+        select_option: {action: "select_option", selector: str, value?: str, label?: str, index?: int} — native or custom dropdown
 
     Returns dict with step results and screenshots.
     """
@@ -301,6 +385,18 @@ async def execute_steps(
                 )
                 step_result["matched_url"] = response.url
                 step_result["status"] = response.status
+
+            elif action == "force_fill":
+                await force_fill(page, step["selector"], step["value"])
+
+            elif action == "select_option":
+                result = await select_option(
+                    page, step["selector"],
+                    value=step.get("value"),
+                    label=step.get("label"),
+                    index=step.get("index"),
+                )
+                step_result["select_result"] = result
 
             else:
                 step_result["success"] = False

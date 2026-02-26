@@ -61,7 +61,9 @@ close_session(session_id)
 ### Interactive Tools
 - `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
 - `fill_form(session_id, fields[], submit_selector?)` — Fill fields, optionally submit
-- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 23 actions: click, force_click, fill, type, select, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
+- `force_fill(session_id, selector, value)` — Fill input bypassing actionability checks (overlays, dialogs behind inputs)
+- `select_option(session_id, selector, value?, label?, index?)` — Select from native `<select>` or custom dropdown (Radix/shadcn combobox). Auto-detects type.
+- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
 - `get_page_elements(selector, url|session_id, max_results?)` — List matching elements with attributes
 - `get_attribute(selector, attributes[], url|session_id)` — Get specific HTML attribute values (data-*, aria-*, style, etc.)
 
@@ -71,6 +73,8 @@ close_session(session_id)
 - `test_responsive(url, viewports?[], run_checks?[])` — Test at mobile/tablet/desktop viewports
 - `check_links(url|session_id, check_external?, max_links?)` — Comprehensive link checker
 - `measure_interaction(session_id, selector, wait_for?)` — Measure click-to-result timing
+- `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
+- `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
 
 ### Advanced Tools
 - `record_session(url, steps[], project?)` — Record workflow as video
@@ -86,6 +90,9 @@ close_session(session_id)
 - `handle_dialog(session_id, action, prompt_text?)` — Accept/dismiss JS alert/confirm/prompt (call BEFORE triggering)
 - `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
 - `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
+- `wait_for_gone(session_id, selector, timeout?)` — Wait for element to disappear (modal close, spinner gone)
+- `scroll_into_view(session_id, selector)` — Scroll element into viewport without clicking
+- `get_page_html(session_id, selector?, max_length?)` — Get raw outerHTML of elements or full page HTML
 
 ### Advanced Testing Tools
 - `intercept_network(session_id, url_pattern, status?, body?, content_type?, once?)` — Mock API responses to test error/empty/loading states
@@ -106,6 +113,7 @@ close_session(session_id)
 - `diff_page_state(session_id, name)` — Compare current DOM vs snapshot: added/removed/changed elements + tag count changes
 - `get_cookies(session_id, domain_filter?)` — Read all cookies from session context
 - `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
+- `get_response_body(session_id, url_pattern, method?)` — Get actual API response body text. Critical for diagnosing 400/500 errors. Bodies captured automatically for fetch/xhr/document requests.
 
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
@@ -113,6 +121,7 @@ close_session(session_id)
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 10` — Max concurrent sessions
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle
+- `MAX_RESPONSE_BODY_SIZE = 102400` — Max response body capture size (100KB)
 
 ## Known Limitations
 - Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
