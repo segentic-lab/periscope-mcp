@@ -1038,7 +1038,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["all", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed"],
+                        "enum": ["all", "new", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed"],
                         "description": "Filter by category (default: 'all')"
                     }
                 },
@@ -3004,6 +3004,20 @@ async def _handle_tool(name: str, args: dict) -> dict:
         category = args.get("category", "all")
 
         catalog = {
+            "new": {
+                "name": "New Tools (Latest Release)",
+                "description": "8 new tools + 2 new interact_and_test actions added to reduce friction in interactive testing. Addresses: custom dropdowns, API response body inspection, overlay-blocked inputs, table parsing, toast capture, element waiting, HTML inspection, and scrolling.",
+                "tools": {
+                    "force_fill": {"params": "session_id, selector, value", "note": "NEW — Fill input bypassing actionability checks. Use when overlays/dialogs block normal fill."},
+                    "select_option": {"params": "session_id, selector, value?, label?, index?", "note": "NEW — Native <select> or custom dropdown (Radix/shadcn combobox). Auto-detects type, clicks to open custom dropdowns."},
+                    "get_table_data": {"params": "session_id, selector?, max_rows?", "note": "NEW — Parse HTML table into structured JSON {headers, rows[]}. No more concatenated text."},
+                    "get_response_body": {"params": "session_id, url_pattern, method?", "note": "NEW — Get actual API response body text. Critical for diagnosing 400/500 errors."},
+                    "get_toast_messages": {"params": "session_id, wait_ms?, selector?", "note": "NEW — Capture visible toast/notification messages (role=alert, Toastify, Sonner, Radix, etc.)"},
+                    "wait_for_gone": {"params": "session_id, selector, timeout?", "note": "NEW — Wait for element to disappear (modal close, spinner gone). Returns elapsed_ms."},
+                    "get_page_html": {"params": "session_id, selector?, max_length?", "note": "NEW — Get raw outerHTML of elements or full page HTML for component inspection."},
+                    "scroll_into_view": {"params": "session_id, selector", "note": "NEW — Scroll element into viewport without clicking. Good for lazy-loaded content."},
+                },
+            },
             "project": {
                 "name": "Project Management",
                 "description": "Create and manage testing projects. Each project represents a website.",
@@ -3186,6 +3200,19 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "click_element(session_id, '#load-btn') — triggers the mocked API",
                 "assert_condition(session_id, 'element_visible', '.error-message')",
             ],
+            "form_with_custom_dropdowns": [
+                "open_session(url) → session_id",
+                "force_fill(session_id, '#name', 'John') — fill even if overlay blocks",
+                "select_option(session_id, '[role=combobox]', label='Option A') — custom dropdown",
+                "click_element(session_id, '#submit')",
+                "get_toast_messages(session_id, wait_ms=1000) — capture success/error toast",
+                "get_response_body(session_id, '/api/submit') — see actual API response if error",
+            ],
+            "table_data_extraction": [
+                "open_session(url) → session_id",
+                "get_table_data(session_id, 'table.orders') — structured {headers, rows[]}",
+                "assert_condition(session_id, 'element_count', 'tbody tr', expected='10')",
+            ],
         }
 
         result["tips"] = [
@@ -3197,6 +3224,13 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "Use handle_dialog BEFORE the action that triggers the dialog.",
             "Network log is captured automatically — call get_network_log anytime to see API calls.",
             "force=true on click_element bypasses overlay interception (cookie banners, modals).",
+            "Use force_fill instead of fill_form when overlays or dialogs block inputs.",
+            "Use select_option for custom dropdowns (Radix, shadcn) — no more evaluate_js hacks.",
+            "Use get_table_data to parse tables into {headers, rows[]} instead of extract_text.",
+            "Use get_response_body after form submissions to see the actual 400/500 error body.",
+            "Use get_toast_messages with wait_ms to capture toasts that animate in after actions.",
+            "Use wait_for_gone to wait for modals/spinners to close before next action.",
+            "force_fill and select_option are also available as interact_and_test step actions.",
         ]
 
         result["catalog"] = {}
