@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "website-tester": {
-      "command": "/home/seba/WebsiteTesterAI/venv/bin/python",
-      "args": ["/home/seba/WebsiteTesterAI/server.py"]
+      "command": "/home/seba/PROJECTS/WebsiteTesterAI/venv/bin/python",
+      "args": ["/home/seba/PROJECTS/WebsiteTesterAI/server.py"]
     }
   }
 }
