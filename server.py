@@ -2035,7 +2035,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             return {"success": False, "error": f"Could not access iframe content for '{args['selector']}'"}
 
         # Create a new session entry pointing to the iframe's frame as a page-like object
-        import uuid, time
+        import uuid
         iframe_session_id = uuid.uuid4().hex[:12]
         from sessions import PageSession
         now = time.time()
