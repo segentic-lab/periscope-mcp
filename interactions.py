@@ -24,18 +24,51 @@ async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     return {"url": page.url, "title": await page.title()}
 
 
+_DATE_TYPES = {"date", "time", "datetime-local", "month", "week"}
+
+
+async def _get_input_type(page: Page, selector: str) -> str | None:
+    """Get the type attribute of an input element."""
+    return await page.evaluate("""(selector) => {
+        const el = document.querySelector(selector);
+        return el ? el.type : null;
+    }""", selector)
+
+
+async def _fill_date_input(page: Page, selector: str, value: str):
+    """Fill a date/datetime input and trigger React-compatible change events."""
+    await page.evaluate("""([selector, value]) => {
+        const el = document.querySelector(selector);
+        if (!el) throw new Error('Element not found: ' + selector);
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value'
+        ).set;
+        nativeSetter.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }""", [selector, value])
+
+
 async def force_fill(page: Page, selector: str, value: str):
     """Fill an input bypassing actionability checks. Uses force=True."""
-    locator = page.locator(selector).first
-    await locator.fill(value, force=True)
+    input_type = await _get_input_type(page, selector)
+    if input_type in _DATE_TYPES:
+        await _fill_date_input(page, selector, value)
+    else:
+        locator = page.locator(selector).first
+        await locator.fill(value, force=True)
 
 
 async def fill_field(page: Page, selector: str, value: str):
     """Fill a single form field."""
-    locator = page.locator(selector).first
-    await locator.wait_for(state="visible", timeout=10000)
-    await locator.click()
-    await locator.fill(value)
+    input_type = await _get_input_type(page, selector)
+    if input_type in _DATE_TYPES:
+        await _fill_date_input(page, selector, value)
+    else:
+        locator = page.locator(selector).first
+        await locator.wait_for(state="visible", timeout=10000)
+        await locator.click()
+        await locator.fill(value)
 
 
 async def fill_form(page: Page, fields: list[dict], submit_selector: str = None) -> dict:
@@ -255,10 +288,7 @@ async def execute_steps(
                 step_result["url"] = page.url
 
             elif action == "fill":
-                locator = page.locator(step["selector"]).first
-                await locator.wait_for(state="visible", timeout=10000)
-                await locator.click()
-                await locator.fill(step["value"])
+                await fill_field(page, step["selector"], step["value"])
 
             elif action == "type":
                 locator = page.locator(step["selector"]).first

@@ -125,7 +125,6 @@ close_session(session_id)
 
 ## Known Limitations
 - Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
-- Native date pickers (`<input type="date">`) — use `evaluate_js` to set `.value` directly
 
 ## Data
 - Projects: `data/projects.json` (contains credentials - never commit)

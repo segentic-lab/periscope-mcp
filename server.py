@@ -2407,6 +2407,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     filled.append({"selector": selector, "value": "checked", "type": "radio"})
                 elif f["type"] == "file":
                     filled.append({"selector": selector, "value": "skipped", "type": "file"})
+                elif f["type"] in interactions._DATE_TYPES:
+                    await interactions._fill_date_input(session.page, selector, str(value))
+                    filled.append({"selector": selector, "value": str(value), "type": f["type"]})
                 else:
                     locator = session.page.locator(selector).first
                     await locator.click()
@@ -3072,9 +3075,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "description": "Click, type, fill forms, and query elements on a session page.",
                 "tools": {
                     "click_element": {"params": "session_id, selector, force?", "note": "Click and get screenshot. force=true bypasses overlays."},
-                    "fill_form": {"params": "session_id, fields[{selector,value}], submit_selector?", "note": "Fill fields, optionally submit"},
-                    "interact_and_test": {"params": "url|session_id, steps[], run_checks?[]", "note": "Multi-step scripted workflow (25 actions incl. force_fill, select_option)"},
-                    "force_fill": {"params": "session_id, selector, value", "note": "Fill input bypassing actionability checks (overlays, dialogs)"},
+                    "fill_form": {"params": "session_id, fields[{selector,value}], submit_selector?", "note": "Fill fields, optionally submit. Auto-handles date/time inputs for React compatibility."},
+                    "interact_and_test": {"params": "url|session_id, steps[], run_checks?[]", "note": "Multi-step scripted workflow (25 actions incl. force_fill, select_option). fill/force_fill auto-handle date inputs."},
+                    "force_fill": {"params": "session_id, selector, value", "note": "Fill input bypassing actionability checks (overlays, dialogs). Auto-handles date/time inputs for React compatibility."},
                     "select_option": {"params": "session_id, selector, value?, label?, index?", "note": "Native <select> or custom dropdown (Radix/shadcn)"},
                     "scroll_into_view": {"params": "session_id, selector", "note": "Scroll element into viewport without clicking"},
                     "get_page_elements": {"params": "selector, url|session_id, max_results?", "note": "List elements with attributes"},
@@ -3140,7 +3143,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "tools": {
                     "assert_condition": {"params": "session_id, assertion, selector?, expected?, attribute?", "note": "Instant pass/fail: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals"},
                     "find_element": {"params": "session_id, text?, tag?, role?, near?", "note": "Smart finder — search by text, tag, role, or proximity"},
-                    "auto_fill_form": {"params": "session_id, form_selector?, overrides?, submit?", "note": "Auto-detect fields, infer types, fill with test data"},
+                    "auto_fill_form": {"params": "session_id, form_selector?, overrides?, submit?", "note": "Auto-detect fields, infer types, fill with test data. Date/time inputs filled with React-compatible events."},
                     "get_network_log": {"params": "session_id, url_filter?, clear?", "note": "All network requests (URL, status, method, type)"},
                     "snapshot_page_state": {"params": "session_id, name", "note": "Save URL + cookies + storage + DOM as checkpoint"},
                     "restore_page_state": {"params": "session_id, name", "note": "Restore a saved snapshot"},
@@ -3231,6 +3234,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "Use get_toast_messages with wait_ms to capture toasts that animate in after actions.",
             "Use wait_for_gone to wait for modals/spinners to close before next action.",
             "force_fill and select_option are also available as interact_and_test step actions.",
+            "Date/time inputs (date, time, datetime-local, month, week) are auto-handled in fill, force_fill, fill_form, and auto_fill_form — no evaluate_js needed.",
         ]
 
         result["catalog"] = {}
