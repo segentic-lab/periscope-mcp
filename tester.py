@@ -191,8 +191,12 @@ class WebsiteTester:
             for issue in r.get("issues", []):
                 all_issues.append({**issue, "url": r["url"]})
 
+        now = datetime.now()
         return {
             "project": project_name,
+            "date": now.strftime("%Y-%m-%d"),
+            "time": now.strftime("%H:%M:%S"),
+            "timestamp": now.isoformat(),
             "pages_tested": total,
             "successful": successful,
             "failed": total - successful,
