@@ -2500,14 +2500,17 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 const key = sessionStorage.key(i);
                 ss[key] = sessionStorage.getItem(key);
             }
-            // Capture a DOM signature for diff (id-bearing elements only, up to 500)
-            const elements = document.querySelectorAll('[id], [data-testid]');
+            // Capture a DOM signature for diff (all elements, up to 1000)
+            const elements = document.querySelectorAll('*');
             const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 500); i++) {
+            for (let i = 0; i < Math.min(elements.length, 1000); i++) {
                 const el = elements[i];
+                const cls = el.className && typeof el.className === 'string'
+                    ? el.className.trim().split(/\\s+/).slice(0, 2).join(' ') : null;
                 domSig.push({
                     tag: el.tagName.toLowerCase(),
                     id: el.id || el.getAttribute('data-testid') || null,
+                    cls: cls || null,
                     text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
                 });
             }
@@ -2582,13 +2585,16 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Get current DOM signature
         current_dom = await session.page.evaluate("""() => {
-            const elements = document.querySelectorAll('[id], [data-testid]');
+            const elements = document.querySelectorAll('*');
             const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 500); i++) {
+            for (let i = 0; i < Math.min(elements.length, 1000); i++) {
                 const el = elements[i];
+                const cls = el.className && typeof el.className === 'string'
+                    ? el.className.trim().split(/\\s+/).slice(0, 2).join(' ') : null;
                 domSig.push({
                     tag: el.tagName.toLowerCase(),
                     id: el.id || el.getAttribute('data-testid') || null,
+                    cls: cls || null,
                     text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
                 });
             }
@@ -2608,7 +2614,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             old_e = old_by_id[eid]
             new_e = new_by_id[eid]
             diffs = {}
-            for key in ["tag", "text"]:
+            for key in ["tag", "cls", "text"]:
                 if old_e.get(key) != new_e.get(key):
                     diffs[key] = {"old": old_e.get(key), "new": new_e.get(key)}
             if diffs:
@@ -2714,6 +2720,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     text: (el.textContent || '').trim().substring(0, 40),
                     ratio: Math.round(ratio * 100) / 100,
                     large: isLargeText,
+                    foreground: style.color,
+                    background: style.backgroundColor,
                 });
             }
             return results;
