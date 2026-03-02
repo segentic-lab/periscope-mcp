@@ -1650,12 +1650,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
         clear = args.get("clear", True)
 
         result = {
-            "session_id": session.session_id,
-            "url": session.url,
-            "console_log": list(session.console_log),
-            "console_errors": list(session.console_errors),
-            "console_log_count": len(session.console_log),
-            "console_error_count": len(session.console_errors),
+            "console_errors": list(session.console_errors)[-50:],
+            "console_log": list(session.console_log)[-100:],
         }
 
         if clear:
@@ -2311,12 +2307,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
                 candidates.push({
                     selector: bestSelector,
-                    tag: el.tagName.toLowerCase(),
-                    text: elText.substring(0, 100),
-                    id: el.id || null,
+                    text: elText.substring(0, 60),
                     role: el.getAttribute('role') || null,
-                    type: el.getAttribute('type') || null,
-                    name: el.getAttribute('name') || null,
                     aria_label: el.getAttribute('aria-label') || null,
                     distance: nearRect ? Math.round(distance) : null,
                 });
@@ -2425,25 +2417,25 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 if f["tag"] == "select" and f["options"]:
                     # Pick first non-empty option
                     await session.page.locator(selector).first.select_option(f["options"][0])
-                    filled.append({"selector": selector, "value": f["options"][0], "type": "select"})
+                    filled.append({"selector": selector, "value": f["options"][0]})
                 elif f["type"] == "checkbox":
                     await session.page.locator(selector).first.check()
-                    filled.append({"selector": selector, "value": "checked", "type": "checkbox"})
+                    filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "radio":
                     await session.page.locator(selector).first.check()
-                    filled.append({"selector": selector, "value": "checked", "type": "radio"})
+                    filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "file":
-                    filled.append({"selector": selector, "value": "skipped", "type": "file"})
+                    filled.append({"selector": selector, "value": "skipped"})
                 elif f["type"] in interactions._DATE_TYPES:
                     await interactions._fill_date_input(session.page, selector, str(value))
-                    filled.append({"selector": selector, "value": str(value), "type": f["type"]})
+                    filled.append({"selector": selector, "value": str(value)})
                 else:
                     locator = session.page.locator(selector).first
                     await locator.click()
                     await locator.fill(str(value))
-                    filled.append({"selector": selector, "value": str(value), "type": f["type"]})
+                    filled.append({"selector": selector, "value": str(value)})
             except Exception as e:
-                filled.append({"selector": selector, "error": str(e), "type": f["type"]})
+                filled.append({"selector": selector, "error": str(e)[:100]})
 
         result = {"success": True, "fields_filled": filled, "submitted": False}
 
@@ -2472,10 +2464,19 @@ async def _handle_tool(name: str, args: dict) -> dict:
         if url_filter:
             log = [entry for entry in log if url_filter in entry["url"]]
 
+        capped = log[-100:]
         result = {
             "total_requests": len(session.network_log),
             "filtered_count": len(log),
-            "requests": log[-200:],  # Cap at last 200
+            "requests": [
+                {
+                    "url": e["url"] if len(e["url"]) <= 120 else "..." + e["url"][-117:],
+                    "status": e["status"],
+                    "method": e["method"],
+                    "resource_type": e["resource_type"],
+                }
+                for e in capped
+            ],
         }
 
         if clear:
@@ -2499,16 +2500,15 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 const key = sessionStorage.key(i);
                 ss[key] = sessionStorage.getItem(key);
             }
-            // Capture a DOM signature for diff
-            const elements = document.querySelectorAll('*');
+            // Capture a DOM signature for diff (id-bearing elements only, up to 500)
+            const elements = document.querySelectorAll('[id], [data-testid]');
             const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 2000); i++) {
+            for (let i = 0; i < Math.min(elements.length, 500); i++) {
                 const el = elements[i];
                 domSig.push({
                     tag: el.tagName.toLowerCase(),
-                    id: el.id || null,
-                    class: el.className && typeof el.className === 'string' ? el.className : null,
-                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 100) : null,
+                    id: el.id || el.getAttribute('data-testid') || null,
+                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
                 });
             }
             return { localStorage: ls, sessionStorage: ss, domSignature: domSig };
@@ -2582,15 +2582,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Get current DOM signature
         current_dom = await session.page.evaluate("""() => {
-            const elements = document.querySelectorAll('*');
+            const elements = document.querySelectorAll('[id], [data-testid]');
             const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 2000); i++) {
+            for (let i = 0; i < Math.min(elements.length, 500); i++) {
                 const el = elements[i];
                 domSig.push({
                     tag: el.tagName.toLowerCase(),
-                    id: el.id || null,
-                    class: el.className && typeof el.className === 'string' ? el.className : null,
-                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 100) : null,
+                    id: el.id || el.getAttribute('data-testid') || null,
+                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
                 });
             }
             return domSig;
@@ -2609,7 +2608,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             old_e = old_by_id[eid]
             new_e = new_by_id[eid]
             diffs = {}
-            for key in ["tag", "class", "text"]:
+            for key in ["tag", "text"]:
                 if old_e.get(key) != new_e.get(key):
                     diffs[key] = {"old": old_e.get(key), "new": new_e.get(key)}
             if diffs:
@@ -2712,12 +2711,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
                 results.push({
                     selector: selector_str,
-                    text: (el.textContent || '').trim().substring(0, 60),
-                    foreground: style.color,
-                    background: style.backgroundColor,
+                    text: (el.textContent || '').trim().substring(0, 40),
                     ratio: Math.round(ratio * 100) / 100,
-                    font_size: fontSize,
-                    is_large_text: isLargeText,
+                    large: isLargeText,
                 });
             }
             return results;
@@ -2732,26 +2728,17 @@ async def _handle_tool(name: str, args: dict) -> dict:
         failures = []
         for el in elements:
             ratio = el["ratio"]
-            is_large = el["is_large_text"]
-
-            if level == "AA":
-                threshold = aa_large if is_large else aa_normal
-            else:
-                threshold = aaa_large if is_large else aaa_normal
-
+            is_large = el["large"]
+            threshold = (aa_large if is_large else aa_normal) if level == "AA" else (aaa_large if is_large else aaa_normal)
             if ratio < threshold:
-                el["required_ratio"] = threshold
-                el["level"] = level
-                el["passed"] = False
+                el["required"] = threshold
                 failures.append(el)
-            else:
-                el["passed"] = True
 
         return {
             "level": level,
-            "elements_checked": len(elements),
-            "failures": len(failures),
-            "failing_elements": failures[:30],
+            "checked": len(elements),
+            "fail_count": len(failures),
+            "failures": failures[:30],
         }
 
     # ------------------------------------------------------------------
@@ -3018,15 +3005,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Return the last matching entry
         last = matching[-1]
+        url = last["url"]
         return {
             "success": True,
-            "url": last["url"],
+            "url": url if len(url) <= 120 else "..." + url[-117:],
             "status": last["status"],
             "method": last["method"],
             "content_type": last["content_type"],
             "body_text": last["body_text"],
-            "timestamp": last["timestamp"],
-            "match_count": len(matching),
         }
 
     # ------------------------------------------------------------------

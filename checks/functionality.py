@@ -178,7 +178,7 @@ async def check_all_links(
         const anchors = document.querySelectorAll('a[href]');
         return Array.from(anchors).map(a => ({
             href: a.href,
-            text: (a.textContent || '').trim().substring(0, 100),
+            text: (a.textContent || '').trim().substring(0, 40),
         })).filter(l => l.href && !l.href.startsWith('javascript:') && !l.href.startsWith('mailto:') && !l.href.startsWith('tel:'));
     }""")
 

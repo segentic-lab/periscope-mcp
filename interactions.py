@@ -188,11 +188,13 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
         for (let i = 0; i < Math.min(els.length, maxResults); i++) {
             const el = els[i];
             const rect = el.getBoundingClientRect();
+            const cls = el.className && typeof el.className === 'string'
+                ? el.className.trim().split(/\s+/).slice(0, 3).join(' ') : null;
             results.push({
                 tag: el.tagName.toLowerCase(),
-                text: (el.textContent || '').trim().substring(0, 100),
+                text: (el.textContent || '').trim().substring(0, 80),
                 id: el.id || null,
-                class: el.className || null,
+                class: cls || null,
                 href: el.getAttribute('href') || null,
                 value: el.value || null,
                 type: el.getAttribute('type') || null,
