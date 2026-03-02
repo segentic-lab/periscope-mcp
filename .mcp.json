@@ -4,9 +4,13 @@
       "command": "/home/seba/PROJECTS/WebsiteTesterAI/venv/bin/python",
       "args": ["/home/seba/PROJECTS/WebsiteTesterAI/server.py"]
     },
+    "mdMCP": {
+      "command": "/home/seba/PROJECTS/mdMCP/.venv/bin/python",
+      "args": ["/home/seba/PROJECTS/mdMCP/server.py"]
+    },
     "aiiotalk": {
       "type": "http",
       "url": "http://localhost:3100/mcp"
-    }
+    },
   }
 }
