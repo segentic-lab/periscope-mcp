@@ -1,3 +1,6 @@
 mcp>=1.0.0
 playwright>=1.40.0
 Pillow>=10.0.0
+ddgs>=9.0.0
+httpx>=0.25.0
+beautifulsoup4>=4.12.0

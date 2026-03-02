@@ -11,9 +11,9 @@ MAX_PAGES = 20
 MAX_DEPTH = 3
 
 # Session settings
-MAX_SESSIONS = 10
+MAX_SESSIONS = 20
 SESSION_TIMEOUT = 300  # seconds
-MAX_RESPONSE_BODY_SIZE = 102400  # 100KB max per response body capture
+MAX_RESPONSE_BODY_SIZE = 512000  # 500KB max per response body capture
 
 # Storage paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

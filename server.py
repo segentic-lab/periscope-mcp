@@ -1029,6 +1029,33 @@ async def list_tools() -> list[Tool]:
             }
         ),
 
+        # Web Search & Fetch
+        Tool(
+            name="web_search",
+            description="Search DuckDuckGo and return titles, URLs, and snippets. Useful for looking up documentation, verifying external content, or researching during testing workflows.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "max_results": {"type": "integer", "description": "Max results to return (default: 10)", "default": 10}
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="web_fetch",
+            description="Fetch a URL and extract readable text content. Use to read documentation pages, verify external link content, or inspect page text without a browser.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to fetch"},
+                    "max_length": {"type": "integer", "description": "Max content length in characters (default: 50000)", "default": 50000},
+                    "raw_html": {"type": "boolean", "description": "Return raw HTML instead of extracted text (default: false)", "default": False}
+                },
+                "required": ["url"]
+            }
+        ),
+
         # Discovery
         Tool(
             name="describe_tools",
@@ -1038,7 +1065,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["all", "new", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed"],
+                        "enum": ["all", "new", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed", "web"],
                         "description": "Filter by category (default: 'all')"
                     }
                 },
@@ -2787,11 +2814,12 @@ async def _handle_tool(name: str, args: dict) -> dict:
         if selector:
             elements = await session.page.evaluate("""(args) => {
                 const [selector, maxLen] = args;
+                const stripBase64 = html => html.replace(/(<[^>]+(?:src|href|data|style)=["'])data:[^;]+;base64,[^"']+/gi, '$1[base64-removed]');
                 const els = document.querySelectorAll(selector);
                 const results = [];
                 let totalLen = 0;
                 for (const el of els) {
-                    const html = el.outerHTML;
+                    const html = stripBase64(el.outerHTML);
                     if (totalLen + html.length > maxLen) {
                         results.push({
                             tag: el.tagName.toLowerCase(),
@@ -2816,6 +2844,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
             }
         else:
             html = await session.page.content()
+            import re
+            html = re.sub(r'(<[^>]+(?:src|href|data|style)=["\'])data:[^;]+;base64,[^"\']+', r'\1[base64-removed]', html, flags=re.IGNORECASE)
             truncated = len(html) > max_length
             return {
                 "html": html[:max_length] + ("... [truncated]" if truncated else ""),
@@ -3000,6 +3030,56 @@ async def _handle_tool(name: str, args: dict) -> dict:
         }
 
     # ------------------------------------------------------------------
+    # Web Search & Fetch
+    # ------------------------------------------------------------------
+
+    elif name == "web_search":
+        from ddgs import DDGS
+        query = args["query"]
+        max_results = args.get("max_results", 10)
+        results = DDGS().text(query, max_results=max_results)
+        formatted = []
+        for r in results:
+            formatted.append({
+                "title": r.get("title", ""),
+                "url": r.get("href", ""),
+                "snippet": r.get("body", ""),
+            })
+        return {
+            "query": query,
+            "results": formatted,
+            "count": len(formatted),
+        }
+
+    elif name == "web_fetch":
+        import httpx
+        from bs4 import BeautifulSoup
+        url = args["url"]
+        max_length = args.get("max_length", 50000)
+        raw_html = args.get("raw_html", False)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=False) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
+        title_tag = soup.find("title")
+        title = title_tag.get_text(strip=True) if title_tag else ""
+        if raw_html:
+            content = html[:max_length]
+        else:
+            for tag in soup(["script", "style", "img", "svg", "picture", "video", "audio", "canvas", "iframe", "source", "noscript"]):
+                tag.decompose()
+            content = soup.get_text(separator="\n", strip=True)[:max_length]
+        return {
+            "url": str(response.url),
+            "title": title,
+            "content": content,
+            "length": len(content),
+            "content_type": content_type,
+        }
+
+    # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
 
@@ -3153,6 +3233,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     "get_response_body": {"params": "session_id, url_pattern, method?", "note": "Get actual API response body text (diagnose 400/500 errors)"},
                 },
             },
+            "web": {
+                "name": "Web Search & Fetch",
+                "description": "Search the internet and fetch page content.",
+                "tools": {
+                    "web_search": {"params": "query, max_results?", "note": "Search DuckDuckGo, returns titles + URLs + snippets"},
+                    "web_fetch": {"params": "url, max_length?, raw_html?", "note": "Fetch URL and extract readable text content"},
+                },
+            },
         }
 
         # Filter by category
@@ -3163,7 +3251,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Build response
         result = {
-            "total_tools": 67,
+            "total_tools": 69,
             "categories": len(catalog),
         }
 
@@ -3235,6 +3323,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "Use wait_for_gone to wait for modals/spinners to close before next action.",
             "force_fill and select_option are also available as interact_and_test step actions.",
             "Date/time inputs (date, time, datetime-local, month, week) are auto-handled in fill, force_fill, fill_form, and auto_fill_form — no evaluate_js needed.",
+            "Use web_search to find documentation or examples, then web_fetch to read the full page content.",
         ]
 
         result["catalog"] = {}

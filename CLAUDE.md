@@ -115,13 +115,17 @@ close_session(session_id)
 - `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
 - `get_response_body(session_id, url_pattern, method?)` — Get actual API response body text. Critical for diagnosing 400/500 errors. Bodies captured automatically for fetch/xhr/document requests.
 
+### Web Tools
+- `web_search(query, max_results?)` — Search DuckDuckGo, returns titles + URLs + snippets
+- `web_fetch(url, max_length?, raw_html?)` — Fetch URL and extract readable text content (or raw HTML)
+
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 
 ### Session Config (`config.py`)
-- `MAX_SESSIONS = 10` — Max concurrent sessions
+- `MAX_SESSIONS = 20` — Max concurrent sessions
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle
-- `MAX_RESPONSE_BODY_SIZE = 102400` — Max response body capture size (100KB)
+- `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
 
 ## Known Limitations
 - Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
