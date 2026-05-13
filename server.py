@@ -48,7 +48,8 @@ async def list_tools() -> list[Tool]:
                     "name": {"type": "string", "description": "Unique project name (e.g., 'mysite')"},
                     "base_url": {"type": "string", "description": "Base URL of the website (e.g., 'https://example.com')"},
                     "max_pages": {"type": "integer", "description": "Max pages to crawl (default: 20)", "default": 20},
-                    "max_depth": {"type": "integer", "description": "Max crawl depth (default: 3)", "default": 3}
+                    "max_depth": {"type": "integer", "description": "Max crawl depth (default: 3)", "default": 3},
+                    "screenshot_dir": {"type": "string", "description": "Absolute path to save screenshots (e.g. '/home/user/myproject/e2e_testing'). Defaults to built-in data/screenshots/ if omitted."}
                 },
                 "required": ["name", "base_url"]
             }
@@ -116,7 +117,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "project": {"type": "string", "description": "Project name"},
                     "cookies": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "List of cookies with name, value, domain",
                         "items": {
                             "type": "object",
@@ -152,7 +153,7 @@ async def list_tools() -> list[Tool]:
                     "url": {"type": "string", "description": "URL to test"},
                     "project": {"type": "string", "description": "Project name (optional, uses 'default' if not specified)"},
                     "checks": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Types of checks to run (visual, accessibility, functionality, seo, performance). Default: all",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
                     }
@@ -182,7 +183,7 @@ async def list_tools() -> list[Tool]:
                     "project": {"type": "string", "description": "Project name"},
                     "max_pages": {"type": "integer", "description": "Override max pages"},
                     "checks": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Types of checks to run",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
                     }
@@ -265,7 +266,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector of element to click"},
-                    "force": {"type": "boolean", "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."}
+                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."}
                 },
                 "required": ["session_id", "selector"]
             }
@@ -278,7 +279,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "fields": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Fields to fill: [{selector, value}]",
                         "items": {
                             "type": "object",
@@ -303,7 +304,7 @@ async def list_tools() -> list[Tool]:
                     "url": {"type": "string", "description": "URL to open (creates ephemeral page if no session_id)"},
                     "session_id": {"type": "string", "description": "Existing session ID (alternative to url)"},
                     "steps": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Steps to execute. Each step has 'action' and action-specific fields.",
                         "items": {
                             "type": "object",
@@ -322,7 +323,7 @@ async def list_tools() -> list[Tool]:
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
                                 "label": {"type": "string", "description": "Label for screenshot filename"},
-                                "force": {"type": "boolean", "description": "Bypass actionability checks on click (default: false)"},
+                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks on click (default: false)"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
@@ -336,7 +337,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "project": {"type": "string", "description": "Project name (optional)"},
                     "run_checks": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Checks to run after steps complete (visual, accessibility, functionality, seo, performance)",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
                     },
@@ -398,7 +399,7 @@ async def list_tools() -> list[Tool]:
                     "url": {"type": "string", "description": "URL to test"},
                     "project": {"type": "string", "description": "Project name (optional)"},
                     "viewports": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Custom viewports [{name, width, height}]. Default: mobile (375x812), tablet (768x1024), desktop (1920x1080)",
                         "items": {
                             "type": "object",
@@ -411,7 +412,7 @@ async def list_tools() -> list[Tool]:
                         }
                     },
                     "run_checks": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Checks to run at each viewport",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
                     }
@@ -456,9 +457,35 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "url": {"type": "string", "description": "URL to open"},
                     "steps": {
-                        "type": "array",
-                        "description": "Steps to execute (same format as interact_and_test)",
-                        "items": {"type": "object"}
+                        "type": ["array", "string"],
+                        "description": "Steps to execute (same format as interact_and_test).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "description": "Action to perform"
+                                },
+                                "selector": {"type": "string", "description": "CSS selector"},
+                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "text": {"type": "string", "description": "Text to type or wait for"},
+                                "target": {"type": "string", "description": "Drop target selector (for drag)"},
+                                "key": {"type": "string", "description": "Key to press (for press_key)"},
+                                "url": {"type": "string", "description": "URL (for navigate)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "state": {"type": "string", "description": "State to wait for (visible, hidden, attached, detached)"},
+                                "label": {"type": "string", "description": "Label for screenshot"},
+                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks"},
+                                "script": {"type": "string", "description": "JavaScript to evaluate"},
+                                "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
+                                "amount": {"type": "integer", "description": "Scroll amount in pixels"},
+                                "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
+                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
+                                "index": {"type": "integer", "description": "Option index (for select_option)"}
+                            },
+                            "required": ["action"]
+                        }
                     },
                     "project": {"type": "string", "description": "Project name (optional)"}
                 },
@@ -500,9 +527,31 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "steps": {
-                        "type": "array",
-                        "description": "Steps to execute (same format as interact_and_test)",
-                        "items": {"type": "object"}
+                        "type": ["array", "string"],
+                        "description": "Steps to execute (same format as interact_and_test).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "description": "Action to perform"
+                                },
+                                "selector": {"type": "string", "description": "CSS selector"},
+                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "text": {"type": "string", "description": "Text to type or wait for"},
+                                "key": {"type": "string", "description": "Key to press (for press_key)"},
+                                "url": {"type": "string", "description": "URL (for navigate)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "state": {"type": "string", "description": "State to wait for"},
+                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks"},
+                                "script": {"type": "string", "description": "JavaScript to evaluate"},
+                                "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
+                                "amount": {"type": "integer", "description": "Scroll amount in pixels"},
+                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"}
+                            },
+                            "required": ["action"]
+                        }
                     }
                 },
                 "required": ["session_id", "steps"]
@@ -540,7 +589,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "selector": {"type": "string", "description": "CSS selector to match elements"},
                     "attributes": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Attribute names to extract (e.g. ['data-id', 'aria-expanded', 'style'])",
                         "items": {"type": "string"}
                     },
@@ -596,7 +645,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "checks": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Check types to run (default: all)",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
                     }
@@ -648,7 +697,7 @@ async def list_tools() -> list[Tool]:
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector for the file input"},
                     "files": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "File paths to upload",
                         "items": {"type": "string"}
                     }
@@ -698,7 +747,7 @@ async def list_tools() -> list[Tool]:
                     "session_id": {"type": "string", "description": "Session ID"},
                     "storage": {"type": "string", "enum": ["local", "session"], "description": "Storage type (default: 'local')"},
                     "keys": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "Specific keys to read (optional, reads all if omitted)",
                         "items": {"type": "string"}
                     }
@@ -755,7 +804,7 @@ async def list_tools() -> list[Tool]:
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector"},
                     "properties": {
-                        "type": "array",
+                        "type": ["array", "string"],
                         "description": "CSS properties to read (e.g. ['color', 'font-size', 'display', 'opacity', 'background-color'])",
                         "items": {"type": "string"}
                     },
@@ -1091,14 +1140,30 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 async def _handle_tool(name: str, args: dict) -> dict:
     """Route tool calls to handlers."""
 
+    # Coerce JSON-string arrays: MCP clients with stale schemas may serialize
+    # array parameters as JSON strings. Auto-parse any string arg that looks
+    # like a JSON array or object so all handlers receive the correct types.
+    for key, val in list(args.items()):
+        if isinstance(val, str) and len(val) > 1 and val[0] in ('[', '{'):
+            try:
+                args[key] = json.loads(val)
+            except json.JSONDecodeError:
+                pass
+        elif isinstance(val, str) and val.lower() in ('true', 'false'):
+            args[key] = val.lower() == 'true'
+
     # Project Management
     if name == "create_project":
         try:
+            screenshot_dir = args.get("screenshot_dir")
+            if screenshot_dir:
+                os.makedirs(os.path.join(screenshot_dir, args["name"]), exist_ok=True)
             project = project_manager.create(
                 name=args["name"],
                 base_url=args["base_url"],
                 max_pages=args.get("max_pages", 20),
-                max_depth=args.get("max_depth", 3)
+                max_depth=args.get("max_depth", 3),
+                screenshot_dir=screenshot_dir
             )
             return {
                 "success": True,
@@ -1176,11 +1241,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
         t = await get_tester()
         project_name = args.get("project", "default")
         checks = args.get("checks")
+        proj_obj = project_manager.get(project_name)
+        proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
 
         result = await t.test_url(
             url=args["url"],
             project_name=project_name,
-            checks=checks
+            checks=checks,
+            screenshot_dir=proj_screenshot_dir
         )
         return result
 
@@ -1226,7 +1294,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Test all pages
         checks = args.get("checks", project.test_types)
-        results = await t.test_multiple(urls, project.name, checks)
+        results = await t.test_multiple(urls, project.name, checks, screenshot_dir=project.screenshot_dir)
 
         # Save report
         report_path = await t.save_report(results, project.name)
@@ -1288,9 +1356,11 @@ async def _handle_tool(name: str, args: dict) -> dict:
         t = await get_tester()
         project_name = args.get("project", "default")
         context = await t.get_context(project_name)
-        session = await session_manager.create_session(context, args["url"], project_name)
+        proj_obj = project_manager.get(project_name)
+        proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
+        session = await session_manager.create_session(context, args["url"], project_name, screenshot_dir=proj_screenshot_dir)
         screenshot_path = await interactions.take_screenshot(
-            session.page, project_name, "session_open"
+            session.page, project_name, "session_open", screenshot_dir=proj_screenshot_dir
         )
         return {
             "success": True,
@@ -1318,8 +1388,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         )
         session.url = result["url"]
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_click"
-        )
+            session.page, session.project_name, "after_click", screenshot_dir=session.screenshot_dir)
         result["screenshot_path"] = screenshot_path
         return result
 
@@ -1333,8 +1402,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         if result.get("submitted"):
             session.url = result.get("url", session.url)
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_fill"
-        )
+            session.page, session.project_name, "after_fill", screenshot_dir=session.screenshot_dir)
         result["screenshot_path"] = screenshot_path
         return result
 
@@ -1520,13 +1588,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
         )
         session.url = result["url"]
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_measure"
-        )
+            session.page, session.project_name, "after_measure", screenshot_dir=session.screenshot_dir)
         result["screenshot_path"] = screenshot_path
         return result
 
     # Phase 3: Nice-to-Have
     elif name == "record_session":
+        if isinstance(args.get("steps"), str):
+            args["steps"] = json.loads(args["steps"])
         t = await get_tester()
         project_name = args.get("project", "default")
         video_dir = os.path.join(config.DATA_DIR, "videos", project_name)
@@ -1535,6 +1604,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         context = await t.browser.new_context(
             viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
             record_video_dir=video_dir,
+            ignore_https_errors=True,
         )
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
@@ -1625,6 +1695,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 await page.close()
 
     elif name == "check_console_during_interaction":
+        if isinstance(args.get("steps"), str):
+            args["steps"] = json.loads(args["steps"])
         session = session_manager.get_session(args["session_id"])
         # Clear existing console buffers
         pre_log_count = len(session.console_log)
@@ -1768,8 +1840,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         await session.page.set_viewport_size({"width": width, "height": height})
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, f"viewport_{width}x{height}"
-        )
+            session.page, session.project_name, f"viewport_{width}x{height}", screenshot_dir=session.screenshot_dir)
         return {
             "success": True,
             "viewport": {"width": width, "height": height},
@@ -1783,11 +1854,11 @@ async def _handle_tool(name: str, args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         full_page = args.get("full_page", True)
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "session_state"
-        )
+            session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir)
         if not full_page:
             # Retake as viewport-only screenshot
-            project_dir = os.path.join(config.SCREENSHOT_DIR, session.project_name)
+            base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
+            project_dir = os.path.join(base_dir, session.project_name)
             os.makedirs(project_dir, exist_ok=True)
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -1823,8 +1894,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             performance = await get_performance_metrics(page)
 
         screenshot_path = await interactions.take_screenshot(
-            page, session.project_name, "after_checks"
-        )
+            page, session.project_name, "after_checks", screenshot_dir=session.screenshot_dir)
 
         issues_by_severity = {}
         issues_by_type = {}
@@ -1850,8 +1920,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         await session.page.go_back(wait_until="networkidle")
         session.url = session.page.url
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_back"
-        )
+            session.page, session.project_name, "after_back", screenshot_dir=session.screenshot_dir)
         return {
             "url": session.url,
             "title": await session.page.title(),
@@ -1863,8 +1932,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         await session.page.go_forward(wait_until="networkidle")
         session.url = session.page.url
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_forward"
-        )
+            session.page, session.project_name, "after_forward", screenshot_dir=session.screenshot_dir)
         return {
             "url": session.url,
             "title": await session.page.title(),
@@ -1913,8 +1981,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         await locator.set_input_files(files)
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_upload"
-        )
+            session.page, session.project_name, "after_upload", screenshot_dir=session.screenshot_dir)
         return {
             "success": True,
             "files_set": files,
@@ -2087,8 +2154,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         await session.page.reload(wait_until="networkidle")
         session.url = session.page.url
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_reload"
-        )
+            session.page, session.project_name, "after_reload", screenshot_dir=session.screenshot_dir)
         return {
             "url": session.url,
             "title": await session.page.title(),
@@ -2179,8 +2245,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         await _asyncio.sleep(0.3)
 
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, f"dark_mode_{mode}"
-        )
+            session.page, session.project_name, f"dark_mode_{mode}", screenshot_dir=session.screenshot_dir)
         return {
             "mode": mode,
             "screenshot_path": screenshot_path,
@@ -2757,8 +2822,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         await interactions.force_fill(session.page, args["selector"], args["value"])
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_force_fill"
-        )
+            session.page, session.project_name, "after_force_fill", screenshot_dir=session.screenshot_dir)
         return {
             "success": True,
             "selector": args["selector"],
@@ -2771,8 +2835,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         locator = session.page.locator(args["selector"]).first
         await locator.scroll_into_view_if_needed(timeout=10000)
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_scroll"
-        )
+            session.page, session.project_name, "after_scroll", screenshot_dir=session.screenshot_dir)
         return {
             "success": True,
             "selector": args["selector"],
@@ -2987,8 +3050,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             index=args.get("index"),
         )
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_select_option"
-        )
+            session.page, session.project_name, "after_select_option", screenshot_dir=session.screenshot_dir)
         result["screenshot_path"] = screenshot_path
         return result
 

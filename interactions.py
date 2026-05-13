@@ -211,9 +211,10 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
     return elements
 
 
-async def take_screenshot(page: Page, project_name: str, label: str = "") -> str:
+async def take_screenshot(page: Page, project_name: str, label: str = "", screenshot_dir: str = None) -> str:
     """Take a screenshot and save it. Returns the file path."""
-    project_dir = os.path.join(config.SCREENSHOT_DIR, project_name)
+    base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
+    project_dir = os.path.join(base_dir, project_name)
     os.makedirs(project_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     suffix = f"_{label}" if label else ""
@@ -358,7 +359,20 @@ async def execute_steps(
                 await page.evaluate("""(args) => {
                     const [selector, dx, dy] = args;
                     const el = document.querySelector(selector);
-                    if (el) el.scrollBy(dx, dy);
+                    if (!el) { window.scrollBy(dx, dy); return; }
+                    // Fall back to window.scrollBy for body/html or non-scrollable elements
+                    const tag = el.tagName.toLowerCase();
+                    const style = getComputedStyle(el);
+                    const overflowY = style.overflowY;
+                    const overflowX = style.overflowX;
+                    const scrollableY = el.scrollHeight > el.clientHeight && (overflowY === 'scroll' || overflowY === 'auto' || overflowY === 'overlay');
+                    const scrollableX = el.scrollWidth > el.clientWidth && (overflowX === 'scroll' || overflowX === 'auto' || overflowX === 'overlay');
+                    const isWindow = tag === 'body' || tag === 'html';
+                    if (isWindow || (!scrollableY && dy !== 0) || (!scrollableX && dx !== 0)) {
+                        window.scrollBy(dx, dy);
+                    } else {
+                        el.scrollBy(dx, dy);
+                    }
                 }""", [step["selector"], dx, dy])
 
             elif action == "evaluate_js":

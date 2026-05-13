@@ -47,6 +47,7 @@ class Project:
     created_at: str = ""
     last_tested: str = ""
     is_logged_in: bool = False
+    screenshot_dir: Optional[str] = None
 
     def to_dict(self) -> dict:
         data = {
@@ -58,6 +59,7 @@ class Project:
             "created_at": self.created_at,
             "last_tested": self.last_tested,
             "is_logged_in": self.is_logged_in,
+            "screenshot_dir": self.screenshot_dir,
             "auth": None
         }
         if self.auth:
@@ -93,7 +95,8 @@ class Project:
             test_types=data.get("test_types", ["visual", "accessibility", "seo", "performance", "functionality"]),
             created_at=data.get("created_at", ""),
             last_tested=data.get("last_tested", ""),
-            is_logged_in=data.get("is_logged_in", False)
+            is_logged_in=data.get("is_logged_in", False),
+            screenshot_dir=data.get("screenshot_dir", None)
         )
 
 

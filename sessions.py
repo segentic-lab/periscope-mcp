@@ -18,6 +18,7 @@ class PageSession:
     network_log: list = field(default_factory=list)
     response_bodies: list = field(default_factory=list)
     snapshots: dict = field(default_factory=dict)
+    screenshot_dir: str = None
 
 
 class SessionManager:
@@ -27,7 +28,7 @@ class SessionManager:
         self.sessions: dict[str, PageSession] = {}
 
     async def create_session(
-        self, context: BrowserContext, url: str, project_name: str = "default"
+        self, context: BrowserContext, url: str, project_name: str = "default", screenshot_dir: str = None
     ) -> PageSession:
         """Create a new persistent page session."""
         self._cleanup_expired()
@@ -97,6 +98,7 @@ class SessionManager:
             console_errors=console_errors,
             network_log=network_log,
             response_bodies=response_bodies,
+            screenshot_dir=screenshot_dir,
         )
         self.sessions[session_id] = session
         return session
