@@ -25,7 +25,12 @@ class WebsiteTester:
             except Exception:
                 pass
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=config.HEADLESS)
+        launch_kwargs = {"headless": config.HEADLESS}
+        if config.CHROMIUM_PATH:
+            launch_kwargs["executable_path"] = config.CHROMIUM_PATH
+        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+        if not config.HEADLESS and config.STARTUP_PAUSE > 0:
+            await asyncio.sleep(config.STARTUP_PAUSE)
 
     async def stop(self):
         """Close browser and cleanup."""
@@ -41,7 +46,8 @@ class WebsiteTester:
         """Get or create a browser context for a project."""
         if project_name not in self.contexts:
             self.contexts[project_name] = await self.browser.new_context(
-                viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT}
+                viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+                ignore_https_errors=True,
             )
         return self.contexts[project_name]
 
@@ -58,9 +64,10 @@ class WebsiteTester:
         path_part = parsed.path.replace("/", "_")[:30] or "index"
         return f"{parsed.netloc}_{path_part}_{url_hash}.png"
 
-    def _get_screenshot_path(self, project_name: str, url: str) -> str:
+    def _get_screenshot_path(self, project_name: str, url: str, screenshot_dir: str = None) -> str:
         """Get screenshot path for a URL in a project."""
-        project_dir = os.path.join(config.SCREENSHOT_DIR, project_name)
+        base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
+        project_dir = os.path.join(base_dir, project_name)
         os.makedirs(project_dir, exist_ok=True)
         filename = self._url_to_filename(url)
         return os.path.join(project_dir, filename)
@@ -69,7 +76,8 @@ class WebsiteTester:
         self,
         url: str,
         project_name: str = "default",
-        checks: list[str] = None
+        checks: list[str] = None,
+        screenshot_dir: str = None
     ) -> dict:
         """
         Test a single URL and return results.
@@ -99,7 +107,7 @@ class WebsiteTester:
             load_time = int((time.time() - start_time) * 1000)
 
             # Take screenshot
-            screenshot_path = self._get_screenshot_path(project_name, url)
+            screenshot_path = self._get_screenshot_path(project_name, url, screenshot_dir=screenshot_dir)
             await page.screenshot(path=screenshot_path, full_page=True)
 
             # Get page info
@@ -175,12 +183,13 @@ class WebsiteTester:
         self,
         urls: list[str],
         project_name: str = "default",
-        checks: list[str] = None
+        checks: list[str] = None,
+        screenshot_dir: str = None
     ) -> dict:
         """Test multiple URLs and return aggregated results."""
         results = []
         for url in urls:
-            result = await self.test_url(url, project_name, checks)
+            result = await self.test_url(url, project_name, checks, screenshot_dir=screenshot_dir)
             results.append(result)
 
         # Aggregate results

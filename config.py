@@ -1,10 +1,12 @@
 import os
 
 # Browser settings
-HEADLESS = True
+HEADLESS = os.environ.get("HEADLESS", "true").lower() != "false"
+STARTUP_PAUSE = int(os.environ.get("STARTUP_PAUSE", "10"))  # seconds to wait after browser opens
 TIMEOUT = 30000  # milliseconds
 VIEWPORT_WIDTH = 1920
 VIEWPORT_HEIGHT = 1080
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH")  # override Playwright's bundled Chromium when set
 
 # Crawler settings
 MAX_PAGES = 20

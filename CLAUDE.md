@@ -127,6 +127,20 @@ close_session(session_id)
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
 
+## Social / SEO Preview Validation
+
+No dedicated tool yet — validate directly from the DOM. Use `get_page_html(session_id, selector="head")` or `extract_text` to inspect:
+- **Open Graph:** `<meta property="og:title|og:description|og:image|og:url|og:type">` — title ≤60 chars, description ≤200, image absolute URL + 1.91:1 ratio (1200x630 ideal)
+- **Twitter Card:** `<meta name="twitter:card|twitter:title|twitter:description|twitter:image">` — `card` should be `summary_large_image` for rich previews
+- **JSON-LD:** `<script type="application/ld+json">` — validate Product/Service/Organization schemas
+
+### Manual validator references
+Platform-side rendering (image caches, crop ratios, SERP appearance) can only be verified on the platform itself. These require login/manual use — cannot automate reliably:
+- LinkedIn Post Inspector — https://www.linkedin.com/post-inspector/ (OG rendering, LinkedIn cache refresh)
+- Facebook Sharing Debugger — https://developers.facebook.com/tools/debug/ (OG tags + FB cache scrape)
+- Google Rich Results Test — https://search.google.com/test/rich-results (Product/Service/FAQ schema validation, SERP preview)
+- Twitter Card Validator — https://cards-dev.twitter.com/validator (deprecated 2023; Twitter/X no longer provides a working validator)
+
 ## Known Limitations
 - Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
 

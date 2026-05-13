@@ -2,7 +2,8 @@
   "mcpServers": {
     "website-tester": {
       "command": "/home/seba/PROJECTS/WebsiteTesterAI/venv/bin/python",
-      "args": ["/home/seba/PROJECTS/WebsiteTesterAI/server.py"]
+      "args": ["/home/seba/PROJECTS/WebsiteTesterAI/server.py"],
+      "env": { "CHROMIUM_PATH": "/snap/bin/chromium" }
     },
     "mdMCP": {
       "command": "/home/seba/PROJECTS/mdMCP/.venv/bin/python",
@@ -11,6 +12,6 @@
     "aiiotalk": {
       "type": "http",
       "url": "http://localhost:3100/mcp"
-    },
+    }
   }
 }
