@@ -7,3 +7,4 @@ data/
 .mcp.json
 .pytest_cache/
 tests/local/
+mcp-config.json

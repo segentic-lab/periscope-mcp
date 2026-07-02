@@ -61,6 +61,27 @@ periscope-mcp/
 
 ## Installation (Local)
 
+### Quick install (Debian/Ubuntu)
+
+```bash
+cd periscope-mcp
+./install.sh
+```
+
+The script installs apt prerequisites, creates the venv, installs Python
+dependencies and Playwright's Chromium, runs a headless self-test, and
+generates `mcp-config.json` with the correct absolute paths for this install
+(copy or merge it into your project's `.mcp.json`). Useful flags:
+
+- `./install.sh --system-chromium` — use an existing Chromium/Chrome (sets `CHROMIUM_PATH`) instead of downloading Playwright's build
+- `./install.sh --skip-deps` — never touch apt / use sudo
+- `./install.sh -y` — non-interactive (no confirmation prompts)
+
+On any other platform the script doesn't modify your system — it prints the
+exact commands to run for your OS (`./install.sh --manual macos|fedora|arch|suse|windows` to pick explicitly).
+
+### Manual install
+
 ```bash
 # Clone the repo
 cd periscope-mcp

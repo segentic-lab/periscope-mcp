@@ -9,6 +9,8 @@ source venv/bin/activate
 python server.py  # Runs as MCP stdio server (not a web server)
 ```
 
+First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS commands elsewhere).
+
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
 - `tool_schemas.py` - All 70 MCP `Tool(...)` schema definitions
