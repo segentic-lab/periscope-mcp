@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "website-tester": {
+      "command": "/path/to/WebsiteTesterAI/venv/bin/python",
+      "args": ["/path/to/WebsiteTesterAI/server.py"],
+      "env": {
+        "CHROMIUM_PATH": "",
+        "NAV_WAIT_UNTIL": "networkidle",
+        "SESSION_TIMEOUT": "300"
+      }
+    }
+  }
+}

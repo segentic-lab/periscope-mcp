@@ -19,30 +19,39 @@ Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
 
 ```
 WebsiteTesterAI/
-├── server.py              # MCP server entry point + tool definitions (70 tools)
-├── tester.py              # Playwright browser control + test orchestration + responsive testing
+├── server.py              # MCP server entry point (stdio wiring + dispatch)
+├── tool_schemas.py        # All 70 MCP tool definitions (schemas)
+├── runtime.py             # Shared singletons (project store, sessions, browser)
+├── coercion.py            # Argument coercion for MCP clients with stale schemas
+├── handlers/              # Tool handlers, grouped by category
+│   ├── registry.py        # @tool(name) decorator + HANDLERS registry
+│   ├── projects.py        # create/list/get/delete project
+│   ├── auth.py            # form login, basic auth, cookies, copy_auth
+│   ├── static_testing.py  # test_url, crawl, test_project, reports, responsive
+│   ├── session_tools.py   # open/close/list sessions, viewport, history
+│   ├── interactive.py     # click, fill, steps, element queries, dialogs
+│   ├── analysis.py        # forms, links, keyboard nav, tables, toasts, contrast
+│   ├── advanced.py        # network mocking, storage, iframes, emulation, recording
+│   ├── agent_speed.py     # assertions, smart find, auto-fill, snapshots
+│   ├── web.py             # web_search, web_fetch
+│   └── discovery.py       # describe_tools catalog
+├── tester.py              # Playwright browser control + test orchestration
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
 ├── auth.py                # Authentication handlers (form, basic, cookies)
 ├── sessions.py            # SessionManager + PageSession — persistent page lifecycle
-├── interactions.py        # Interaction primitives (click, fill, get_elements, execute_steps)
+├── interactions.py        # Interaction primitives (click, fill, execute_steps)
 ├── utils.py               # Screenshot comparison (Pillow pixel diff)
-├── config.py              # Global settings (timeouts, paths, defaults, session limits)
-├── requirements.txt       # Python dependencies
+├── config.py              # Global settings (timeouts, paths, session limits)
 ├── checks/
-│   ├── __init__.py
 │   ├── visual.py          # Broken images, favicon, overflow, small text
-│   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA, keyboard navigation
-│   └── functionality.py   # Broken links, forms, SEO, performance metrics, link checker
-├── data/                  # Created at runtime
-│   ├── projects.json      # Project configurations
-│   ├── screenshots/       # Per-project screenshot directories
-│   ├── reports/           # JSON test reports
-│   ├── videos/            # Recorded session videos
-│   └── diffs/             # Screenshot diff images
+│   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA, keyboard nav
+│   └── functionality.py   # Broken links, forms, SEO, performance, link checker
+├── tests/                 # Unit tests (pytest, no browser required)
+├── data/                  # Created at runtime (gitignored — contains credentials)
 ├── Dockerfile
 ├── docker-compose.yml
-└── .mcp.json              # Claude Code MCP server registration
+└── .mcp.json.example      # Claude Code MCP registration template (copy to .mcp.json)
 ```
 
 ## Prerequisites
@@ -79,7 +88,11 @@ See [Docker Deployment](#docker-deployment) section below.
 
 ### Option 1: Project-level config (recommended)
 
-The `.mcp.json` file in the project root registers the server. Just open Claude Code in this directory:
+Copy the template and adjust the paths, then open Claude Code in this directory:
+
+```bash
+cp .mcp.json.example .mcp.json
+```
 
 ```json
 {
@@ -547,14 +560,13 @@ async def check_something(page: Page) -> list[dict]:
 ## Known Limitations
 
 - No JavaScript SPA routing support (relies on `<a href>` for crawling)
-- No color contrast ratio checking (would need computed styles analysis)
 - Default `check_functionality` link checking limited to 20 internal links (use `check_links` tool for up to 100 with external support)
 - Form login detection uses CSS selectors, may need customization for non-standard forms
 - No parallel page testing (pages are tested sequentially)
 - Interactive sessions auto-expire after 300s idle (configurable via `SESSION_TIMEOUT`)
-- Max 10 concurrent sessions (configurable via `MAX_SESSIONS`)
+- Max 20 concurrent sessions (configurable via `MAX_SESSIONS`)
 - Drag and drop doesn't work via Playwright automation with some libraries (known limitation with `@hello-pangea/dnd` and similar React DnD libs — not a bug in this tool)
-- Native browser date pickers (`<input type="date">`) are hard to automate — use `evaluate_js` to set `.value` directly as a workaround
+- Date/time inputs are filled with React-compatible synthetic events automatically (`fill`, `force_fill`, `auto_fill_form`)
 
 ## Troubleshooting
 
@@ -565,3 +577,18 @@ async def check_something(page: Page) -> list[dict]:
 | Login not working | Try providing explicit CSS selectors via `username_selector`, `password_selector`, `submit_selector` |
 | Timeout on page load | Increase `TIMEOUT` in `config.py` or check if site requires VPN/auth |
 | Docker can't reach website | Ensure the container has network access. Use `network_mode: host` if testing localhost |
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest            # unit tests, no browser required
+```
+
+Adding a new tool: define its schema in `tool_schemas.py`, then add a handler in the
+matching `handlers/<category>.py` decorated with `@tool("your_tool_name")`. The
+registry test (`tests/test_registry.py`) fails if schemas and handlers drift apart.
+
+## License
+
+GNU AGPL-3.0 — see [LICENSE](LICENSE).

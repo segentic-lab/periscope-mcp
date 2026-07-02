@@ -6,7 +6,9 @@ STARTUP_PAUSE = int(os.environ.get("STARTUP_PAUSE", "10"))  # seconds to wait af
 TIMEOUT = 30000  # milliseconds
 VIEWPORT_WIDTH = 1920
 VIEWPORT_HEIGHT = 1080
-CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH", "/snap/chromium/current/usr/lib/chromium-browser/chrome")
+# Path to a system Chromium/Chrome binary. Unset = Playwright's bundled Chromium.
+# Useful when Playwright has no build for your OS (set e.g. CHROMIUM_PATH=/usr/bin/chromium).
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH") or None
 # Navigation wait strategy: "networkidle" is thorough but hangs 30s on pages with
 # websockets/polling. Set NAV_WAIT_UNTIL=load or domcontentloaded for those.
 WAIT_UNTIL = os.environ.get("NAV_WAIT_UNTIL", "networkidle")

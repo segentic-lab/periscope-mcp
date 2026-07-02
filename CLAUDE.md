@@ -10,21 +10,32 @@ python server.py  # Runs as MCP stdio server (not a web server)
 ```
 
 ## Key Files
-- `server.py` - MCP tool definitions + routing (start here)
+- `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
+- `tool_schemas.py` - All 70 MCP `Tool(...)` schema definitions
+- `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
+- `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
+- `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
 - `tester.py` - Core Playwright logic (browser, screenshots, test orchestration, responsive testing)
 - `crawler.py` - BFS page discovery
 - `projects.py` - Project/auth data models + JSON persistence
 - `auth.py` - Login handlers (form, basic auth, cookies)
-- `sessions.py` - `SessionManager` + `PageSession` — persistent page lifecycle for interactive testing
+- `sessions.py` - `SessionManager` + `PageSession` + `real_page()` — persistent page lifecycle
 - `interactions.py` - Interaction primitives: click, fill, get_elements, execute_steps, measure timing
 - `utils.py` - Screenshot comparison (Pillow-based pixel diff)
 - `config.py` - Global settings (timeouts, viewport, paths, crawl limits, session limits)
-- `requirements.txt` - Python dependencies
 - `checks/` - Individual test check modules
+- `tests/` - Unit tests (`pytest`, no browser needed); `tests/local/` is gitignored for personal e2e scripts
 
 ## Adding a New MCP Tool
-1. Add `Tool(...)` definition in `server.py` -> `list_tools()`
-2. Add handler in `server.py` -> `_handle_tool()`
+1. Add `Tool(...)` definition in `tool_schemas.py`
+2. Add handler in the matching `handlers/<category>.py`:
+   ```python
+   @tool("my_tool")
+   async def handle_my_tool(args: dict) -> dict:
+       ...
+   ```
+3. If it takes array/bool args, add them to the whitelists in `coercion.py`
+4. `pytest` — `tests/test_registry.py` fails if schemas and handlers drift
 
 ## Adding a New Check
 1. Add function in `checks/*.py` returning `list[dict]` with keys: type, severity, message
