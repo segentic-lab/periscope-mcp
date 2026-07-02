@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>DnD Fixture Page</title><style>
+li { padding: 20px; margin: 6px; background: #eee; list-style: none; width: 200px; user-select: none; }
+</style></head><body>
+<ul id="list"><li id="a">Alpha</li><li id="b">Beta</li><li id="c">Gamma</li></ul>
+<script>
+// Pointer-tracking DnD with a 5px start threshold and paced-move requirement —
+// the @hello-pangea/dnd pattern that ignores Playwright's drag_to.
+let down = null, dragging = null, moves = 0;
+document.querySelectorAll('#list li').forEach(li => {
+  li.addEventListener('mousedown', e => { down = {el: li, x: e.clientX, y: e.clientY}; moves = 0; });
+});
+document.addEventListener('mousemove', e => {
+  if (!down) return;
+  moves++;
+  const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  if (!dragging && dist > 5 && moves >= 4) dragging = down.el;
+});
+document.addEventListener('mouseup', e => {
+  if (dragging) {
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const target = under && under.closest('li');
+    if (target && target !== dragging) target.after(dragging);
+  }
+  down = null; dragging = null;
+});
+</script></body></html>

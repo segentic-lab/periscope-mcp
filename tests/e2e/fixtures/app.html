@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Periscope E2E Application Fixture</title>
+  <style>
+    #overlay { position: absolute; inset: 0; background: rgba(0,0,0,.05); z-index: 10; }
+    .covered-wrap { position: relative; width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>Fixture App</h1>
+  <p class="msg">hello world</p>
+  <p id="long">This paragraph exists to test full text extraction because it is deliberately much longer than the eighty character preview limit used by default.</p>
+
+  <button id="btn" data-testid="fetch-button" onclick="loadItems()">Click me</button>
+  <button id="alerty" onclick="askConfirm()">Ask</button>
+  <button id="errbtn" onclick="console.error('boom'); console.log('clicked-err')">Err</button>
+  <div id="items"></div>
+  <div id="dialog-result"></div>
+
+  <form id="f" action="/submit">
+    <input type="text" name="email">
+    <input type="text" name="phone">
+    <input name="username">
+  </form>
+
+  <div class="covered-wrap">
+    <input id="covered" name="covered" type="text">
+    <div id="overlay"></div>
+  </div>
+
+  <script>
+    async function loadItems() {
+      console.log('fetching items');
+      const r = await fetch('/api/items?page=2');
+      const data = await r.json();
+      document.getElementById('items').textContent = 'items: ' + data.items.join(',');
+    }
+    function askConfirm() {
+      const ok = window.confirm('Proceed?');
+      document.getElementById('dialog-result').textContent = ok ? 'accepted' : 'dismissed';
+    }
+  </script>
+</body>
+</html>

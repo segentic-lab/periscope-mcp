@@ -25,9 +25,10 @@ MAX_RESPONSE_BODIES = 100  # max captured response bodies kept per session
 MAX_CONSOLE_LOG = 500    # max console entries kept per session
 MAX_NETWORK_LOG = 1000   # max network log entries kept per session
 
-# Storage paths
+# Storage paths. PERISCOPE_DATA_DIR overrides the data root (tests/CI use it
+# to avoid touching the real projects/screenshots store).
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.environ.get("PERISCOPE_DATA_DIR") or os.path.join(BASE_DIR, "data")
 SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
 REPORTS_DIR = os.path.join(DATA_DIR, "reports")
 PROJECTS_FILE = os.path.join(DATA_DIR, "projects.json")

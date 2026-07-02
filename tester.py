@@ -156,8 +156,9 @@ class WebsiteTester:
             if "performance" in checks:
                 performance = await get_performance_metrics(page)
 
-            # Add console errors as issues
-            if console_errors:
+            # Add console errors as issues (they're functionality findings, so
+            # respect the caller's check selection)
+            if console_errors and "functionality" in checks:
                 all_issues.append({
                     "type": "functionality",
                     "severity": "error",
