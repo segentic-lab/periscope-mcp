@@ -23,6 +23,32 @@ site crawling, responsive testing, and screenshot diffing on top. Works with
 **any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom
 agents, or anything else that speaks MCP over stdio.
 
+## Why not just playwright-mcp?
+
+[playwright-mcp](https://github.com/microsoft/playwright-mcp) is excellent at
+what it is: general browser control over MCP, with tools that mirror
+Playwright's own API. If the job is "browse this site, click around, extract
+something," use it.
+
+Periscope exists for a different job: **testing and auditing a site, then
+reporting findings** — and its tools encode the testing knowledge an agent
+would otherwise have to reinvent every session:
+
+| | Raw browser control | Periscope |
+|---|---|---|
+| Verifying an outcome | Read a screenshot or DOM dump and judge | `assert_condition` → hard `passed: true/false` + actual value |
+| Filling a form | One call per field, agent invents test data | `auto_fill_form` — detects fields, infers realistic data, reports per-field failures |
+| Auth | Re-login by scripting clicks each session | Projects persist form/basic/cookie auth; sessions share the logged-in context |
+| Site-wide audit | Loop pages manually | `test_project` — crawl + accessibility/SEO/GEO/visual/functionality checks + saved report |
+| Diagnosing a broken page | Ask for logs, replay requests | Response bodies, console, and network are captured automatically; mock APIs with `intercept_network` |
+| Silent failures | Drag "succeeds," nothing moved | Flagged in the result, with the recovery path spelled out |
+| AI-readiness audits | — | robots.txt AI-crawler access, llms.txt, WebMCP annotations, JSON-LD, plus real Lighthouse scores |
+
+The two aren't rivals — an agent can happily use playwright-mcp for browsing
+tasks and Periscope when it's wearing the QA hat. Periscope's design bets are
+simply about that hat: fewer, higher-level calls; structured verdicts instead
+of raw page state; and errors written to tell the agent what to do next.
+
 ## Architecture
 
 ```
