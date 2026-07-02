@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "website-tester": {
-      "command": "/path/to/WebsiteTesterAI/venv/bin/python",
-      "args": ["/path/to/WebsiteTesterAI/server.py"],
+    "periscope": {
+      "command": "/path/to/periscope-mcp/venv/bin/python",
+      "args": ["/path/to/periscope-mcp/server.py"],
       "env": {
         "CHROMIUM_PATH": "",
         "NAV_WAIT_UNTIL": "networkidle",

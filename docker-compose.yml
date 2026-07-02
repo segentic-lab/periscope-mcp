@@ -1,7 +1,7 @@
 services:
-  website-tester:
+  periscope:
     build: .
-    container_name: website-tester
+    container_name: periscope
     stdin_open: true
     volumes:
       - ./data:/app/data

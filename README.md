@@ -1,4 +1,4 @@
-# WebsiteTesterAI
+# periscope-mcp
 
 An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 70 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
@@ -18,7 +18,7 @@ Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
 ## Project Structure
 
 ```
-WebsiteTesterAI/
+periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
 ├── tool_schemas.py        # All 70 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
@@ -63,7 +63,7 @@ WebsiteTesterAI/
 
 ```bash
 # Clone the repo
-cd WebsiteTesterAI
+cd periscope-mcp
 
 # Create virtual environment
 python3 -m venv venv
@@ -97,9 +97,9 @@ cp .mcp.json.example .mcp.json
 ```json
 {
   "mcpServers": {
-    "website-tester": {
-      "command": "/path/to/WebsiteTesterAI/venv/bin/python",
-      "args": ["/path/to/WebsiteTesterAI/server.py"]
+    "periscope": {
+      "command": "/path/to/periscope-mcp/venv/bin/python",
+      "args": ["/path/to/periscope-mcp/server.py"]
     }
   }
 }
@@ -111,9 +111,9 @@ Add to `~/.claude.json` under the project's `mcpServers` key:
 
 ```json
 "mcpServers": {
-  "website-tester": {
-    "command": "/path/to/WebsiteTesterAI/venv/bin/python",
-    "args": ["/path/to/WebsiteTesterAI/server.py"]
+  "periscope": {
+    "command": "/path/to/periscope-mcp/venv/bin/python",
+    "args": ["/path/to/periscope-mcp/server.py"]
   }
 }
 ```
@@ -507,9 +507,9 @@ Update `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "website-tester": {
+    "periscope": {
       "command": "docker",
-      "args": ["exec", "-i", "website-tester", "python", "/app/server.py"]
+      "args": ["exec", "-i", "periscope", "python", "/app/server.py"]
     }
   }
 }

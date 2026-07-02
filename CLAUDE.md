@@ -1,4 +1,4 @@
-# WebsiteTesterAI - Project Guide
+# periscope-mcp - Project Guide
 
 ## What This Is
 MCP server that gives Claude Code tools to test websites using Playwright + headless Chrome.
