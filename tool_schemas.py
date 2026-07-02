@@ -846,7 +846,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="check_color_contrast",
-            description="Check WCAG color contrast ratios for text elements on the page. Reports elements that fail AA or AAA standards.",
+            description="Check WCAG color contrast ratios for text elements on the page. Samples one element per unique text style (color/background/size), so repeated nav items don't exhaust the budget — 'checked' counts style groups, 'elements_represented' the elements they cover. Reports failures against AA or AAA thresholds.",
             inputSchema={
                 "type": "object",
                 "properties": {
