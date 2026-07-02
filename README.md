@@ -695,5 +695,4 @@ GNU AGPL-3.0 — see [LICENSE](LICENSE).
 
 Run it, modify it, use it anywhere — including commercially. If you distribute
 a modified version or offer one as a network service, you must make your
-modifications available under the same license. Versions up to commit
-`438f33c` were published under MIT and remain available under those terms.
+modifications available under the same license.
