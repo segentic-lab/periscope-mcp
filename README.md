@@ -1,8 +1,27 @@
 # periscope-mcp
 
-An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 63 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+A website testing MCP server **built for AI agents** — not a thin wrapper around
+browser APIs. Its 63 Playwright-powered tools are shaped around how agents
+actually work:
 
-Works with **any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom agents, or anything else that speaks MCP over stdio.
+- **Hard results, not screenshot-squinting** — `assert_condition` returns
+  `passed: true/false` with the actual value; checks return structured issues.
+- **One call instead of ten** — `auto_fill_form` detects, infers, and fills a
+  whole form; `interact_and_test` batches 25 action types with checks;
+  `test_project` crawls and audits an entire site.
+- **Honest responses** — failures say what happened *and* what to do next
+  (expired session vs. browser crash vs. eviction); silent no-ops like ignored
+  drags come back flagged, not as fake success.
+- **Debugging built in** — captured API response bodies, console/network logs,
+  network mocking, and state snapshots/diffs, no setup calls needed.
+- **Audits agents can't get from a browser binding** — accessibility, SEO, and
+  GEO/agentic-search readiness (robots.txt AI-crawler access, llms.txt, WebMCP),
+  plus real Lighthouse.
+
+Playwright + headless Chrome underneath; persistent authenticated sessions,
+site crawling, responsive testing, and screenshot diffing on top. Works with
+**any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom
+agents, or anything else that speaks MCP over stdio.
 
 ## Architecture
 
