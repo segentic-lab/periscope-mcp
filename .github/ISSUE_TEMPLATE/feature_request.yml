@@ -1,0 +1,26 @@
+name: Feature request
+description: A missing tool, check, or capability that testing surfaced.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: gap
+    attributes:
+      label: What couldn't be done
+      description: The concrete testing task that no current tool covers (or covers badly)
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How it's being worked around today, if at all (which tools, how many calls)
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed tool / check
+      description: "Sketch if you have one: name, args, what it returns. Optional."
+  - type: textarea
+    id: reference
+    attributes:
+      label: Prior art
+      description: Links to how other tools (Lighthouse, axe, Playwright) handle this, if relevant

@@ -1,0 +1,45 @@
+name: Bug report
+description: A tool misbehaved, lied, or failed. Structured for both human and AI-agent reporters.
+labels: ["bug"]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool name
+      description: The MCP tool that misbehaved (e.g. wait_for_network, interact_and_test)
+      placeholder: click_element
+    validations:
+      required: true
+  - type: textarea
+    id: args
+    attributes:
+      label: Tool arguments
+      description: The exact arguments the tool was called with (redact credentials/URLs if needed)
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: response
+    attributes:
+      label: Actual response
+      description: The raw JSON the tool returned. This is the most valuable field — include it verbatim.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Page / site context
+      description: What kind of page was being tested (framework, widget library, auth state) and any preceding tool calls that matter
+  - type: input
+    id: version
+    attributes:
+      label: Periscope commit / version
+      description: Output of `git rev-parse --short HEAD` in the install directory
