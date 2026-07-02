@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
-- `tool_schemas.py` - All 71 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 63 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -26,7 +26,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 - `utils.py` - Screenshot comparison (Pillow-based pixel diff)
 - `config.py` - Global settings (timeouts, viewport, paths, crawl limits, session limits)
 - `checks/` - Individual test check modules
-- `tests/` - Unit tests (`pytest`, no browser needed); `tests/local/` is gitignored for personal e2e scripts
+- `tests/` - Unit tests (`pytest --ignore=tests/e2e`, no browser) + `tests/e2e/` behavioral suite (real headless Chromium against `tests/e2e/fixtures/` pages; set `CHROMIUM_PATH` locally if Playwright's build isn't installed); `tests/local/` is gitignored for personal scripts
 
 ## Adding a New MCP Tool
 1. Add `Tool(...)` definition in `tool_schemas.py`
@@ -83,12 +83,10 @@ close_session(session_id)
 
 ### Interactive Tools
 - `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
-- `fill_form(session_id, fields[], submit_selector?)` — Fill fields, optionally submit
-- `force_fill(session_id, selector, value)` — Fill input bypassing actionability checks (overlays, dialogs behind inputs)
+- `fill_form(session_id, fields[], submit_selector?, force?)` — Fill fields, optionally submit; `force=true` bypasses actionability checks (overlays, dialogs behind inputs)
 - `select_option(session_id, selector, value?, label?, index?)` — Select from native `<select>` or custom dropdown (Radix/shadcn combobox). Auto-detects type.
-- `interact_and_test(url|session_id, steps[], run_checks?[], ...)` — Multi-step workflow with 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
-- `get_page_elements(selector, url|session_id, max_results?)` — List matching elements with attributes
-- `get_attribute(selector, attributes[], url|session_id)` — Get specific HTML attribute values (data-*, aria-*, style, etc.)
+- `interact_and_test(url|session_id, steps[], run_checks?[], capture_console?, ...)` — Multi-step workflow (`capture_console=true` returns console output from the steps) with 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
+- `get_page_elements(selector, url|session_id, max_results?, attributes?[], full_text?)` — List matching elements with attributes; `attributes[]` adds specific HTML attribute values (data-*, aria-*, style), `full_text=true` returns complete text content
 
 ### Analysis Tools
 - `test_form_validation(url|session_id, form_selector?)` — Analyze form validation
@@ -103,14 +101,12 @@ close_session(session_id)
 ### Advanced Tools
 - `record_session(url, steps[], project?)` — Record workflow as video
 - `test_keyboard_navigation(url|session_id, max_tabs?)` — Tab-order and focus indicator audit
-- `extract_text(selector, url|session_id)` — Get text content from elements
-- `check_console_during_interaction(session_id, steps[])` — Capture console output during workflow
 - `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
 
 ### Workflow Speed Tools
 - `screenshot_session(session_id, full_page?)` — Quick screenshot of current page state, no actions performed
 - `run_checks_on_session(session_id, checks?[])` — Run checks on active session page (no new page opened)
-- `go_back(session_id)` / `go_forward(session_id)` — Browser history navigation
+- `navigate_session(session_id, action)` — Browser history navigation + reload: `back`, `forward`, `reload`
 - `handle_dialog(session_id, action, prompt_text?)` — Accept/dismiss JS alert/confirm/prompt (call BEFORE triggering)
 - `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
 - `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
@@ -123,7 +119,6 @@ close_session(session_id)
 - `clear_intercepts(session_id, url_pattern?)` — Remove network mocks set by intercept_network (all, or by pattern)
 - `get_local_storage(session_id, storage?, keys?)` / `set_local_storage(session_id, entries, storage?, clear_first?)` — Read/write localStorage or sessionStorage
 - `select_iframe(session_id, selector)` — Switch into iframe, returns new session scoped to iframe content
-- `reload_page(session_id)` — Refresh page, test state persistence
 - `get_computed_style(session_id, selector, properties[])` — Get actual rendered CSS values (color, font-size, display, etc.)
 - `emulate_network(session_id, preset)` — Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset`
 - `test_dark_mode(session_id, mode)` — Toggle `prefers-color-scheme` to `dark` or `light`
@@ -133,9 +128,7 @@ close_session(session_id)
 - `find_element(session_id, text?, tag?, role?, near?, max_results?)` — Smart element finder by text/role/proximity. Returns best CSS selectors.
 - `auto_fill_form(session_id, form_selector?, overrides?, submit?)` — Auto-detect fields, infer types (email/phone/name/etc.), fill with test data. One call replaces 5-10.
 - `get_network_log(session_id, url_filter?, clear?)` — All network requests captured during session (URL, status, method, type)
-- `snapshot_page_state(session_id, name)` — Save URL + cookies + storage + DOM as named checkpoint
-- `restore_page_state(session_id, name)` — Restore a saved snapshot (navigate + cookies + storage)
-- `diff_page_state(session_id, name)` — Compare current DOM vs snapshot: added/removed/changed elements + tag count changes
+- `page_state(session_id, action, name)` — Named checkpoints: `snapshot` saves URL + cookies + storage + DOM, `restore` returns to it, `diff` compares current DOM vs it
 - `get_cookies(session_id, domain_filter?)` — Read all cookies from session context
 - `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
 - `get_response_body(session_id, url_pattern, method?)` — Get actual API response body text. Critical for diagnosing 400/500 errors. Bodies captured automatically for fetch/xhr/document requests.

@@ -112,48 +112,25 @@ async def handle_screenshot_session(args: dict) -> dict:
         }
 
 
-@tool("go_back")
-async def handle_go_back(args: dict) -> dict:
+@tool("navigate_session")
+async def handle_navigate_session(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
+        action = args["action"]
         page = real_page(session.page)
-        await page.go_back(wait_until=config.WAIT_UNTIL)
+        if action == "back":
+            await page.go_back(wait_until=config.WAIT_UNTIL)
+        elif action == "forward":
+            await page.go_forward(wait_until=config.WAIT_UNTIL)
+        elif action == "reload":
+            await page.reload(wait_until=config.WAIT_UNTIL)
+        else:
+            return {"success": False, "error": f"Unknown action '{action}'. Valid: back, forward, reload"}
         session.url = page.url
         screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_back", screenshot_dir=session.screenshot_dir)
+            session.page, session.project_name, f"after_{action}", screenshot_dir=session.screenshot_dir)
         return {
             "success": True,
-            "url": session.url,
-            "title": await session.page.title(),
-            "screenshot_path": screenshot_path,
-        }
-
-
-@tool("go_forward")
-async def handle_go_forward(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
-        page = real_page(session.page)
-        await page.go_forward(wait_until=config.WAIT_UNTIL)
-        session.url = page.url
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_forward", screenshot_dir=session.screenshot_dir)
-        return {
-            "success": True,
-            "url": session.url,
-            "title": await session.page.title(),
-            "screenshot_path": screenshot_path,
-        }
-
-
-@tool("reload_page")
-async def handle_reload_page(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
-        page = real_page(session.page)
-        await page.reload(wait_until=config.WAIT_UNTIL)
-        session.url = page.url
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_reload", screenshot_dir=session.screenshot_dir)
-        return {
-            "success": True,
+            "action": action,
             "url": session.url,
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,

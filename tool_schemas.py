@@ -238,7 +238,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="fill_form",
-            description="Fill form fields in a session page and optionally submit.",
+            description="Fill form fields in a session page and optionally submit. Use force=true to bypass actionability checks when overlays or dialogs block the inputs.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -255,7 +255,8 @@ TOOLS: list[Tool] = [
                             "required": ["selector", "value"]
                         }
                     },
-                    "submit_selector": {"type": "string", "description": "CSS selector for submit button (optional)"}
+                    "submit_selector": {"type": "string", "description": "CSS selector for submit button (optional)"},
+                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks — fill even when overlays/dialogs block the inputs (default: false)"}
                 },
                 "required": ["session_id", "fields"]
             }
@@ -307,14 +308,15 @@ TOOLS: list[Tool] = [
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     },
                     "screenshot_after": {"type": "boolean", "description": "Take a screenshot after all steps complete (default: true)"},
-                    "continue_on_error": {"type": "boolean", "description": "Continue executing steps even if one fails (default: false)"}
+                    "continue_on_error": {"type": "boolean", "description": "Continue executing steps even if one fails (default: false)"},
+                    "capture_console": {"type": ["boolean", "string"], "description": "Capture console output/errors emitted during the steps and include them in the result (default: false)"}
                 },
                 "required": ["steps"]
             }
         ),
         Tool(
             name="get_page_elements",
-            description="List elements matching a CSS selector with their attributes (tag, text, id, class, href, value, visible, enabled, aria_label, role). Works on a session or a URL.",
+            description="List elements matching a CSS selector with their attributes (tag, text, id, class, href, value, visible, enabled, aria_label, role). Pass 'attributes' for extra HTML attributes (data-*, aria-*, style, ...) and 'full_text' for complete text content instead of the 80-char preview. Works on a session or a URL.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -322,7 +324,13 @@ TOOLS: list[Tool] = [
                     "session_id": {"type": "string", "description": "Session ID (use this or url)"},
                     "url": {"type": "string", "description": "URL to open (use this or session_id)"},
                     "project": {"type": "string", "description": "Project name (optional)"},
-                    "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"}
+                    "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"},
+                    "attributes": {
+                        "type": ["array", "string"],
+                        "description": "Extra HTML attribute values to include per element (e.g. data-testid, aria-expanded, style)",
+                        "items": {"type": "string"}
+                    },
+                    "full_text": {"type": ["boolean", "string"], "description": "Return full text content instead of an 80-char preview (default: false)"}
                 },
                 "required": ["selector"]
             }
@@ -472,59 +480,6 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
-            name="extract_text",
-            description="Extract text content from elements matching a CSS selector.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "selector": {"type": "string", "description": "CSS selector to match elements"},
-                    "url": {"type": "string", "description": "URL to open (use this or session_id)"},
-                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
-                    "project": {"type": "string", "description": "Project name (optional)"}
-                },
-                "required": ["selector"]
-            }
-        ),
-        Tool(
-            name="check_console_during_interaction",
-            description="Execute interaction steps and capture all console output (logs, warnings, errors) that occur during the workflow.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"},
-                    "steps": {
-                        "type": ["array", "string"],
-                        "description": "Steps to execute (same format as interact_and_test).",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {
-                                    "type": "string",
-                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
-                                    "description": "Action to perform"
-                                },
-                                "selector": {"type": "string", "description": "CSS selector"},
-                                "value": {"type": "string", "description": "Value (for fill, select)"},
-                                "text": {"type": "string", "description": "Text to type or wait for"},
-                                "key": {"type": "string", "description": "Key to press (for press_key)"},
-                                "url": {"type": "string", "description": "URL (for navigate)"},
-                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
-                                "state": {"type": "string", "description": "State to wait for"},
-                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks"},
-                                "script": {"type": "string", "description": "JavaScript to evaluate"},
-                                "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
-                                "amount": {"type": "integer", "description": "Scroll amount in pixels"},
-                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
-                                "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"}
-                            },
-                            "required": ["action"]
-                        }
-                    }
-                },
-                "required": ["session_id", "steps"]
-            }
-        ),
-        Tool(
             name="get_console_errors",
             description="Get all console errors and logs captured on a session since it was opened (or since last call to this tool). Useful for passive monitoring without running steps.",
             inputSchema={
@@ -546,26 +501,6 @@ TOOLS: list[Tool] = [
                     "to_project": {"type": "string", "description": "Target project name to copy auth to"}
                 },
                 "required": ["from_project", "to_project"]
-            }
-        ),
-        Tool(
-            name="get_attribute",
-            description="Get specific attribute values from elements matching a selector. Returns any HTML attribute (data-*, aria-*, style, etc.).",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "selector": {"type": "string", "description": "CSS selector to match elements"},
-                    "attributes": {
-                        "type": ["array", "string"],
-                        "description": "Attribute names to extract (e.g. ['data-id', 'aria-expanded', 'style'])",
-                        "items": {"type": "string"}
-                    },
-                    "session_id": {"type": "string", "description": "Session ID (use this or url)"},
-                    "url": {"type": "string", "description": "URL to open (use this or session_id)"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
-                    "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"}
-                },
-                "required": ["selector", "attributes"]
             }
         ),
         Tool(
@@ -605,6 +540,18 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="navigate_session",
+            description="Browser history navigation on a session: go back, go forward, or reload the page. Returns new URL/title + screenshot. Reload is useful for testing state persistence.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "action": {"type": "string", "enum": ["back", "forward", "reload"], "description": "History action to perform"}
+                },
+                "required": ["session_id", "action"]
+            }
+        ),
+        Tool(
             name="run_checks_on_session",
             description="Run visual/accessibility/functionality/seo/performance checks on an active session page. Unlike test_url, this doesn't open a new page — it checks the current state after interactions.",
             inputSchema={
@@ -616,28 +563,6 @@ TOOLS: list[Tool] = [
                         "description": "Check types to run (default: all)",
                         "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     }
-                },
-                "required": ["session_id"]
-            }
-        ),
-        Tool(
-            name="go_back",
-            description="Navigate back in session browser history. Like clicking the browser back button.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"}
-                },
-                "required": ["session_id"]
-            }
-        ),
-        Tool(
-            name="go_forward",
-            description="Navigate forward in session browser history.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"}
                 },
                 "required": ["session_id"]
             }
@@ -764,17 +689,6 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
-            name="reload_page",
-            description="Reload the current session page. Useful for testing if state persists after refresh.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"}
-                },
-                "required": ["session_id"]
-            }
-        ),
-        Tool(
             name="get_computed_style",
             description="Get actual rendered CSS property values for elements matching a selector. Verify colors, fonts, spacing, display, opacity programmatically.",
             inputSchema={
@@ -888,42 +802,6 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
-            name="snapshot_page_state",
-            description="Save the current page state (URL, cookies, localStorage, sessionStorage) as a named checkpoint. Use restore_page_state to return to it later. Enables testing multiple paths from the same starting point.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"},
-                    "name": {"type": "string", "description": "Name for this snapshot (e.g. 'before_submit', 'logged_in')"}
-                },
-                "required": ["session_id", "name"]
-            }
-        ),
-        Tool(
-            name="restore_page_state",
-            description="Restore a previously saved page state snapshot. Navigates to the saved URL and restores cookies, localStorage, and sessionStorage.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"},
-                    "name": {"type": "string", "description": "Name of the snapshot to restore"}
-                },
-                "required": ["session_id", "name"]
-            }
-        ),
-        Tool(
-            name="diff_page_state",
-            description="Compare the current DOM state with a previous snapshot. Shows elements added, removed, and changed. Much more precise than screenshot diff for understanding what an action changed.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"},
-                    "name": {"type": "string", "description": "Snapshot name to compare against (from snapshot_page_state)"}
-                },
-                "required": ["session_id", "name"]
-            }
-        ),
-        Tool(
             name="get_cookies",
             description="Read all cookies from a session. Essential for debugging auth issues.",
             inputSchema={
@@ -933,6 +811,19 @@ TOOLS: list[Tool] = [
                     "domain_filter": {"type": "string", "description": "Filter by domain (optional)"}
                 },
                 "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="page_state",
+            description="Named page-state checkpoints. action=snapshot saves URL + cookies + storage + DOM signature under a name; action=restore navigates back to it and restores cookies/storage; action=diff compares the current DOM against the snapshot (added/removed/changed elements + tag count changes). Enables testing multiple paths from the same starting point.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "action": {"type": "string", "enum": ["snapshot", "restore", "diff"], "description": "snapshot = save, restore = return to it, diff = compare current DOM vs it"},
+                    "name": {"type": "string", "description": "Checkpoint name"}
+                },
+                "required": ["session_id", "action", "name"]
             }
         ),
         Tool(
@@ -969,19 +860,6 @@ TOOLS: list[Tool] = [
         ),
 
         # New Tools — Friction Reducers
-        Tool(
-            name="force_fill",
-            description="Fill an input bypassing actionability checks. Uses Playwright's force=True. Useful when overlays or dialogs block normal fill.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "description": "Session ID"},
-                    "selector": {"type": "string", "description": "CSS selector for the input"},
-                    "value": {"type": "string", "description": "Value to fill"}
-                },
-                "required": ["session_id", "selector", "value"]
-            }
-        ),
         Tool(
             name="scroll_into_view",
             description="Scroll an element into the viewport without clicking it. Useful for lazy-loaded content or scrolling to a section.",

@@ -366,8 +366,20 @@ async def handle_get_network_log(args: dict) -> dict:
         return result
 
 
-@tool("snapshot_page_state")
-async def handle_snapshot_page_state(args: dict) -> dict:
+@tool("page_state")
+async def handle_page_state(args: dict) -> dict:
+        """Named page-state checkpoints: snapshot, restore, diff."""
+        action = args["action"]
+        if action == "snapshot":
+            return await _snapshot_page_state(args)
+        if action == "restore":
+            return await _restore_page_state(args)
+        if action == "diff":
+            return await _diff_page_state(args)
+        return {"success": False, "error": f"Unknown action '{action}'. Valid: snapshot, restore, diff"}
+
+
+async def _snapshot_page_state(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         snap_name = args["name"]
 
@@ -419,8 +431,7 @@ async def handle_snapshot_page_state(args: dict) -> dict:
         }
 
 
-@tool("restore_page_state")
-async def handle_restore_page_state(args: dict) -> dict:
+async def _restore_page_state(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         snap_name = args["name"]
 
@@ -472,8 +483,7 @@ async def handle_restore_page_state(args: dict) -> dict:
         }
 
 
-@tool("diff_page_state")
-async def handle_diff_page_state(args: dict) -> dict:
+async def _diff_page_state(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         snap_name = args["name"]
 

@@ -1,6 +1,6 @@
 # periscope-mcp
 
-An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 71 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 63 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
 Works with **any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom agents, or anything else that speaks MCP over stdio.
 
@@ -15,14 +15,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 71 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 63 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 71 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 63 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -50,7 +50,7 @@ periscope-mcp/
 │   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA, keyboard nav
 │   ├── functionality.py   # Broken links, forms, SEO, performance, link checker
 │   └── geo.py             # GEO/agentic search: robots.txt AI crawlers, llms.txt, WebMCP, JSON-LD
-├── tests/                 # Unit tests (pytest, no browser required)
+├── tests/                 # Unit tests (no browser) + tests/e2e/ (real browser + fixture pages)
 ├── data/                  # Created at runtime (gitignored — contains credentials)
 ├── Dockerfile
 ├── docker-compose.yml
@@ -172,10 +172,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 71 tools
+agent's system prompt (or custom instructions) so it drives the 63 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (71 tools)
+## MCP Tools Reference (63 tools)
 
 ### Project Management (4 tools)
 
@@ -225,18 +225,15 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 
 `set_viewport` presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
-### Interactive Actions (9 tools)
+### Interactive Actions (6 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `click_element` | Click element (`force=true` bypasses overlays) | `session_id`, `selector` |
 | `fill_form` | Fill form fields, optionally submit | `session_id`, `fields` |
-| `force_fill` | Fill input bypassing actionability checks (overlays, dialogs) | `session_id`, `selector`, `value` |
 | `select_option` | Native `<select>` or custom dropdown (Radix/shadcn) — auto-detects | `session_id`, `selector` |
 | `interact_and_test` | Multi-step workflow with 25 actions (see below) | `steps` |
 | `get_page_elements` | List matching elements with attributes | `selector` |
-| `get_attribute` | Get specific HTML attribute values (data-*, aria-*, style, etc.) | `selector`, `attributes` |
-| `extract_text` | Get text content from matching elements | `selector` |
 | `scroll_into_view` | Scroll element into viewport without clicking | `session_id`, `selector` |
 
 **`interact_and_test` supports 25 step actions:**
@@ -255,21 +252,20 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_toast_messages` | Capture visible toast/notification messages | `session_id` |
 | `run_lighthouse` | Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits (needs Node.js) | `url` |
 
-### Workflow Speed (9 tools)
+### Workflow Speed (8 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `screenshot_session` | Quick screenshot of current page state | `session_id` |
 | `run_checks_on_session` | Run checks on active session (no new page) | `session_id` |
-| `go_back` | Browser back button | `session_id` |
-| `go_forward` | Browser forward button | `session_id` |
+| `navigate_session` | Browser history: back, forward, or reload | `session_id`, `action` |
 | `handle_dialog` | Accept/dismiss JS alert/confirm/prompt (call BEFORE trigger) | `session_id`, `action` |
 | `upload_file` | Set file(s) on `<input type="file">` | `session_id`, `selector`, `files` |
 | `wait_for_network` | Wait for specific API URL pattern to complete | `session_id`, `url_pattern` |
 | `wait_for_gone` | Wait for element to disappear (modal close, spinner gone) | `session_id`, `selector` |
 | `get_page_html` | Raw outerHTML of elements, or full page HTML | `session_id` |
 
-### Advanced Testing (9 tools)
+### Advanced Testing (8 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -278,21 +274,19 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_local_storage` | Read localStorage or sessionStorage | `session_id` |
 | `set_local_storage` | Write to localStorage or sessionStorage | `session_id`, `entries` |
 | `select_iframe` | Switch into iframe content (returns new session) | `session_id`, `selector` |
-| `reload_page` | Refresh page, test state persistence | `session_id` |
 | `get_computed_style` | Get actual rendered CSS values | `session_id`, `selector`, `properties` |
 | `emulate_network` | Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset` | `session_id`, `preset` |
 | `test_dark_mode` | Toggle `prefers-color-scheme` dark/light | `session_id`, `mode` |
 
-### Recording & Console (4 tools)
+### Recording & Console (3 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `record_session` | Record workflow as video | `url`, `steps` |
 | `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
-| `check_console_during_interaction` | Capture console output during workflow | `session_id`, `steps` |
 | `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
 
-### AI Agent Speed Tools (10 tools)
+### AI Agent Speed Tools (8 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -301,9 +295,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `auto_fill_form` | Auto-detect fields, infer types, fill with test data. One call = many fills. | `session_id` |
 | `get_network_log` | All captured network requests (URL, status, method, type) | `session_id` |
 | `get_response_body` | Actual API response body text (diagnose 400/500 errors) | `session_id`, `url_pattern` |
-| `snapshot_page_state` | Save URL + cookies + storage + DOM as named checkpoint | `session_id`, `name` |
-| `restore_page_state` | Restore a previously saved snapshot | `session_id`, `name` |
-| `diff_page_state` | Compare current DOM vs snapshot: added/removed/changed elements | `session_id`, `name` |
+| `page_state` | Named checkpoints: snapshot / restore / diff page state | `session_id`, `action`, `name` |
 | `get_cookies` | Read all cookies from session | `session_id` |
 | `check_color_contrast` | WCAG AA/AAA contrast ratio checks on text elements | `session_id` |
 
@@ -523,7 +515,7 @@ User: "What happens when the API returns a 500 error?"
 The agent calls:
 1. intercept_network(session_id=..., url_pattern="/api/tasks", status=500,
      body='{"error": "Internal server error"}')
-2. reload_page(session_id=...)
+2. navigate_session(session_id=..., action="reload")
 3. screenshot_session(session_id=...)
 → Shows how the app handles the error state
 ```
@@ -554,7 +546,7 @@ User: "How does this page load on a slow connection?"
 
 The agent calls:
 1. emulate_network(session_id=..., preset="slow_3g")
-2. reload_page(session_id=...)
+2. navigate_session(session_id=..., action="reload")
 3. screenshot_session(session_id=...)
 4. emulate_network(session_id=..., preset="reset")
 ```
@@ -681,8 +673,17 @@ async def check_something(page: Page) -> list[dict]:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest            # unit tests, no browser required
+pytest --ignore=tests/e2e   # unit tests, no browser required
+pytest tests/e2e            # behavioral tests: real headless Chromium against
+                            # fixture pages in tests/e2e/fixtures/ (~30s)
 ```
+
+The e2e suite covers session lifecycle, network waits/intercepts, console
+capture, dialogs, drag-and-drop (including the pointer-tracking DnD silent
+no-op), the check modules against known-good/known-bad pages, Core Web Vitals,
+and the agent-speed tools. CI runs both suites; e2e installs Playwright's
+Chromium (`python -m playwright install --with-deps chromium`). Tests are
+isolated from your real `data/` via `PERISCOPE_DATA_DIR`.
 
 Adding a new tool: define its schema in `tool_schemas.py`, then add a handler in the
 matching `handlers/<category>.py` decorated with `@tool("your_tool_name")`. The

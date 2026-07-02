@@ -121,19 +121,23 @@ async def fill_field(page: Page, selector: str, value: str):
         await locator.fill(value)
 
 
-async def fill_form(page: Page, fields: list[dict], submit_selector: str = None) -> dict:
+async def fill_form(page: Page, fields: list[dict], submit_selector: str = None, force: bool = False) -> dict:
     """Fill form fields and optionally submit.
 
     Args:
         page: Playwright page
         fields: List of {"selector": str, "value": str}
         submit_selector: Optional CSS selector for submit button
+        force: Bypass actionability checks (overlays/dialogs blocking inputs)
 
     Returns dict with result info.
     """
     filled = []
     for f in fields:
-        await fill_field(page, f["selector"], f["value"])
+        if force:
+            await force_fill(page, f["selector"], f["value"])
+        else:
+            await fill_field(page, f["selector"], f["value"])
         filled.append(f["selector"])
 
     result = {"fields_filled": filled, "submitted": False}
@@ -229,10 +233,18 @@ async def select_option(
     return {"success": False, "error": f"Could not find option matching '{search_text}' in custom dropdown"}
 
 
-async def get_elements(page: Page, selector: str, max_results: int = 50) -> list[dict]:
-    """Get matching elements with their attributes."""
+async def get_elements(
+    page: Page, selector: str, max_results: int = 50,
+    attributes: list = None, full_text: bool = False,
+) -> list[dict]:
+    """Get matching elements with their attributes.
+
+    Args:
+        attributes: extra HTML attributes to include per element (data-*, aria-*, style, ...)
+        full_text: return complete text content instead of the 80-char preview
+    """
     elements = await page.evaluate("""(args) => {
-        const [selector, maxResults] = args;
+        const [selector, maxResults, extraAttrs, fullText] = args;
         const els = document.querySelectorAll(selector);
         const results = [];
         for (let i = 0; i < Math.min(els.length, maxResults); i++) {
@@ -240,9 +252,11 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
             const rect = el.getBoundingClientRect();
             const cls = el.className && typeof el.className === 'string'
                 ? el.className.trim().split(/\\s+/).slice(0, 3).join(' ') : null;
-            results.push({
+            const text = (el.textContent || '').trim();
+            const entry = {
                 tag: el.tagName.toLowerCase(),
-                text: (el.textContent || '').trim().substring(0, 80),
+                index: i,
+                text: fullText ? text : text.substring(0, 80),
                 id: el.id || null,
                 class: cls || null,
                 href: el.getAttribute('href') || null,
@@ -254,10 +268,14 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
                 aria_label: el.getAttribute('aria-label') || null,
                 role: el.getAttribute('role') || null,
                 placeholder: el.getAttribute('placeholder') || null,
-            });
+            };
+            for (const attr of (extraAttrs || [])) {
+                entry[attr] = el.getAttribute(attr);
+            }
+            results.push(entry);
         }
         return results;
-    }""", [selector, max_results])
+    }""", [selector, max_results, attributes, full_text])
     return elements
 
 

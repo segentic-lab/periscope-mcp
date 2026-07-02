@@ -47,6 +47,7 @@ async def handle_fill_form(args: dict) -> dict:
             session.page,
             args["fields"],
             args.get("submit_selector"),
+            force=args.get("force", False),
         )
         if result.get("submitted"):
             session.url = result.get("url", session.url)
@@ -66,6 +67,7 @@ async def handle_interact_and_test(args: dict) -> dict:
         run_checks = args.get("run_checks")
         screenshot_after = args.get("screenshot_after", True)
         continue_on_error = args.get("continue_on_error", False)
+        capture_console = args.get("capture_console", False)
 
         ephemeral = False
         session = None
@@ -82,11 +84,32 @@ async def handle_interact_and_test(args: dict) -> dict:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
         touch = (lambda: setattr(session, "last_accessed", time.time())) if session else None
+
+        # Optional console capture via temporary listeners — immune to the
+        # session buffers' front-trimming caps.
+        new_logs, new_errors = [], []
+        listen_page = real_page(page)
+
+        def on_console(msg):
+            (new_errors if msg.type == "error" else new_logs).append(msg.text)
+
+        def on_pageerror(err):
+            new_errors.append(str(err))
+
+        if capture_console:
+            listen_page.on("console", on_console)
+            listen_page.on("pageerror", on_pageerror)
+
         try:
             result = await interactions.execute_steps(
                 page, steps, project_name, continue_on_error, screenshot_dir=shot_dir,
                 touch=touch,
             )
+            if capture_console:
+                result["console_log"] = new_logs
+                result["console_errors"] = new_errors
+                result["console_log_count"] = len(new_logs)
+                result["console_error_count"] = len(new_errors)
 
             if screenshot_after:
                 path = await interactions.take_screenshot(page, project_name, "after_steps", screenshot_dir=shot_dir)
@@ -120,6 +143,9 @@ async def handle_interact_and_test(args: dict) -> dict:
 
             return result
         finally:
+            if capture_console:
+                listen_page.remove_listener("console", on_console)
+                listen_page.remove_listener("pageerror", on_pageerror)
             if ephemeral:
                 await page.close()
 
@@ -131,6 +157,8 @@ async def handle_get_page_elements(args: dict) -> dict:
         session_id = args.get("session_id")
         url = args.get("url")
         max_results = args.get("max_results", 50)
+        attributes = args.get("attributes")
+        full_text = args.get("full_text", False)
 
         ephemeral = False
         if session_id:
@@ -143,103 +171,18 @@ async def handle_get_page_elements(args: dict) -> dict:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
         try:
-            elements = await interactions.get_elements(page, args["selector"], max_results)
-            return {
+            elements = await interactions.get_elements(
+                page, args["selector"], max_results, attributes=attributes, full_text=full_text
+            )
+            result = {
                 "selector": args["selector"],
                 "count": len(elements),
                 "elements": elements,
                 "url": page.url,
             }
-        finally:
-            if ephemeral:
-                await page.close()
-
-
-@tool("extract_text")
-async def handle_extract_text(args: dict) -> dict:
-        t = await get_tester()
-        project_name = args.get("project", "default")
-        session_id = args.get("session_id")
-        url = args.get("url")
-
-        ephemeral = False
-        if session_id:
-            session = session_manager.get_session(session_id)
-            page = session.page
-        elif url:
-            page = await _open_ephemeral_page(t, project_name, url)
-            ephemeral = True
-        else:
-            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
-
-        try:
-            texts = await page.evaluate("""(selector) => {
-                const els = document.querySelectorAll(selector);
-                return Array.from(els).map(el => ({
-                    tag: el.tagName.toLowerCase(),
-                    text: el.textContent.trim(),
-                    id: el.id || null,
-                    class: el.className || null,
-                }));
-            }""", args["selector"])
-            return {
-                "selector": args["selector"],
-                "count": len(texts),
-                "elements": texts,
-                "url": page.url,
-            }
-        finally:
-            if ephemeral:
-                await page.close()
-
-
-@tool("get_attribute")
-async def handle_get_attribute(args: dict) -> dict:
-        t = await get_tester()
-        project_name = args.get("project", "default")
-        session_id = args.get("session_id")
-        url = args.get("url")
-        max_results = args.get("max_results", 50)
-        attributes = args["attributes"]
-
-        ephemeral = False
-        if session_id:
-            session = session_manager.get_session(session_id)
-            page = session.page
-        elif url:
-            page = await _open_ephemeral_page(t, project_name, url)
-            ephemeral = True
-        else:
-            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
-
-        try:
-            elements = await page.evaluate("""(args) => {
-                const [selector, attrs, maxResults] = args;
-                const els = document.querySelectorAll(selector);
-                const results = [];
-                for (let i = 0; i < Math.min(els.length, maxResults); i++) {
-                    const el = els[i];
-                    const entry = {
-                        tag: el.tagName.toLowerCase(),
-                        index: i,
-                    };
-                    for (const attr of attrs) {
-                        entry[attr] = el.getAttribute(attr);
-                    }
-                    // Always include identifying info
-                    entry.id = el.id || null;
-                    entry.text = (el.textContent || '').trim().substring(0, 80);
-                    results.push(entry);
-                }
-                return results;
-            }""", [args["selector"], attributes, max_results])
-            return {
-                "selector": args["selector"],
-                "attributes_requested": attributes,
-                "count": len(elements),
-                "elements": elements,
-                "url": page.url,
-            }
+            if attributes:
+                result["attributes_requested"] = attributes
+            return result
         finally:
             if ephemeral:
                 await page.close()
@@ -352,20 +295,6 @@ async def handle_wait_for_network(args: dict) -> dict:
                 "url_pattern": url_pattern,
                 "timeout_ms": timeout,
             }
-
-
-@tool("force_fill")
-async def handle_force_fill(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
-        await interactions.force_fill(session.page, args["selector"], args["value"])
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_force_fill", screenshot_dir=session.screenshot_dir)
-        return {
-            "success": True,
-            "selector": args["selector"],
-            "value": args["value"],
-            "screenshot_path": screenshot_path,
-        }
 
 
 @tool("scroll_into_view")

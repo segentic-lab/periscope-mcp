@@ -58,39 +58,6 @@ async def handle_record_session(args: dict) -> dict:
         return result
 
 
-@tool("check_console_during_interaction")
-async def handle_check_console_during_interaction(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
-        # Capture via temporary listeners: the session buffers are front-trimmed
-        # at their cap, so len()-offset slicing loses output on chatty pages.
-        listen_page = real_page(session.page)
-        new_logs, new_errors = [], []
-
-        def on_console(msg):
-            (new_errors if msg.type == "error" else new_logs).append(msg.text)
-
-        def on_pageerror(err):
-            new_errors.append(str(err))
-
-        listen_page.on("console", on_console)
-        listen_page.on("pageerror", on_pageerror)
-        try:
-            result = await interactions.execute_steps(
-                session.page, args["steps"], session.project_name,
-                screenshot_dir=session.screenshot_dir
-            )
-        finally:
-            listen_page.remove_listener("console", on_console)
-            listen_page.remove_listener("pageerror", on_pageerror)
-        session.url = session.page.url
-
-        result["console_log"] = new_logs
-        result["console_errors"] = new_errors
-        result["console_log_count"] = len(new_logs)
-        result["console_error_count"] = len(new_errors)
-        return result
-
-
 @tool("get_console_errors")
 async def handle_get_console_errors(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

@@ -3,7 +3,7 @@
 
 # Website Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 71 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 63 Playwright/Chrome tools
 for testing websites. Call `describe_tools(category?)` anytime for the full
 catalog with parameters and workflows.
 
@@ -65,8 +65,8 @@ attribute_equals…) over screenshot-squinting — it returns a hard
 3. `get_response_body(session_id, url_pattern)` — the actual API response body;
    this is the fastest way to diagnose a 400/500. Bodies are captured
    automatically for fetch/xhr/document requests; no setup needed.
-4. `check_console_during_interaction(session_id, steps)` — console output
-   scoped to specific actions.
+4. `interact_and_test(session_id, steps, capture_console=true)` — console
+   output scoped to specific actions.
 
 To *reproduce* failure states: `intercept_network(session_id, url_pattern,
 status=500, body=...)` mocks API responses (test error/empty/loading UI),
@@ -74,10 +74,10 @@ status=500, body=...)` mocks API responses (test error/empty/loading UI),
 "offline" | "reset")` throttles. `set_local_storage` / `get_local_storage`
 and `get_cookies` manipulate state directly.
 
-**Branching exploration:** `snapshot_page_state(session_id, name)` checkpoints
-URL+cookies+storage+DOM; `restore_page_state` returns to it;
-`diff_page_state` shows what changed since — useful for "did this action
-actually change anything?".
+**Branching exploration:** `page_state(session_id, "snapshot", name)` checkpoints
+URL+cookies+storage+DOM; `action: "restore"` returns to it; `action: "diff"`
+shows what changed since — useful for "did this action actually change
+anything?".
 
 ## Visual and responsive
 
@@ -105,7 +105,7 @@ actually change anything?".
   after-the-fact inspection, `get_response_body` reads already-captured
   traffic instead.
 - Overlays intercepting clicks/fills: retry with `force=true`
-  (`click_element`) or `force_fill` — but only after a normal attempt fails.
+  (`click_element`) or `fill_form` with `force=true` — but only after a normal attempt fails.
 - Custom dropdowns (Radix/shadcn): use `select_option`, not `click` + `click`.
 - `select_iframe(session_id, selector)` returns a **new** session id scoped to
   the iframe; use it like a normal session, and keep using the parent id for
@@ -113,8 +113,8 @@ actually change anything?".
 - **Drag-and-drop fails silently** — pointer-tracking DnD libraries
   (`@hello-pangea/dnd`, react-beautiful-dnd) ignore the default drag: the step
   reports success but nothing moves. Always verify a drag had an effect
-  (`assert_condition` on the new order, or `snapshot_page_state` before /
-  `diff_page_state` after). If nothing changed, escalate in order:
+  (`assert_condition` on the new order, or `page_state` snapshot before /
+  diff after). If nothing changed, escalate in order:
   1. Retry the same drag step with `method: "mouse"` (stepped manual drag —
      handles most pointer-tracking libraries).
   2. Use the library's keyboard mode: focus the drag handle
