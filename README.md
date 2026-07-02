@@ -734,6 +734,11 @@ Adding a new tool: define its schema in `tool_schemas.py`, then add a handler in
 matching `handlers/<category>.py` decorated with `@tool("your_tool_name")`. The
 registry test (`tests/test_registry.py`) fails if schemas and handlers drift apart.
 
+## Contributors
+
+- **Sebastijan Bandur** ([@segentic-lab](https://github.com/segentic-lab)) — author & maintainer
+- **Claude** (Anthropic) — co-contributor: developed alongside via [Claude Code](https://claude.com/claude-code); every commit is co-authored, and the tool designs were battle-tested by an AI agent driving the server against real sites
+
 ## License
 
 GNU AGPL-3.0 — see [LICENSE](LICENSE).
