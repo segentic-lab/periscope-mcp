@@ -48,6 +48,30 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._text(json.dumps({"items": [1, 2, 3]}), "application/json")
         if path == "/submit":
             return self._text("<html><body>submitted</body></html>", "text/html")
+
+        # --- form-login protected area (auth expiry / issue #11 tests) ------
+        if path in ("/app", "/app/page2"):
+            if "sid=ok" not in (self.headers.get("Cookie") or ""):
+                self.send_response(302)
+                self.send_header("Location", f"/login.html?callbackUrl={path}")
+                self.end_headers()
+                return
+            link = '<a href="/app/page2">Page 2</a>' if path == "/app" else ""
+            return self._text(
+                f'<html lang="en"><head><title>Protected App Area Page</title></head>'
+                f'<body><h1>App</h1>{link}</body></html>', "text/html")
+        if path == "/do-login":
+            from urllib.parse import parse_qs, urlparse as _up
+            params = parse_qs(_up(self.path).query)
+            if params.get("password", [""])[0] == "pw":
+                self.send_response(302)
+                self.send_header("Set-Cookie", "sid=ok; Path=/")
+                self.send_header("Location", "/app")
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/login.html?error=1")
+            self.end_headers()
+            return
         file_path = os.path.join(FIXTURES, path.lstrip("/"))
         if os.path.isfile(file_path):
             with open(file_path, "rb") as f:

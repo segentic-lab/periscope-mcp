@@ -12,6 +12,14 @@ from checks.functionality import check_functionality, check_seo, get_performance
 from checks.geo import check_geo
 
 
+def redirected_to_login(current_url: str, login_url: str) -> bool:
+    """True when a page load ended up on the project's configured login page —
+    the telltale of expired/lost auth (issue #11)."""
+    if not login_url or not current_url:
+        return False
+    return urlparse(current_url).path.rstrip("/") == urlparse(login_url).path.rstrip("/")
+
+
 class WebsiteTester:
     def __init__(self):
         self.playwright = None
@@ -122,7 +130,8 @@ class WebsiteTester:
         url: str,
         project_name: str = None,
         checks: list[str] = None,
-        screenshot_dir: str = None
+        screenshot_dir: str = None,
+        login_url: str = None,
     ) -> dict:
         """
         Test a single URL and return results.
@@ -171,8 +180,19 @@ class WebsiteTester:
                 """() => document.querySelector('meta[name="description"]')?.content || null"""
             )
 
+            # Auth loss must never masquerade as a clean result: landing on the
+            # configured login page is an error finding, not a tested page.
+            auth_redirected = redirected_to_login(page.url, login_url)
+
             # Run checks
             all_issues = []
+            if auth_redirected:
+                all_issues.append({
+                    "type": "functionality",
+                    "severity": "error",
+                    "message": "Page redirected to the login page — project authentication "
+                               "has expired or been lost. Run login_project and re-test.",
+                })
             if unknown_checks:
                 # A typo'd check name must not silently pass as "no issues found"
                 all_issues.append({
@@ -219,7 +239,8 @@ class WebsiteTester:
 
             return {
                 "url": url,
-                "status": "success",
+                "status": "auth_lost" if auth_redirected else "success",
+                **({"final_url": page.url} if auth_redirected else {}),
                 "status_code": response.status if response else None,
                 "title": title,
                 "meta_description": meta_description,
@@ -258,17 +279,20 @@ class WebsiteTester:
         urls: list[str],
         project_name: str = "default",
         checks: list[str] = None,
-        screenshot_dir: str = None
+        screenshot_dir: str = None,
+        login_url: str = None,
     ) -> dict:
         """Test multiple URLs and return aggregated results."""
         results = []
         for url in urls:
-            result = await self.test_url(url, project_name, checks, screenshot_dir=screenshot_dir)
+            result = await self.test_url(url, project_name, checks,
+                                         screenshot_dir=screenshot_dir, login_url=login_url)
             results.append(result)
 
         # Aggregate results
         total = len(results)
         successful = sum(1 for r in results if r.get("status") == "success")
+        auth_lost_pages = [r["url"] for r in results if r.get("status") == "auth_lost"]
         all_issues = []
         for r in results:
             for issue in r.get("issues", []):
@@ -290,6 +314,7 @@ class WebsiteTester:
             "pages_tested": total,
             "successful": successful,
             "failed": total - successful,
+            **({"auth_lost_pages": auth_lost_pages} if auth_lost_pages else {}),
             "total_issues": len(all_issues),
             "issues_by_severity": self._count_by_key(all_issues, "severity"),
             "issues_by_type": self._count_by_key(all_issues, "type"),

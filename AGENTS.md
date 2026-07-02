@@ -43,6 +43,12 @@ crawlers, llms.txt compliance, WebMCP form annotations, and JSON-LD presence.
 `set_basic_auth` / `set_cookies`, then `login_project(project)`. Pass
 `project` to `open_session` so the session shares the logged-in context.
 `copy_auth(from, to)` moves auth between projects on the same domain.
+Auth can expire mid-run (token rotation, short sessions) — Periscope detects
+it rather than masking it: `test_project`/`crawl_project` preflight the auth
+and re-login automatically (see `auth_check` in the response), pages that land
+on the login page come back as `status: "auth_lost"` with an error issue (never
+plain success), and `open_session` warns when it lands on the login page. On
+any of those signals, run `login_project` again.
 
 **Multi-step flows:** batch steps into one `interact_and_test` call instead of
 many single calls — it supports 25 actions (click, fill, select, wait_for,

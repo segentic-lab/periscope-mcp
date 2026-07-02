@@ -41,13 +41,21 @@ async def handle_open_session(args: dict) -> dict:
         screenshot_path = await interactions.take_screenshot(
             session.page, project_name, "session_open", screenshot_dir=proj_screenshot_dir
         )
-        return {
+        result = {
             "success": True,
             "session_id": session.session_id,
             "url": session.url,
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,
         }
+        # Landing on the project's login page usually means auth expired (issue #11)
+        from tester import redirected_to_login
+        if (proj_obj and proj_obj.auth and proj_obj.auth.method == "form"
+                and proj_obj.auth.form_login
+                and redirected_to_login(session.url, proj_obj.auth.form_login.login_url)):
+            result["warning"] = ("Session landed on the project's login page — authentication "
+                                 "has likely expired. Run login_project and reopen.")
+        return result
 
 
 @tool("close_session")

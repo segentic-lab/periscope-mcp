@@ -11,6 +11,48 @@ from runtime import auth_handler, get_tester, project_manager, session_manager
 from sessions import real_page
 
 from .registry import tool
+from tester import redirected_to_login
+
+
+def _form_login_url(project) -> str | None:
+    """The configured login URL for form-login projects, else None."""
+    if project and project.auth and project.auth.method == "form" and project.auth.form_login:
+        return project.auth.form_login.login_url
+    return None
+
+
+async def _preflight_auth(t, project) -> dict | None:
+    """Verify a form-login project's context is still authenticated before a
+    crawl/audit; re-login once if not (issue #11: auth can silently expire —
+    e.g. refresh-token rotation — and a crawl of login pages must not pass as
+    a successful audit). Returns an auth_check dict, or None if not applicable.
+    """
+    login_url = _form_login_url(project)
+    if not login_url:
+        return None
+    context = await t.get_context(project.name)
+
+    async def lands_on_login() -> bool:
+        page = await context.new_page()
+        page.set_default_timeout(config.TIMEOUT)
+        try:
+            await page.goto(project.base_url, wait_until=config.WAIT_UNTIL)
+            return redirected_to_login(page.url, login_url)
+        finally:
+            await page.close()
+
+    if not await lands_on_login():
+        return {"authenticated": True}
+
+    relogin = await auth_handler.login(context, project)
+    if relogin.get("success") and not await lands_on_login():
+        project_manager.mark_logged_in(project.name, True)
+        return {"authenticated": True, "relogged_in": True}
+    project_manager.mark_logged_in(project.name, False)
+    return {
+        "authenticated": False,
+        "relogin_error": relogin.get("error") or "re-login succeeded but base_url still redirects to login",
+    }
 
 
 @tool("test_url")
@@ -25,7 +67,8 @@ async def handle_test_url(args: dict) -> dict:
             url=args["url"],
             project_name=project_name,
             checks=checks,
-            screenshot_dir=proj_screenshot_dir
+            screenshot_dir=proj_screenshot_dir,
+            login_url=_form_login_url(proj_obj),
         )
         return result
 
@@ -37,6 +80,14 @@ async def handle_crawl_project(args: dict) -> dict:
             return {"success": False, "error": f"Project '{args['project']}' not found"}
 
         t = await get_tester()
+        auth_check = await _preflight_auth(t, project)
+        if auth_check and not auth_check["authenticated"]:
+            return {
+                "success": False,
+                "error": "Project authentication is no longer valid — base_url redirects to the "
+                         "login page and automatic re-login failed. Run login_project and retry.",
+                "auth_check": auth_check,
+            }
         context = await t.get_context(project.name)
         crawler = Crawler()
 
@@ -47,12 +98,15 @@ async def handle_crawl_project(args: dict) -> dict:
             max_depth=args.get("max_depth", project.max_depth)
         )
 
-        return {
+        result = {
             "project": project.name,
             "base_url": project.base_url,
             "pages_found": len(urls),
             "urls": urls
         }
+        if auth_check:
+            result["auth_check"] = auth_check
+        return result
 
 
 @tool("test_project")
@@ -62,6 +116,14 @@ async def handle_test_project(args: dict) -> dict:
             return {"success": False, "error": f"Project '{args['project']}' not found"}
 
         t = await get_tester()
+        auth_check = await _preflight_auth(t, project)
+        if auth_check and not auth_check["authenticated"]:
+            return {
+                "success": False,
+                "error": "Project authentication is no longer valid — base_url redirects to the "
+                         "login page and automatic re-login failed. Run login_project and retry.",
+                "auth_check": auth_check,
+            }
         context = await t.get_context(project.name)
 
         # Crawl first
@@ -73,9 +135,13 @@ async def handle_test_project(args: dict) -> dict:
             max_depth=project.max_depth
         )
 
-        # Test all pages
+        # Test all pages — flagging any that land on the login page mid-run
         checks = args.get("checks", project.test_types)
-        results = await t.test_multiple(urls, project.name, checks, screenshot_dir=project.screenshot_dir)
+        results = await t.test_multiple(urls, project.name, checks,
+                                        screenshot_dir=project.screenshot_dir,
+                                        login_url=_form_login_url(project))
+        if auth_check:
+            results["auth_check"] = auth_check
 
         # Save report
         report_path = await t.save_report(results, project.name)
