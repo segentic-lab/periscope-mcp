@@ -48,7 +48,8 @@ periscope-mcp/
 ├── checks/
 │   ├── visual.py          # Broken images, favicon, overflow, small text
 │   ├── accessibility.py   # Alt text, labels, headings, lang, ARIA, keyboard nav
-│   └── functionality.py   # Broken links, forms, SEO, performance, link checker
+│   ├── functionality.py   # Broken links, forms, SEO, performance, link checker
+│   └── geo.py             # GEO/agentic search: robots.txt AI crawlers, llms.txt, WebMCP, JSON-LD
 ├── tests/                 # Unit tests (pytest, no browser required)
 ├── data/                  # Created at runtime (gitignored — contains credentials)
 ├── Dockerfile
@@ -90,6 +91,25 @@ generates `mcp-config.json` with the correct absolute paths for this install
 
 On any other platform the script doesn't modify your system — it prints the
 exact commands to run for your OS (`./install.sh --manual macos|fedora|arch|suse|windows` to pick explicitly).
+
+### Updating
+
+```bash
+./update.sh
+```
+
+Pulls the latest source from GitHub (`git pull --ff-only`) and refreshes the
+install: Python dependencies, Playwright browser (kept on system Chromium if
+that's what the install uses), the registry + headless-launch self-test, and a
+regenerated `mcp-config.json`. Works on any platform with an existing install.
+Your `data/` directory (projects, credentials, screenshots, reports) is never
+touched.
+
+- `./update.sh --force` — stash local modifications to tracked files first (recover with `git stash pop`)
+- `./update.sh --full` — also re-check apt prerequisites on Debian/Ubuntu (uses sudo)
+
+If you have local modifications, the script refuses and lists them instead of
+overwriting.
 
 ### Manual install
 
@@ -334,7 +354,19 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 - Open Graph: missing entirely, incomplete core tags (`og:title/description/image/url`), non-absolute `og:image`, missing `twitter:card`
 - JSON-LD structured data: missing or unparseable blocks
 - `noindex` via robots meta **or** `X-Robots-Tag` response header
+- robots.txt blocking search engine crawlers (Googlebot, Bingbot, DuckDuckBot, ...) — error if all are blocked
 - Site-wide (via `test_project`): duplicate titles / meta descriptions across pages, reported under `site_issues`
+
+### GEO / Agentic Search (`checks/geo.py` -> `check_geo`)
+
+Generative Engine Optimization — is the site readable and usable by AI crawlers, answer engines, and in-browser agents:
+
+- robots.txt blocking AI crawlers (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, and 11 more)
+- `llms.txt` presence and format compliance (Markdown with at least one H1)
+- WebMCP integration: declarative `<form toolname>` annotations present and complete (`tooldescription`), form coverage ratio, and — when the browser exposes `document.modelContext` — registered tool enumeration with schema/name/description validation
+- JSON-LD structured data presence (what answer engines cite from)
+
+robots.txt and llms.txt are fetched once per origin and cached for the server's lifetime.
 
 ### Performance (`checks/functionality.py` -> `get_performance_metrics`)
 - DOM content loaded time (ms)

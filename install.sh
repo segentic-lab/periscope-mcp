@@ -14,6 +14,9 @@
 #                          instead of downloading Playwright's browser build
 #   --manual [PLATFORM]    Just print manual instructions and exit.
 #                          PLATFORM: debian|fedora|arch|suse|macos|windows|generic
+#   --refresh              Refresh an existing install on any platform:
+#                          venv deps + browser + self-test + config (no apt/sudo).
+#                          Used by update.sh.
 #   -h, --help             Show this help
 
 set -euo pipefail
@@ -27,12 +30,13 @@ ASSUME_YES=0
 SKIP_DEPS=0
 SYSTEM_CHROMIUM=0
 FORCE_MANUAL=""
+REFRESH=0
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn()  { printf '\033[1;33mWARN:\033[0m %s\n' "$*"; }
 fail()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -40,6 +44,7 @@ while [ $# -gt 0 ]; do
         --skip-deps) SKIP_DEPS=1 ;;
         --system-chromium) SYSTEM_CHROMIUM=1 ;;
         --manual) FORCE_MANUAL="${2:-generic}"; [ $# -gt 1 ] && shift ;;
+        --refresh) REFRESH=1; SKIP_DEPS=1 ;;
         -h|--help) usage; exit 0 ;;
         *) fail "Unknown option: $1 (see --help)" ;;
     esac
@@ -175,13 +180,13 @@ print_manual() {
     echo
     case "$platform" in
         debian)
-            echo "  sudo apt-get update && sudo apt-get install -y python3 python3-venv"
+            echo "  sudo apt-get update && sudo apt-get install -y git python3 python3-venv"
             manual_common
             echo "  venv/bin/python -m playwright install chromium"
             echo "  sudo venv/bin/python -m playwright install-deps chromium"
             ;;
         fedora)
-            echo "  sudo dnf install -y python3 python3-pip chromium"
+            echo "  sudo dnf install -y git python3 python3-pip chromium"
             manual_common
             cat <<'EOF'
   # Playwright's install-deps only supports apt-based distros. Either use
@@ -192,7 +197,7 @@ print_manual() {
 EOF
             ;;
         arch)
-            echo "  sudo pacman -S --needed python chromium"
+            echo "  sudo pacman -S --needed git python chromium"
             manual_common
             cat <<'EOF'
   # Playwright's install-deps only supports apt-based distros. Either use
@@ -203,7 +208,7 @@ EOF
 EOF
             ;;
         suse)
-            echo "  sudo zypper install -y python311 python311-pip chromium"
+            echo "  sudo zypper install -y git python311 python311-pip chromium"
             manual_common
             cat <<'EOF'
   venv/bin/python -m playwright install chromium
@@ -247,10 +252,17 @@ EOF
 # ------------------------------------------------------------ debian install
 
 install_debian() {
-    info "Debian/Ubuntu detected — running automated install in $REPO_DIR"
+    if [ "$REFRESH" -eq 1 ]; then
+        info "Refreshing existing install in $REPO_DIR"
+    else
+        info "Debian/Ubuntu detected — running automated install in $REPO_DIR"
+    fi
 
     # --- system packages -------------------------------------------------
     local need_pkgs=()
+    if ! command -v git >/dev/null; then
+        need_pkgs+=(git)   # needed by update.sh and any git-based workflow
+    fi
     if ! command -v python3 >/dev/null; then
         need_pkgs+=(python3)
     fi
@@ -336,7 +348,9 @@ PY
 PLATFORM="$(detect_platform)"
 if [ -n "$FORCE_MANUAL" ]; then
     print_manual "$PLATFORM"
-elif [ "$PLATFORM" = "debian" ]; then
+elif [ "$REFRESH" -eq 1 ] || [ "$PLATFORM" = "debian" ]; then
+    # --refresh works on any platform: apt is skipped and the flow is just
+    # venv + pip + browser + self-test + config, all portable.
     install_debian
 else
     print_manual "$PLATFORM"
