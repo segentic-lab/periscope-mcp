@@ -116,7 +116,7 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to test"},
-                    "project": {"type": "string", "description": "Project name (optional, uses 'default' if not specified)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "checks": {
                         "type": ["array", "string"],
                         "description": "Types of checks to run (visual, accessibility, functionality, seo, performance, geo). Default: all",
@@ -200,7 +200,7 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to open"},
-                    "project": {"type": "string", "description": "Project name (optional, uses 'default')"}
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."}
                 },
                 "required": ["url"]
             }
@@ -301,7 +301,7 @@ TOOLS: list[Tool] = [
                             "required": ["action"]
                         }
                     },
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "run_checks": {
                         "type": ["array", "string"],
                         "description": "Checks to run after steps complete (visual, accessibility, functionality, seo, performance, geo)",
@@ -316,14 +316,14 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_page_elements",
-            description="List elements matching a CSS selector with their attributes (tag, text, id, class, href, value, visible, enabled, aria_label, role). Pass 'attributes' for extra HTML attributes (data-*, aria-*, style, ...) and 'full_text' for complete text content instead of the 80-char preview. Works on a session or a URL.",
+            description="List elements matching a CSS selector with their attributes (tag, text, id, class, href, value, visible, enabled, aria_label, role). Pass 'attributes' for extra HTML attributes (data-*, aria-*, style, ...) and 'full_text' for complete text content instead of the 80-char preview. Works on a session or a URL. Standard CSS selectors only — Playwright-specific pseudo-classes (:has-text, :visible) are not supported here.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "selector": {"type": "string", "description": "CSS selector to match elements"},
                     "session_id": {"type": "string", "description": "Session ID (use this or url)"},
                     "url": {"type": "string", "description": "URL to open (use this or session_id)"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "max_results": {"type": "integer", "description": "Max elements to return (default: 50)"},
                     "attributes": {
                         "type": ["array", "string"],
@@ -345,7 +345,7 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "url": {"type": "string", "description": "URL to test (use this or session_id)"},
                     "session_id": {"type": "string", "description": "Session ID (use this or url)"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "form_selector": {"type": "string", "description": "CSS selector to target specific form(s) (default: 'form')"}
                 }
             }
@@ -370,7 +370,7 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to test"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "viewports": {
                         "type": ["array", "string"],
                         "description": "Custom viewports [{name, width, height}]. Default: mobile (375x812), tablet (768x1024), desktop (1920x1080)",
@@ -401,7 +401,7 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "url": {"type": "string", "description": "URL to check (use this or session_id)"},
                     "session_id": {"type": "string", "description": "Session ID (use this or url)"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "check_external": {"type": "boolean", "description": "Also check external links (default: false)"},
                     "max_links": {"type": "integer", "description": "Max links to check (default: 100)"}
                 }
@@ -461,7 +461,7 @@ TOOLS: list[Tool] = [
                             "required": ["action"]
                         }
                     },
-                    "project": {"type": "string", "description": "Project name (optional)"}
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."}
                 },
                 "required": ["url", "steps"]
             }
@@ -474,7 +474,7 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "url": {"type": "string", "description": "URL to test (use this or session_id)"},
                     "session_id": {"type": "string", "description": "Session ID (use this or url)"},
-                    "project": {"type": "string", "description": "Project name (optional)"},
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "max_tabs": {"type": "integer", "description": "Max Tab presses (default: 50)"}
                 }
             }
@@ -887,7 +887,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_page_html",
-            description="Return raw outerHTML of matching elements, or full page HTML if no selector. Useful for inspecting component structure.",
+            description="Return raw outerHTML of matching elements, or full page HTML if no selector. Useful for inspecting component structure. Standard CSS selectors only — Playwright-specific pseudo-classes (:has-text, :visible) are not supported here.",
             inputSchema={
                 "type": "object",
                 "properties": {

@@ -14,6 +14,7 @@
   <p id="long">This paragraph exists to test full text extraction because it is deliberately much longer than the eighty character preview limit used by default.</p>
 
   <button id="btn" data-testid="fetch-button" onclick="loadItems()">Click me</button>
+  <button id="spa-nav" onclick="setTimeout(() => history.pushState({}, '', '/spa-page'), 120)">SPA Nav</button>
   <button id="alerty" onclick="askConfirm()">Ask</button>
   <button id="errbtn" onclick="console.error('boom'); console.log('clicked-err')">Err</button>
   <div id="items"></div>

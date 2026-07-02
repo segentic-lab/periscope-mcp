@@ -62,12 +62,14 @@ def test_drag_auto_noop_mouse_works(run, handlers, good_site):
     try:
         assert _order(run, handlers, sid) == ["Alpha", "Beta", "Gamma"]
 
-        # default drag: pointer-tracking DnD ignores it (documented silent no-op)
+        # default drag: pointer-tracking DnD ignores it — and the step must
+        # now flag the silent no-op instead of plain success (issue #9)
         r = run(handlers["interact_and_test"]({
             "session_id": sid, "screenshot_after": False,
             "steps": [{"action": "drag", "selector": "#a", "target": "#c"}],
         }))
         assert r["success"] and _order(run, handlers, sid) == ["Alpha", "Beta", "Gamma"]
+        assert "no observable DOM change" in r["steps"][0].get("warning", ""), r["steps"][0]
 
         # method:"mouse" crosses the drag-start threshold and actually reorders
         r = run(handlers["interact_and_test"]({
@@ -77,6 +79,38 @@ def test_drag_auto_noop_mouse_works(run, handlers, good_site):
         assert r["success"] and _order(run, handlers, sid) == ["Beta", "Gamma", "Alpha"]
     finally:
         run(handlers["close_session"]({"session_id": sid}))
+
+
+def test_click_element_reports_post_navigation_url(run, handlers, session):
+    # Issue #9: SPA pushState lands ~120ms after the click — the returned URL
+    # must be the post-navigation one
+    r = run(handlers["click_element"]({"session_id": session, "selector": "#spa-nav"}))
+    assert r["url"].endswith("/spa-page"), r["url"]
+
+
+def test_failed_step_recorded_once(run, handlers, session):
+    # Issue #9: with continue_on_error, a failed step used to appear twice
+    r = run(handlers["interact_and_test"]({
+        "session_id": session, "screenshot_after": False, "continue_on_error": True,
+        "steps": [
+            {"action": "wait_for", "selector": "#does-not-exist", "timeout": 500},
+            {"action": "evaluate_js", "script": "1 + 1"},
+        ],
+    }))
+    assert len(r["steps"]) == 2, r["steps"]
+    assert [s["step"] for s in r["steps"]] == [0, 1]
+    assert r["steps"][0]["success"] is False and r["steps"][1]["success"] is True
+
+
+def test_assert_preview_shows_visible_text_not_scripts(run, handlers, session):
+    # Issue #9: app.html has an inline <script> in <body>; the 'actual'
+    # preview must not leak its source
+    r = run(handlers["assert_condition"]({
+        "session_id": session, "assertion": "text_contains",
+        "selector": "body", "expected": "hello world",
+    }))
+    assert r["passed"] is True
+    assert "loadItems" not in str(r["actual"]), r["actual"]
 
 
 def test_fill_form_force_bypasses_overlay(run, handlers, session):

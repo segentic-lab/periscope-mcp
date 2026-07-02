@@ -25,12 +25,14 @@ async def handle_assert_condition(args: dict) -> dict:
         passed = False
         actual = None
 
+        # inner_text = visible text; text_content would leak <script>/<style>
+        # bodies into the 'actual' preview (issue #9)
         if assertion == "text_contains":
-            actual = await page.locator(selector).first.text_content() or ""
+            actual = await page.locator(selector).first.inner_text() or ""
             passed = expected in actual
 
         elif assertion == "text_equals":
-            actual = (await page.locator(selector).first.text_content() or "").strip()
+            actual = (await page.locator(selector).first.inner_text() or "").strip()
             passed = actual == expected
 
         elif assertion == "element_exists":
