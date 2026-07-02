@@ -189,7 +189,7 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
             const el = els[i];
             const rect = el.getBoundingClientRect();
             const cls = el.className && typeof el.className === 'string'
-                ? el.className.trim().split(/\s+/).slice(0, 3).join(' ') : null;
+                ? el.className.trim().split(/\\s+/).slice(0, 3).join(' ') : null;
             results.push({
                 tag: el.tagName.toLowerCase(),
                 text: (el.textContent || '').trim().substring(0, 80),
@@ -212,7 +212,12 @@ async def get_elements(page: Page, selector: str, max_results: int = 50) -> list
 
 
 async def take_screenshot(page: Page, project_name: str, label: str = "", screenshot_dir: str = None) -> str:
-    """Take a screenshot and save it. Returns the file path."""
+    """Take a screenshot and save it. Returns the file path.
+
+    Accepts a Page or a Frame (iframe sessions) — Frames are screenshotted via their owning Page.
+    """
+    if not hasattr(page, "screenshot"):
+        page = page.page  # Frame -> owning Page
     base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
     project_dir = os.path.join(base_dir, project_name)
     os.makedirs(project_dir, exist_ok=True)
@@ -228,7 +233,8 @@ async def execute_steps(
     page: Page,
     steps: list[dict],
     project_name: str = "default",
-    continue_on_error: bool = False
+    continue_on_error: bool = False,
+    screenshot_dir: str = None
 ) -> dict:
     """Execute a sequence of interaction steps.
 
@@ -314,12 +320,12 @@ async def execute_steps(
 
             elif action == "screenshot":
                 label = step.get("label", f"step_{i}")
-                path = await take_screenshot(page, project_name, label)
+                path = await take_screenshot(page, project_name, label, screenshot_dir=screenshot_dir)
                 screenshots.append(path)
                 step_result["screenshot_path"] = path
 
             elif action == "navigate":
-                await page.goto(step["url"], wait_until="networkidle")
+                await page.goto(step["url"], wait_until=config.WAIT_UNTIL)
                 step_result["url"] = page.url
 
             elif action == "hover":

@@ -24,6 +24,7 @@ class WebsiteTester:
                 await self.playwright.stop()
             except Exception:
                 pass
+        self.contexts.clear()  # contexts from a previous (possibly crashed) browser are unusable
         self.playwright = await async_playwright().start()
         launch_kwargs = {"headless": config.HEADLESS}
         if config.CHROMIUM_PATH:
@@ -103,7 +104,7 @@ class WebsiteTester:
 
         try:
             start_time = time.time()
-            response = await page.goto(url, wait_until="networkidle")
+            response = await page.goto(url, wait_until=config.WAIT_UNTIL)
             load_time = int((time.time() - start_time) * 1000)
 
             # Take screenshot
@@ -222,6 +223,7 @@ class WebsiteTester:
         project_name: str = "default",
         viewports: list[dict] = None,
         checks: list[str] = None,
+        screenshot_dir: str = None,
     ) -> dict:
         """Test a URL at multiple viewport sizes.
 
@@ -250,10 +252,11 @@ class WebsiteTester:
                 await page.set_viewport_size(
                     {"width": vp["width"], "height": vp["height"]}
                 )
-                await page.goto(url, wait_until="networkidle")
+                await page.goto(url, wait_until=config.WAIT_UNTIL)
 
                 # Screenshot
-                project_dir = os.path.join(config.SCREENSHOT_DIR, project_name)
+                base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
+                project_dir = os.path.join(base_dir, project_name)
                 os.makedirs(project_dir, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 screenshot_path = os.path.join(

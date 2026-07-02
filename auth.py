@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 from playwright.async_api import Page, BrowserContext
 from projects import Project, FormLogin, BasicAuth, CookieAuth
 
@@ -14,15 +15,15 @@ class AuthHandler:
             return {"success": False, "error": "No authentication configured"}
 
         if project.auth.method == "form":
-            return await self._form_login(context, project.auth.form_login)
+            return await self._form_login(context, project.auth.form_login, project.name)
         elif project.auth.method == "basic":
-            return await self._basic_auth(context, project.auth.basic_auth)
+            return await self._basic_auth(context, project.auth.basic_auth, project.base_url)
         elif project.auth.method == "cookies":
             return await self._cookie_auth(context, project.auth.cookie_auth)
         else:
             return {"success": False, "error": f"Unknown auth method: {project.auth.method}"}
 
-    async def _form_login(self, context: BrowserContext, form: FormLogin) -> dict:
+    async def _form_login(self, context: BrowserContext, form: FormLogin, project_name: str = "default") -> dict:
         """Perform form-based login."""
         page = await context.new_page()
         try:
@@ -99,7 +100,7 @@ class AuthHandler:
             # Take a debug screenshot
             import os
             import config
-            debug_path = os.path.join(config.SCREENSHOT_DIR, "_login_debug.png")
+            debug_path = os.path.join(config.SCREENSHOT_DIR, f"_login_debug_{project_name}.png")
             await page.screenshot(path=debug_path)
             debug["debug_screenshot"] = debug_path
 
@@ -150,15 +151,32 @@ class AuthHandler:
         finally:
             await page.close()
 
-    async def _basic_auth(self, context: BrowserContext, auth: BasicAuth) -> dict:
-        """Set up HTTP Basic Auth."""
+    async def _basic_auth(self, context: BrowserContext, auth: BasicAuth, base_url: str = None) -> dict:
+        """Set up HTTP Basic Auth, scoped to the project's host so credentials
+        never leak to third-party domains (analytics, CDNs, external link checks)."""
         try:
-            await context.set_extra_http_headers({
-                "Authorization": self._make_basic_auth_header(auth.username, auth.password)
-            })
+            header = self._make_basic_auth_header(auth.username, auth.password)
+
+            if base_url:
+                host = urlparse(base_url).netloc
+
+                async def add_auth_header(route):
+                    if urlparse(route.request.url).netloc == host:
+                        headers = {**route.request.headers, "authorization": header}
+                        await route.continue_(headers=headers)
+                    else:
+                        await route.continue_()
+
+                await context.route("**/*", add_auth_header)
+                return {
+                    "success": True,
+                    "message": f"HTTP Basic Auth configured (scoped to {host})"
+                }
+
+            await context.set_extra_http_headers({"Authorization": header})
             return {
                 "success": True,
-                "message": "HTTP Basic Auth configured"
+                "message": "HTTP Basic Auth configured (all requests — no base_url to scope to)"
             }
         except Exception as e:
             return {"success": False, "error": str(e)}

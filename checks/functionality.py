@@ -89,27 +89,6 @@ async def check_functionality(page: Page) -> list[dict]:
             "message": f"{external_no_blank} external links without target='_blank'"
         })
 
-    # Check for required inputs without validation messages
-    required_no_msg = await page.evaluate("""() => {
-        const required = document.querySelectorAll('input[required], select[required], textarea[required]');
-        let count = 0;
-        required.forEach(input => {
-            const form = input.closest('form');
-            if (form) {
-                const name = input.name || input.id;
-                const hasErrorSpan = form.querySelector(`[data-error="${name}"], .${name}-error, #${name}-error`);
-                // Just count required fields, harder to check for validation messages
-            }
-        });
-        return required.length;
-    }""")
-    if required_no_msg > 0:
-        issues.append({
-            "type": "functionality",
-            "severity": "info",
-            "message": f"Page has {required_no_msg} required form fields"
-        })
-
     # Check for inputs with autocomplete off (can be intentional)
     autocomplete_off = await page.evaluate("""() => {
         const inputs = document.querySelectorAll('input[autocomplete="off"]');
@@ -149,11 +128,14 @@ async def _check_links(page: Page, base_url: str) -> list[str]:
 
         try:
             response = await page.context.request.head(link, timeout=5000)
-            if response.status >= 400:
-                broken.append(f"{link} ({response.status})")
+            status = response.status
+            if status in (405, 501):  # server rejects HEAD, retry with GET
+                response = await page.context.request.get(link, timeout=5000)
+                status = response.status
+            if status >= 400:
+                broken.append(f"{link} ({status})")
         except Exception:
-            # Timeout or error, might be broken
-            pass
+            broken.append(f"{link} (unreachable)")
 
     return broken
 
@@ -201,6 +183,9 @@ async def check_all_links(
         try:
             response = await page.context.request.head(href, timeout=10000)
             status = response.status
+            if status in (405, 501):  # server rejects HEAD, retry with GET
+                response = await page.context.request.get(href, timeout=10000)
+                status = response.status
         except Exception as e:
             status = f"error: {str(e)[:60]}"
 

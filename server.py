@@ -10,7 +10,7 @@ from tester import WebsiteTester
 from crawler import Crawler
 from projects import ProjectManager
 from auth import AuthHandler
-from sessions import SessionManager
+from sessions import SessionManager, real_page
 import interactions
 import config
 
@@ -23,10 +23,11 @@ session_manager = SessionManager()
 
 
 async def get_tester() -> WebsiteTester:
-    """Get or create the tester instance."""
+    """Get or create the tester instance, restarting if the browser crashed."""
     global tester
-    if tester is None or tester.browser is None:
-        tester = WebsiteTester()
+    if tester is None or tester.browser is None or not tester.browser.is_connected():
+        if tester is None:
+            tester = WebsiteTester()
         await tester.start()
     return tester
 
@@ -322,14 +323,13 @@ async def list_tools() -> list[Tool]:
                                 "url": {"type": "string", "description": "URL (for navigate)"},
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
-                                "label": {"type": "string", "description": "Label for screenshot filename"},
+                                "label": {"type": "string", "description": "Label for screenshot filename (screenshot action), or option label text (select_option action)"},
                                 "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks on click (default: false)"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"},
-                                "label": {"type": "string", "description": "Option label text (for select_option)"},
                                 "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
@@ -739,6 +739,18 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="clear_intercepts",
+            description="Remove network mocks set by intercept_network. Clears all intercepts on the session, or only those matching a URL pattern.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "url_pattern": {"type": "string", "description": "Only remove intercepts registered with this exact pattern (optional — omit to clear all)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
             name="get_local_storage",
             description="Read localStorage or sessionStorage from a session page. Returns all entries or specific keys.",
             inputSchema={
@@ -1099,7 +1111,8 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "url": {"type": "string", "description": "URL to fetch"},
                     "max_length": {"type": "integer", "description": "Max content length in characters (default: 50000)", "default": 50000},
-                    "raw_html": {"type": "boolean", "description": "Return raw HTML instead of extracted text (default: false)", "default": False}
+                    "raw_html": {"type": "boolean", "description": "Return raw HTML instead of extracted text (default: false)", "default": False},
+                    "verify_ssl": {"type": "boolean", "description": "Verify TLS certificates (default: true). Set false for self-signed certs on local/dev servers.", "default": True}
                 },
                 "required": ["url"]
             }
@@ -1137,20 +1150,45 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 
+# Args that are structured (arrays/objects) per the tool schemas. Only these get
+# JSON-string coercion — free-text args like intercept_network's 'body' or a fill
+# 'value' must NEVER be parsed, even if they look like JSON.
+_STRUCTURED_ARGS = {
+    "steps", "fields", "checks", "run_checks", "cookies", "viewports",
+    "files", "keys", "attributes", "properties", "entries", "overrides",
+}
+# Structured args whose items are plain strings — a bare string like
+# "seo,performance" is accepted as a comma-separated list.
+_CSV_ARGS = {"checks", "run_checks", "files", "keys", "attributes", "properties"}
+# Boolean args per the tool schemas.
+_BOOL_ARGS = {
+    "force", "check_external", "clear", "clear_first", "once", "submit",
+    "full_page", "screenshot_after", "continue_on_error", "raw_html", "verify_ssl",
+}
+
+
+def _coerce_args(args: dict):
+    """Coerce JSON-string args in place: MCP clients with stale schemas may
+    serialize array/bool parameters as JSON strings."""
+    for key, val in list(args.items()):
+        if not isinstance(val, str):
+            continue
+        if key in _STRUCTURED_ARGS:
+            if len(val) > 1 and val[0] in ('[', '{'):
+                try:
+                    args[key] = json.loads(val)
+                except json.JSONDecodeError:
+                    pass
+            elif key in _CSV_ARGS and val:
+                args[key] = [s.strip() for s in val.split(",") if s.strip()]
+        elif key in _BOOL_ARGS and val.lower() in ('true', 'false'):
+            args[key] = val.lower() == 'true'
+
+
 async def _handle_tool(name: str, args: dict) -> dict:
     """Route tool calls to handlers."""
 
-    # Coerce JSON-string arrays: MCP clients with stale schemas may serialize
-    # array parameters as JSON strings. Auto-parse any string arg that looks
-    # like a JSON array or object so all handlers receive the correct types.
-    for key, val in list(args.items()):
-        if isinstance(val, str) and len(val) > 1 and val[0] in ('[', '{'):
-            try:
-                args[key] = json.loads(val)
-            except json.JSONDecodeError:
-                pass
-        elif isinstance(val, str) and val.lower() in ('true', 'false'):
-            args[key] = val.lower() == 'true'
+    _coerce_args(args)
 
     # Project Management
     if name == "create_project":
@@ -1308,7 +1346,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
     # Results
     elif name == "get_screenshot":
         t = await get_tester()
-        screenshot_path = t._get_screenshot_path(args["project"], args["url"])
+        proj_obj = project_manager.get(args["project"])
+        proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
+        screenshot_path = t._get_screenshot_path(args["project"], args["url"], screenshot_dir=proj_screenshot_dir)
 
         if os.path.exists(screenshot_path):
             return {
@@ -1378,7 +1418,10 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "list_sessions":
         sessions = session_manager.list_sessions()
-        return {"sessions": sessions, "count": len(sessions)}
+        result = {"sessions": sessions, "count": len(sessions)}
+        if session_manager.recent_removals:
+            result["recently_removed"] = session_manager.recent_removals
+        return result
 
     # Interactive Tools
     elif name == "click_element":
@@ -1420,22 +1463,25 @@ async def _handle_tool(name: str, args: dict) -> dict:
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
+            shot_dir = session.screenshot_dir
         elif url:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
+            proj_obj = project_manager.get(project_name)
+            shot_dir = proj_obj.screenshot_dir if proj_obj else None
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
         try:
             result = await interactions.execute_steps(
-                page, steps, project_name, continue_on_error
+                page, steps, project_name, continue_on_error, screenshot_dir=shot_dir
             )
 
             if screenshot_after:
-                path = await interactions.take_screenshot(page, project_name, "after_steps")
+                path = await interactions.take_screenshot(page, project_name, "after_steps", screenshot_dir=shot_dir)
                 result["screenshot_path"] = path
 
             if run_checks and result["success"]:
@@ -1481,7 +1527,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1514,7 +1560,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1538,11 +1584,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "test_responsive":
         t = await get_tester()
+        project_name = args.get("project", "default")
+        proj_obj = project_manager.get(project_name)
         result = await t.test_responsive(
             url=args["url"],
-            project_name=args.get("project", "default"),
+            project_name=project_name,
             viewports=args.get("viewports"),
             checks=args.get("run_checks"),
+            screenshot_dir=proj_obj.screenshot_dir if proj_obj else None,
         )
         return result
 
@@ -1562,7 +1611,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1594,10 +1643,10 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     # Phase 3: Nice-to-Have
     elif name == "record_session":
-        if isinstance(args.get("steps"), str):
-            args["steps"] = json.loads(args["steps"])
         t = await get_tester()
         project_name = args.get("project", "default")
+        proj_obj = project_manager.get(project_name)
+        proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
         video_dir = os.path.join(config.DATA_DIR, "videos", project_name)
         os.makedirs(video_dir, exist_ok=True)
 
@@ -1610,9 +1659,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
         page.set_default_timeout(config.TIMEOUT)
 
         try:
-            await page.goto(args["url"], wait_until="networkidle")
+            await page.goto(args["url"], wait_until=config.WAIT_UNTIL)
             result = await interactions.execute_steps(
-                page, args["steps"], project_name
+                page, args["steps"], project_name, screenshot_dir=proj_screenshot_dir
             )
             # Close page to finalize video
             video_path = await page.video.path()
@@ -1642,7 +1691,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1669,7 +1718,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1695,15 +1744,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 await page.close()
 
     elif name == "check_console_during_interaction":
-        if isinstance(args.get("steps"), str):
-            args["steps"] = json.loads(args["steps"])
         session = session_manager.get_session(args["session_id"])
-        # Clear existing console buffers
+        # Record buffer offsets so only console output from these steps is reported
         pre_log_count = len(session.console_log)
         pre_error_count = len(session.console_errors)
 
         result = await interactions.execute_steps(
-            session.page, args["steps"], session.project_name
+            session.page, args["steps"], session.project_name,
+            screenshot_dir=session.screenshot_dir
         )
         session.url = session.page.url
 
@@ -1781,7 +1829,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             context = await t.get_context(project_name)
             page = await context.new_page()
             page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -1838,7 +1886,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             width = args.get("width", config.VIEWPORT_WIDTH)
             height = args.get("height", config.VIEWPORT_HEIGHT)
 
-        await session.page.set_viewport_size({"width": width, "height": height})
+        await real_page(session.page).set_viewport_size({"width": width, "height": height})
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, f"viewport_{width}x{height}", screenshot_dir=session.screenshot_dir)
         return {
@@ -1863,7 +1911,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             screenshot_path = os.path.join(project_dir, f"interactive_{timestamp}_viewport.png")
-            await session.page.screenshot(path=screenshot_path, full_page=False)
+            await real_page(session.page).screenshot(path=screenshot_path, full_page=False)
         return {
             "screenshot_path": screenshot_path,
             "url": session.url,
@@ -1917,8 +1965,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "go_back":
         session = session_manager.get_session(args["session_id"])
-        await session.page.go_back(wait_until="networkidle")
-        session.url = session.page.url
+        page = real_page(session.page)
+        await page.go_back(wait_until=config.WAIT_UNTIL)
+        session.url = page.url
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_back", screenshot_dir=session.screenshot_dir)
         return {
@@ -1929,8 +1978,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "go_forward":
         session = session_manager.get_session(args["session_id"])
-        await session.page.go_forward(wait_until="networkidle")
-        session.url = session.page.url
+        page = real_page(session.page)
+        await page.go_forward(wait_until=config.WAIT_UNTIL)
+        session.url = page.url
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_forward", screenshot_dir=session.screenshot_dir)
         return {
@@ -1941,6 +1991,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "handle_dialog":
         session = session_manager.get_session(args["session_id"])
+        dialog_page = real_page(session.page)
         action = args["action"]
         prompt_text = args.get("prompt_text")
 
@@ -1961,7 +2012,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             else:
                 await dialog.dismiss()
 
-        session.page.once("dialog", handle)
+        dialog_page.once("dialog", handle)
 
         return {
             "success": True,
@@ -2002,7 +2053,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             return True
 
         try:
-            response = await session.page.wait_for_event(
+            response = await real_page(session.page).wait_for_event(
                 "response",
                 predicate=match_request,
                 timeout=timeout,
@@ -2025,29 +2076,35 @@ async def _handle_tool(name: str, args: dict) -> dict:
     # Advanced Testing Tools
     elif name == "intercept_network":
         session = session_manager.get_session(args["session_id"])
+        route_page = real_page(session.page)
         url_pattern = args["url_pattern"]
         status = args.get("status", 200)
         body = args.get("body", "")
+        if not isinstance(body, str):
+            body = json.dumps(body)  # defensive: a dict/list still becomes a valid response body
         content_type = args.get("content_type", "application/json")
         method_filter = args.get("method")
         once = args.get("once", False)
 
-        intercepted = {"count": 0}
+        # ** crosses path separators, so this is true substring matching —
+        # '**/*x*' would fail to match '/x/anything/after'
+        glob = f"**{url_pattern}**"
 
         async def handle_route(route):
             if method_filter and route.request.method.upper() != method_filter.upper():
                 await route.continue_()
                 return
-            intercepted["count"] += 1
             await route.fulfill(
                 status=status,
                 body=body,
                 content_type=content_type,
             )
             if once:
-                await session.page.unroute(f"**/*{url_pattern}*", handle_route)
+                await route_page.unroute(glob, handle_route)
+                session.intercepts = [i for i in session.intercepts if i["handler"] is not handle_route]
 
-        await session.page.route(f"**/*{url_pattern}*", handle_route)
+        await route_page.route(glob, handle_route)
+        session.intercepts.append({"glob": glob, "handler": handle_route, "pattern": url_pattern})
 
         return {
             "success": True,
@@ -2055,6 +2112,31 @@ async def _handle_tool(name: str, args: dict) -> dict:
             "url_pattern": url_pattern,
             "status": status,
             "once": once,
+            "active_intercepts": [i["pattern"] for i in session.intercepts],
+        }
+
+    elif name == "clear_intercepts":
+        session = session_manager.get_session(args["session_id"])
+        route_page = real_page(session.page)
+        pattern_filter = args.get("url_pattern")
+
+        removed, remaining = [], []
+        for entry in session.intercepts:
+            if pattern_filter and entry["pattern"] != pattern_filter:
+                remaining.append(entry)
+                continue
+            try:
+                await route_page.unroute(entry["glob"], entry["handler"])
+            except Exception:
+                pass
+            removed.append(entry["pattern"])
+        session.intercepts = remaining
+
+        return {
+            "success": True,
+            "removed": removed,
+            "removed_count": len(removed),
+            "active_intercepts": [i["pattern"] for i in remaining],
         }
 
     elif name == "get_local_storage":
@@ -2138,6 +2220,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             url=content_frame.url,
             created_at=now,
             last_accessed=now,
+            screenshot_dir=session.screenshot_dir,
         )
         session_manager.sessions[iframe_session_id] = iframe_session
 
@@ -2151,8 +2234,9 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
     elif name == "reload_page":
         session = session_manager.get_session(args["session_id"])
-        await session.page.reload(wait_until="networkidle")
-        session.url = session.page.url
+        page = real_page(session.page)
+        await page.reload(wait_until=config.WAIT_UNTIL)
+        session.url = page.url
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_reload", screenshot_dir=session.screenshot_dir)
         return {
@@ -2198,7 +2282,11 @@ async def _handle_tool(name: str, args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         preset = args["preset"]
 
-        cdp = await session.page.context.new_cdp_session(session.page)
+        # Reuse one CDP session per page — creating a new one per call leaks them
+        if session.cdp_session is None:
+            cdp_page = real_page(session.page)
+            session.cdp_session = await cdp_page.context.new_cdp_session(cdp_page)
+        cdp = session.cdp_session
 
         if preset == "offline":
             await cdp.send("Network.emulateNetworkConditions", {
@@ -2462,6 +2550,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         }
 
         filled = []
+        handled_radio_groups = set()
         for f in fields:
             selector = f["selector"]
 
@@ -2487,8 +2576,14 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     await session.page.locator(selector).first.check()
                     filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "radio":
-                    await session.page.locator(selector).first.check()
-                    filled.append({"selector": selector, "value": "checked"})
+                    # Check one radio per group, not every radio (later checks would undo earlier ones)
+                    group = f.get("name") or selector
+                    if group in handled_radio_groups:
+                        filled.append({"selector": selector, "value": "skipped (group already selected)"})
+                    else:
+                        await session.page.locator(selector).first.check()
+                        handled_radio_groups.add(group)
+                        filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "file":
                     filled.append({"selector": selector, "value": "skipped"})
                 elif f["type"] in interactions._DATE_TYPES:
@@ -2582,7 +2677,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
             return { localStorage: ls, sessionStorage: ss, domSignature: domSig };
         }""")
 
-        cookies = await session.page.context.cookies()
+        cookies = await real_page(session.page).context.cookies()
 
         session.snapshots[snap_name] = {
             "url": session.page.url,
@@ -2609,17 +2704,18 @@ async def _handle_tool(name: str, args: dict) -> dict:
             return {"success": False, "error": f"Snapshot '{snap_name}' not found. Available: {list(session.snapshots.keys())}"}
 
         snap = session.snapshots[snap_name]
+        page = real_page(session.page)
 
         # Restore cookies
-        await session.page.context.clear_cookies()
+        await page.context.clear_cookies()
         if snap["cookies"]:
-            await session.page.context.add_cookies(snap["cookies"])
+            await page.context.add_cookies(snap["cookies"])
 
         # Navigate to saved URL
-        await session.page.goto(snap["url"], wait_until="networkidle")
+        await page.goto(snap["url"], wait_until=config.WAIT_UNTIL)
 
         # Restore storage
-        await session.page.evaluate("""(state) => {
+        await page.evaluate("""(state) => {
             localStorage.clear();
             for (const [k, v] of Object.entries(state.localStorage || {})) {
                 localStorage.setItem(k, v);
@@ -2630,12 +2726,16 @@ async def _handle_tool(name: str, args: dict) -> dict:
             }
         }""", snap)
 
-        session.url = session.page.url
+        # Reload so the app actually boots with the restored cookies + storage —
+        # without this, an SPA that read storage on startup keeps its old state.
+        await page.reload(wait_until=config.WAIT_UNTIL)
+
+        session.url = page.url
         return {
             "success": True,
             "name": snap_name,
-            "restored_url": session.page.url,
-            "title": await session.page.title(),
+            "restored_url": page.url,
+            "title": await page.title(),
         }
 
     elif name == "diff_page_state":
@@ -2711,7 +2811,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         domain_filter = args.get("domain_filter", "")
 
-        cookies = await session.page.context.cookies()
+        cookies = await real_page(session.page).context.cookies()
 
         if domain_filter:
             cookies = [c for c in cookies if domain_filter in c.get("domain", "")]
@@ -2988,22 +3088,16 @@ async def _handle_tool(name: str, args: dict) -> dict:
             await asyncio.sleep(wait_ms / 1000)
 
         if custom_selector:
-            js_selectors = f'["{custom_selector}"]'
+            toast_selectors = [custom_selector]
         else:
-            js_selectors = """[
-                '[role="alert"]',
-                '[role="status"]',
-                '[aria-live="polite"]',
-                '[aria-live="assertive"]',
-                '.toast',
-                '.notification',
-                '[data-sonner-toast]',
-                '[data-radix-toast-announce]',
+            toast_selectors = [
+                '[role="alert"]', '[role="status"]',
+                '[aria-live="polite"]', '[aria-live="assertive"]',
+                '.toast', '.notification',
+                '[data-sonner-toast]', '[data-radix-toast-announce]',
                 '.Toastify__toast',
-                '[class*="toast"]',
-                '[class*="notification"]',
-                '[class*="snackbar"]',
-            ]"""
+                '[class*="toast"]', '[class*="notification"]', '[class*="snackbar"]',
+            ]
 
         messages = await session.page.evaluate("""(selectors) => {
             const seen = new Set();
@@ -3026,14 +3120,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 } catch(e) {}
             }
             return results;
-        }""", json.loads(js_selectors) if custom_selector else [
-            '[role="alert"]', '[role="status"]',
-            '[aria-live="polite"]', '[aria-live="assertive"]',
-            '.toast', '.notification',
-            '[data-sonner-toast]', '[data-radix-toast-announce]',
-            '.Toastify__toast',
-            '[class*="toast"]', '[class*="notification"]', '[class*="snackbar"]',
-        ])
+        }""", toast_selectors)
 
         return {
             "count": len(messages),
@@ -3113,7 +3200,8 @@ async def _handle_tool(name: str, args: dict) -> dict:
         url = args["url"]
         max_length = args.get("max_length", 50000)
         raw_html = args.get("raw_html", False)
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=False) as client:
+        verify_ssl = args.get("verify_ssl", True)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=verify_ssl) as client:
             response = await client.get(url)
             response.raise_for_status()
         content_type = response.headers.get("content-type", "")
@@ -3203,7 +3291,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
                     "open_session": {"params": "url, project?", "note": "Create session — returns session_id + screenshot"},
                     "close_session": {"params": "session_id", "note": "Close session and free resources"},
                     "list_sessions": {"params": "(none)", "note": "All active sessions with idle times"},
-                    "set_viewport": {"params": "session_id, width?, height?, device?", "note": "Switch viewport. Presets: mobile, tablet, desktop, iphone_12, iphone_14_pro, pixel_7, ipad, ipad_pro"},
+                    "set_viewport": {"params": "session_id, width?, height?, device?", "note": "Switch viewport. Presets: mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg"},
                 },
             },
             "interactive": {
@@ -3254,6 +3342,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
                 "description": "Network mocking, storage manipulation, iframes, CSS inspection, device emulation.",
                 "tools": {
                     "intercept_network": {"params": "session_id, url_pattern, status?, body?, content_type?, once?", "note": "Mock API responses"},
+                    "clear_intercepts": {"params": "session_id, url_pattern?", "note": "Remove network mocks (all, or by pattern)"},
                     "get_local_storage": {"params": "session_id, storage?, keys?", "note": "Read localStorage or sessionStorage"},
                     "set_local_storage": {"params": "session_id, entries, storage?, clear_first?", "note": "Write to localStorage or sessionStorage"},
                     "select_iframe": {"params": "session_id, selector", "note": "Enter iframe — returns new session_id"},
@@ -3307,7 +3396,7 @@ async def _handle_tool(name: str, args: dict) -> dict:
 
         # Build response
         result = {
-            "total_tools": 69,
+            "total_tools": len(await list_tools()),
             "categories": len(catalog),
         }
 

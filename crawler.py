@@ -95,21 +95,26 @@ class Crawler:
                     continue
 
                 self.visited.add(url)
+
+                # Only count pages we can actually reach
+                try:
+                    await page.goto(url, wait_until=config.WAIT_UNTIL, timeout=config.TIMEOUT)
+                except Exception:
+                    continue
+
                 discovered.append(url)
 
                 if depth >= max_depth:
                     continue
 
                 try:
-                    await page.goto(url, wait_until="networkidle", timeout=config.TIMEOUT)
                     links = await self.extract_links(page, url)
-
-                    for link in links:
-                        if link not in self.visited:
-                            self.to_visit.append((link, depth + 1))
-
                 except Exception:
                     continue
+
+                for link in links:
+                    if link not in self.visited:
+                        self.to_visit.append((link, depth + 1))
 
         finally:
             await page.close()

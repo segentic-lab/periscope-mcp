@@ -152,16 +152,21 @@ class ProjectManager:
         ]
 
     def delete(self, name: str) -> bool:
-        if name in self.projects:
-            del self.projects[name]
-            self._save()
-            # Clean up project screenshots
-            project_screenshot_dir = os.path.join(config.SCREENSHOT_DIR, name)
+        project = self.projects.get(name)
+        if not project:
+            return False
+        custom_dir = project.screenshot_dir
+        del self.projects[name]
+        self._save()
+        # Clean up project screenshots (default dir + custom screenshot_dir if set)
+        import shutil
+        for base in (config.SCREENSHOT_DIR, custom_dir):
+            if not base:
+                continue
+            project_screenshot_dir = os.path.join(base, name)
             if os.path.exists(project_screenshot_dir):
-                import shutil
                 shutil.rmtree(project_screenshot_dir)
-            return True
-        return False
+        return True
 
     def set_form_login(
         self,

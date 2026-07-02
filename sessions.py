@@ -1,3 +1,4 @@
+import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -9,7 +10,7 @@ import config
 class PageSession:
     session_id: str
     project_name: str
-    page: Page
+    page: Page  # a Page, or a Frame for iframe sessions (see real_page())
     url: str
     created_at: float
     last_accessed: float
@@ -19,6 +20,20 @@ class PageSession:
     response_bodies: list = field(default_factory=list)
     snapshots: dict = field(default_factory=dict)
     screenshot_dir: str = None
+    intercepts: list = field(default_factory=list)  # active intercept routes: {glob, handler, pattern}
+    cdp_session: object = None  # cached CDP session for network emulation
+
+
+def real_page(page_or_frame) -> Page:
+    """Return the owning Page. Iframe sessions store a Frame in .page;
+    Page-level APIs (screenshot, context, history, routing) need the real Page."""
+    return page_or_frame if isinstance(page_or_frame, Page) else page_or_frame.page
+
+
+def _capped_append(buf: list, item, cap: int):
+    buf.append(item)
+    if len(buf) > cap:
+        del buf[: len(buf) - cap]
 
 
 class SessionManager:
@@ -26,6 +41,34 @@ class SessionManager:
 
     def __init__(self):
         self.sessions: dict[str, PageSession] = {}
+        self.recent_removals: list[dict] = []  # last few evicted/expired sessions, for debugging
+        self._pending_closes: set = set()
+
+    def _record_removal(self, session: PageSession, reason: str):
+        self.recent_removals.append({
+            "session_id": session.session_id,
+            "url": session.url,
+            "reason": reason,
+            "at": time.time(),
+        })
+        del self.recent_removals[:-5]
+
+    def _schedule_close(self, session: PageSession):
+        """Fire-and-forget page close from sync context, holding a task ref so it isn't GC'd."""
+        close = getattr(session.page, "close", None)  # Frame (iframe session) has no close()
+        if close is None:
+            return
+        async def _close():
+            try:
+                await close()
+            except Exception:
+                pass
+        try:
+            task = asyncio.get_running_loop().create_task(_close())
+            self._pending_closes.add(task)
+            task.add_done_callback(self._pending_closes.discard)
+        except RuntimeError:
+            pass
 
     async def create_session(
         self, context: BrowserContext, url: str, project_name: str = "default", screenshot_dir: str = None
@@ -47,18 +90,18 @@ class SessionManager:
 
         def on_console(msg):
             if msg.type == "error":
-                console_errors.append(msg.text)
+                _capped_append(console_errors, msg.text, config.MAX_CONSOLE_LOG)
             else:
-                console_log.append(msg.text)
+                _capped_append(console_log, msg.text, config.MAX_CONSOLE_LOG)
 
         async def on_response(response):
-            network_log.append({
+            _capped_append(network_log, {
                 "url": response.url,
                 "status": response.status,
                 "method": response.request.method,
                 "resource_type": response.request.resource_type,
                 "timestamp": time.time(),
-            })
+            }, config.MAX_NETWORK_LOG)
             # Capture response bodies for fetch/xhr/document requests
             if response.request.resource_type in ("fetch", "xhr", "document"):
                 try:
@@ -81,10 +124,10 @@ class SessionManager:
                     pass
 
         page.on("console", on_console)
-        page.on("pageerror", lambda err: console_errors.append(str(err)))
+        page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
         page.on("response", on_response)
 
-        await page.goto(url, wait_until="networkidle")
+        await page.goto(url, wait_until=config.WAIT_UNTIL)
 
         now = time.time()
         session = PageSession(
@@ -107,7 +150,11 @@ class SessionManager:
         """Get a session by ID, updating last_accessed. Raises KeyError if not found or expired."""
         self._cleanup_expired()
         if session_id not in self.sessions:
-            raise KeyError(f"Session '{session_id}' not found or expired")
+            raise KeyError(
+                f"Session '{session_id}' not found or expired "
+                f"(sessions expire after {config.SESSION_TIMEOUT}s idle). "
+                f"Open a new one with open_session."
+            )
         session = self.sessions[session_id]
         session.last_accessed = time.time()
         return session
@@ -148,12 +195,8 @@ class SessionManager:
         ]
         for sid in expired:
             session = self.sessions.pop(sid)
-            try:
-                # Schedule close but don't await — we're in a sync method
-                import asyncio
-                asyncio.get_event_loop().create_task(session.page.close())
-            except Exception:
-                pass
+            self._record_removal(session, "expired")
+            self._schedule_close(session)
 
     def _evict_oldest(self):
         """Evict the oldest (least recently accessed) session to make room."""
@@ -161,8 +204,5 @@ class SessionManager:
             return
         oldest_id = min(self.sessions, key=lambda sid: self.sessions[sid].last_accessed)
         session = self.sessions.pop(oldest_id)
-        try:
-            import asyncio
-            asyncio.get_event_loop().create_task(session.page.close())
-        except Exception:
-            pass
+        self._record_removal(session, "evicted (MAX_SESSIONS reached)")
+        self._schedule_close(session)

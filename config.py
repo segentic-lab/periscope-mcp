@@ -6,7 +6,10 @@ STARTUP_PAUSE = int(os.environ.get("STARTUP_PAUSE", "10"))  # seconds to wait af
 TIMEOUT = 30000  # milliseconds
 VIEWPORT_WIDTH = 1920
 VIEWPORT_HEIGHT = 1080
-CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH")  # override Playwright's bundled Chromium when set
+CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH", "/snap/chromium/current/usr/lib/chromium-browser/chrome")
+# Navigation wait strategy: "networkidle" is thorough but hangs 30s on pages with
+# websockets/polling. Set NAV_WAIT_UNTIL=load or domcontentloaded for those.
+WAIT_UNTIL = os.environ.get("NAV_WAIT_UNTIL", "networkidle")
 
 # Crawler settings
 MAX_PAGES = 20
@@ -14,8 +17,10 @@ MAX_DEPTH = 3
 
 # Session settings
 MAX_SESSIONS = 20
-SESSION_TIMEOUT = 300  # seconds
+SESSION_TIMEOUT = int(os.environ.get("SESSION_TIMEOUT", "300"))  # seconds idle before expiry
 MAX_RESPONSE_BODY_SIZE = 512000  # 500KB max per response body capture
+MAX_CONSOLE_LOG = 500    # max console entries kept per session
+MAX_NETWORK_LOG = 1000   # max network log entries kept per session
 
 # Storage paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
