@@ -96,6 +96,7 @@ close_session(session_id)
 
 ### Advanced Testing Tools
 - `intercept_network(session_id, url_pattern, status?, body?, content_type?, once?)` — Mock API responses to test error/empty/loading states
+- `clear_intercepts(session_id, url_pattern?)` — Remove network mocks set by intercept_network (all, or by pattern)
 - `get_local_storage(session_id, storage?, keys?)` / `set_local_storage(session_id, entries, storage?, clear_first?)` — Read/write localStorage or sessionStorage
 - `select_iframe(session_id, selector)` — Switch into iframe, returns new session scoped to iframe content
 - `reload_page(session_id)` — Refresh page, test state persistence
@@ -117,15 +118,17 @@ close_session(session_id)
 
 ### Web Tools
 - `web_search(query, max_results?)` — Search DuckDuckGo, returns titles + URLs + snippets
-- `web_fetch(url, max_length?, raw_html?)` — Fetch URL and extract readable text content (or raw HTML)
+- `web_fetch(url, max_length?, raw_html?, verify_ssl?)` — Fetch URL and extract readable text content (or raw HTML). TLS verified by default; `verify_ssl=false` for self-signed dev servers.
 
 ### Utility Tools
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 20` — Max concurrent sessions
-- `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle
+- `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle (env-overridable: `SESSION_TIMEOUT=600`)
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
+- `MAX_CONSOLE_LOG = 500` / `MAX_NETWORK_LOG = 1000` — Per-session log caps (oldest entries dropped)
+- `WAIT_UNTIL = "networkidle"` — Navigation wait strategy; set `NAV_WAIT_UNTIL=load` for sites with websockets/polling that never reach networkidle
 
 ## Social / SEO Preview Validation
 

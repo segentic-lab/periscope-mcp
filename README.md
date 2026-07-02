@@ -1,6 +1,6 @@
 # WebsiteTesterAI
 
-An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 59 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 70 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
 ## Architecture
 
@@ -13,13 +13,13 @@ Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
                        +-- Videos (WebM)
 ```
 
-**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 59 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
+**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 70 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
 
 ## Project Structure
 
 ```
 WebsiteTesterAI/
-├── server.py              # MCP server entry point + tool definitions (59 tools)
+├── server.py              # MCP server entry point + tool definitions (70 tools)
 ├── tester.py              # Playwright browser control + test orchestration + responsive testing
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
@@ -107,7 +107,7 @@ Add to `~/.claude.json` under the project's `mcpServers` key:
 
 After configuring, restart Claude Code.
 
-## MCP Tools Reference (59 tools)
+## MCP Tools Reference (70 tools)
 
 ### Project Management (4 tools)
 
