@@ -1,19 +1,21 @@
 # periscope-mcp
 
-An MCP (Model Context Protocol) server that gives Claude Code AI-powered website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 70 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 70 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+
+Works with **any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom agents, or anything else that speaks MCP over stdio.
 
 ## Architecture
 
 ```
-Claude Code  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
-                       |                         |
-                       +-- Projects (JSON)       +-- Persistent Sessions
-                       +-- Screenshots (PNG)     +-- Network Interception
-                       +-- Reports (JSON)        +-- Device Emulation
-                       +-- Videos (WebM)
+MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome)
+                                 |                         |
+                                 +-- Projects (JSON)       +-- Persistent Sessions
+                                 +-- Screenshots (PNG)     +-- Network Interception
+                                 +-- Reports (JSON)        +-- Device Emulation
+                                 +-- Videos (WebM)
 ```
 
-**How it works:** Claude Code connects to this MCP server over stdio. The server exposes 70 tools that Claude Code can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to Claude Code for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 70 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
@@ -51,7 +53,7 @@ periscope-mcp/
 ├── data/                  # Created at runtime (gitignored — contains credentials)
 ├── Dockerfile
 ├── docker-compose.yml
-└── .mcp.json.example      # Claude Code MCP registration template (copy to .mcp.json)
+└── .mcp.json.example      # MCP registration template (copy to .mcp.json)
 ```
 
 ## Prerequisites
@@ -63,10 +65,19 @@ periscope-mcp/
 
 ### Quick install (Debian/Ubuntu)
 
+One command — clone and install:
+
 ```bash
-cd periscope-mcp
-./install.sh
+git clone https://github.com/segentic-lab/periscope-mcp.git && cd periscope-mcp && ./install.sh
 ```
+
+Fully unattended (no confirmation prompts):
+
+```bash
+git clone https://github.com/segentic-lab/periscope-mcp.git && cd periscope-mcp && ./install.sh -y
+```
+
+Already cloned? Just run `./install.sh` from the repo directory.
 
 The script installs apt prerequisites, creates the venv, installs Python
 dependencies and Playwright's Chromium, runs a headless self-test, and
@@ -105,15 +116,12 @@ docker compose up -d
 
 See [Docker Deployment](#docker-deployment) section below.
 
-## Connecting to Claude Code
+## Connecting an MCP Client
 
-### Option 1: Project-level config (recommended)
-
-Copy the template and adjust the paths, then open Claude Code in this directory:
-
-```bash
-cp .mcp.json.example .mcp.json
-```
+Periscope is a standard stdio MCP server: point any MCP client at
+`venv/bin/python server.py` and you're done. `./install.sh` generates
+`mcp-config.json` with the correct absolute paths for your machine; most
+clients accept that shape directly:
 
 ```json
 {
@@ -126,20 +134,26 @@ cp .mcp.json.example .mcp.json
 }
 ```
 
-### Option 2: Global config
+Client-specific examples:
 
-Add to `~/.claude.json` under the project's `mcpServers` key:
+- **Claude Code** — copy the config into the project as `.mcp.json`
+  (`cp .mcp.json.example .mcp.json` and adjust paths), or run
+  `claude mcp add periscope -- /path/to/venv/bin/python /path/to/server.py`
+- **Cursor / Windsurf** — add the block above to `~/.cursor/mcp.json` /
+  `~/.codeium/windsurf/mcp_config.json`
+- **Codex CLI** — add to `~/.codex/config.toml`:
+  `[mcp_servers.periscope]` with `command` and `args` as above
+- **Custom agents** — any MCP SDK client can spawn the server over stdio with
+  the same command and args
 
-```json
-"mcpServers": {
-  "periscope": {
-    "command": "/path/to/periscope-mcp/venv/bin/python",
-    "args": ["/path/to/periscope-mcp/server.py"]
-  }
-}
-```
+After configuring, restart your client.
 
-After configuring, restart Claude Code.
+### Teaching your agent to use the tools
+
+[`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
+tool-selection guidance, and known pitfalls. Paste its contents into your
+agent's system prompt (or custom instructions) so it drives the 70 tools
+effectively instead of discovering the conventions by trial and error.
 
 ## MCP Tools Reference (70 tools)
 
@@ -369,7 +383,7 @@ Each `test_url` call returns:
 ```
 User: "Test https://example.com for issues"
 
-Claude Code calls:
+The agent calls:
 1. create_project(name="example", base_url="https://example.com")
 2. test_project(project="example")
 3. Analyzes results and reports findings
@@ -379,7 +393,7 @@ Claude Code calls:
 ```
 User: "Test https://myapp.com, login is admin/password123"
 
-Claude Code calls:
+The agent calls:
 1. create_project(name="myapp", base_url="https://myapp.com")
 2. set_form_login(project="myapp", login_url="https://myapp.com/login",
                   username="admin", password="password123")
@@ -391,7 +405,7 @@ Claude Code calls:
 ```
 User: "Test https://staging.example.com, it uses basic auth admin/secret"
 
-Claude Code calls:
+The agent calls:
 1. create_project(name="staging", base_url="https://staging.example.com")
 2. set_basic_auth(project="staging", username="admin", password="secret")
 3. login_project(project="staging")
@@ -402,7 +416,7 @@ Claude Code calls:
 ```
 User: "Test myapp using this session cookie: session=abc123"
 
-Claude Code calls:
+The agent calls:
 1. set_cookies(project="myapp", cookies=[
      {"name": "session", "value": "abc123", "domain": "myapp.com"}
    ])
@@ -413,7 +427,7 @@ Claude Code calls:
 ```
 User: "Go to myapp.com, click the login button, fill in the form, and check what happens"
 
-Claude Code calls:
+The agent calls:
 1. open_session(url="https://myapp.com") → session_id
 2. get_page_elements(session_id=..., selector="button, a") → see clickable elements
 3. click_element(session_id=..., selector="#login-btn") → screenshot after click
@@ -429,7 +443,7 @@ Claude Code calls:
 ```
 User: "Test the checkout flow on myshop.com"
 
-Claude Code calls:
+The agent calls:
 1. interact_and_test(
      url="https://myshop.com/products/1",
      steps=[
@@ -448,7 +462,7 @@ Claude Code calls:
 ```
 User: "Check how example.com looks on mobile, tablet, and desktop"
 
-Claude Code calls:
+The agent calls:
 1. test_responsive(url="https://example.com", run_checks=["visual"])
 → Returns screenshots at 375x812, 768x1024, and 1920x1080
 ```
@@ -457,7 +471,7 @@ Claude Code calls:
 ```
 User: "Show me how this page looks on mobile"
 
-Claude Code calls:
+The agent calls:
 1. set_viewport(session_id=..., device="mobile")
 → Returns screenshot at 375x812
 ```
@@ -466,7 +480,7 @@ Claude Code calls:
 ```
 User: "What happens when the API returns a 500 error?"
 
-Claude Code calls:
+The agent calls:
 1. intercept_network(session_id=..., url_pattern="/api/tasks", status=500,
      body='{"error": "Internal server error"}')
 2. reload_page(session_id=...)
@@ -478,7 +492,7 @@ Claude Code calls:
 ```
 User: "Does this site support dark mode?"
 
-Claude Code calls:
+The agent calls:
 1. open_session(url="https://example.com") → session_id
 2. test_dark_mode(session_id=..., mode="dark")
 → Screenshot shows the page with prefers-color-scheme: dark
@@ -488,7 +502,7 @@ Claude Code calls:
 ```
 User: "Submit this form and wait for the success message"
 
-Claude Code calls:
+The agent calls:
 1. fill_form(session_id=..., fields=[...], submit_selector="#submit")
 2. wait_for_network(session_id=..., url_pattern="/api/submit")
 3. screenshot_session(session_id=...)
@@ -498,7 +512,7 @@ Claude Code calls:
 ```
 User: "How does this page load on a slow connection?"
 
-Claude Code calls:
+The agent calls:
 1. emulate_network(session_id=..., preset="slow_3g")
 2. reload_page(session_id=...)
 3. screenshot_session(session_id=...)
@@ -545,9 +559,9 @@ All data is stored in the `data/` directory:
 docker compose up -d
 ```
 
-### Connect Claude Code to Docker container
+### Connect an MCP client to the Docker container
 
-Update `.mcp.json`:
+Point your client's MCP config at the container instead of the venv:
 
 ```json
 {

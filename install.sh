@@ -142,16 +142,18 @@ print_registration() {
     cat <<EOF
 
 -------------------------------------------------------------------
-Register the server with Claude Code (either option):
-
-  claude mcp add periscope $env_lines-- "$py" "$REPO_DIR/server.py"
-
-or merge the generated config into your project's .mcp.json:
+Register the server with your MCP client. The generated config below
+(also written to mcp-config.json) works with most clients — Claude Code,
+Cursor, Windsurf, and custom agents all accept this shape:
 
 $(sed 's/^/  /' "$MCP_CONFIG")
 
-  (copy it as-is if the project has no .mcp.json yet:
-   cp "$MCP_CONFIG" /path/to/your/project/.mcp.json)
+Examples:
+  Claude Code:  claude mcp add periscope $env_lines-- "$py" "$REPO_DIR/server.py"
+                (or copy mcp-config.json into the project as .mcp.json)
+  Cursor:       merge into ~/.cursor/mcp.json
+  Codex CLI:    add [mcp_servers.periscope] with the same command/args
+                to ~/.codex/config.toml
 -------------------------------------------------------------------
 EOF
 }
@@ -221,7 +223,8 @@ EOF
   venv\\Scripts\\pip install --upgrade pip
   venv\\Scripts\\pip install -r requirements.txt
   venv\\Scripts\\playwright install chromium
-  # Register with: claude mcp add periscope -- venv\\Scripts\\python.exe server.py
+  # Register with your MCP client using venv\\Scripts\\python.exe + server.py
+  # (Claude Code example: claude mcp add periscope -- venv\\Scripts\\python.exe server.py)
 EOF
             return  # registration snippet below prints POSIX paths
             ;;
