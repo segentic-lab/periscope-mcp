@@ -22,47 +22,67 @@ async def handle_record_session(args: dict) -> dict:
         video_dir = os.path.join(config.DATA_DIR, "videos", project_name)
         os.makedirs(video_dir, exist_ok=True)
 
-        context = await t.browser.new_context(
+        context_kwargs = dict(
             viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
             record_video_dir=video_dir,
             ignore_https_errors=True,
         )
+        # Video recording needs a fresh context, so carry over the project
+        # context's cookies/storage — otherwise authenticated flows record logged-out.
+        if proj_obj and proj_obj.is_logged_in and project_name in t.contexts:
+            context_kwargs["storage_state"] = await t.contexts[project_name].storage_state()
+        context = await t.browser.new_context(**context_kwargs)
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
 
+        video = page.video
+        result, error = None, None
         try:
             await page.goto(args["url"], wait_until=config.WAIT_UNTIL)
             result = await interactions.execute_steps(
                 page, args["steps"], project_name, screenshot_dir=proj_screenshot_dir
             )
-            # Close page to finalize video
-            video_path = await page.video.path()
-            await page.close()
-            await context.close()
-            result["video_path"] = video_path
-            return result
         except Exception as e:
-            await page.close()
-            await context.close()
-            return {"success": False, "error": str(e)}
+            error = str(e)
+        finally:
+            # Closing finalizes the video file even when steps failed
+            try:
+                await page.close()
+            finally:
+                await context.close()
+
+        video_path = await video.path() if video else None
+        if error:
+            return {"success": False, "error": error, "video_path": video_path}
+        result["video_path"] = video_path
+        return result
 
 
 @tool("check_console_during_interaction")
 async def handle_check_console_during_interaction(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
-        # Record buffer offsets so only console output from these steps is reported
-        pre_log_count = len(session.console_log)
-        pre_error_count = len(session.console_errors)
+        # Capture via temporary listeners: the session buffers are front-trimmed
+        # at their cap, so len()-offset slicing loses output on chatty pages.
+        listen_page = real_page(session.page)
+        new_logs, new_errors = [], []
 
-        result = await interactions.execute_steps(
-            session.page, args["steps"], session.project_name,
-            screenshot_dir=session.screenshot_dir
-        )
+        def on_console(msg):
+            (new_errors if msg.type == "error" else new_logs).append(msg.text)
+
+        def on_pageerror(err):
+            new_errors.append(str(err))
+
+        listen_page.on("console", on_console)
+        listen_page.on("pageerror", on_pageerror)
+        try:
+            result = await interactions.execute_steps(
+                session.page, args["steps"], session.project_name,
+                screenshot_dir=session.screenshot_dir
+            )
+        finally:
+            listen_page.remove_listener("console", on_console)
+            listen_page.remove_listener("pageerror", on_pageerror)
         session.url = session.page.url
-
-        # Capture console output that occurred during steps
-        new_logs = session.console_log[pre_log_count:]
-        new_errors = session.console_errors[pre_error_count:]
 
         result["console_log"] = new_logs
         result["console_errors"] = new_errors
@@ -76,9 +96,13 @@ async def handle_get_console_errors(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         clear = args.get("clear", True)
 
+        # Return the full buffers (already capped at MAX_CONSOLE_LOG) — clearing
+        # after returning only a tail would silently discard the rest.
         result = {
-            "console_errors": list(session.console_errors)[-50:],
-            "console_log": list(session.console_log)[-100:],
+            "console_errors": list(session.console_errors),
+            "console_log": list(session.console_log),
+            "error_count": len(session.console_errors),
+            "log_count": len(session.console_log),
         }
 
         if clear:
@@ -101,9 +125,10 @@ async def handle_intercept_network(args: dict) -> dict:
         method_filter = args.get("method")
         once = args.get("once", False)
 
-        # ** crosses path separators, so this is true substring matching —
-        # '**/*x*' would fail to match '/x/anything/after'
-        glob = f"**{url_pattern}**"
+        # A callable matcher gives true substring semantics — a glob like
+        # f"**{pattern}**" breaks on metachars common in URLs (?, [], *).
+        def matcher(url, _pat=url_pattern):
+            return _pat in url
 
         async def handle_route(route):
             if method_filter and route.request.method.upper() != method_filter.upper():
@@ -115,11 +140,11 @@ async def handle_intercept_network(args: dict) -> dict:
                 content_type=content_type,
             )
             if once:
-                await route_page.unroute(glob, handle_route)
+                await route_page.unroute(matcher, handle_route)
                 session.intercepts = [i for i in session.intercepts if i["handler"] is not handle_route]
 
-        await route_page.route(glob, handle_route)
-        session.intercepts.append({"glob": glob, "handler": handle_route, "pattern": url_pattern})
+        await route_page.route(matcher, handle_route)
+        session.intercepts.append({"matcher": matcher, "handler": handle_route, "pattern": url_pattern})
 
         return {
             "success": True,
@@ -143,7 +168,7 @@ async def handle_clear_intercepts(args: dict) -> dict:
                 remaining.append(entry)
                 continue
             try:
-                await route_page.unroute(entry["glob"], entry["handler"])
+                await route_page.unroute(entry["matcher"], entry["handler"])
             except Exception:
                 pass
             removed.append(entry["pattern"])
@@ -219,12 +244,13 @@ async def handle_set_local_storage(args: dict) -> dict:
 @tool("select_iframe")
 async def handle_select_iframe(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
-        frame_locator = session.page.frame_locator(args["selector"])
 
-        # Get the actual frame from the page
+        # Get the actual Frame: Locator.content_frame is a FrameLocator property,
+        # so we must go through an ElementHandle for the awaitable content_frame().
         iframe_element = session.page.locator(args["selector"]).first
         await iframe_element.wait_for(state="attached", timeout=10000)
-        content_frame = await iframe_element.content_frame()
+        handle = await iframe_element.element_handle()
+        content_frame = await handle.content_frame() if handle else None
 
         if not content_frame:
             return {"success": False, "error": f"Could not access iframe content for '{args['selector']}'"}
@@ -244,8 +270,9 @@ async def handle_select_iframe(args: dict) -> dict:
             created_at=now,
             last_accessed=now,
             screenshot_dir=session.screenshot_dir,
+            parent_session_id=session.session_id,
         )
-        session_manager.sessions[iframe_session_id] = iframe_session
+        session_manager.register_session(iframe_session)
 
         return {
             "success": True,
@@ -343,10 +370,9 @@ async def handle_test_dark_mode(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         mode = args["mode"]
 
-        await session.page.emulate_media(color_scheme=mode)
+        await real_page(session.page).emulate_media(color_scheme=mode)
         # Give page a moment to re-render
-        import asyncio as _asyncio
-        await _asyncio.sleep(0.3)
+        await asyncio.sleep(0.3)
 
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, f"dark_mode_{mode}", screenshot_dir=session.screenshot_dir)

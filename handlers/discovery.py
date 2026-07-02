@@ -41,6 +41,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "list_projects": {"params": "(none)", "note": "See all projects"},
                     "get_project": {"params": "name", "note": "Project details and config"},
                     "delete_project": {"params": "name", "note": "Remove project and data"},
+                    "describe_tools": {"params": "category?", "note": "This catalog — structured tool reference with workflows and tips"},
                 },
             },
             "auth": {
@@ -129,7 +130,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "name": "Advanced Testing",
                 "description": "Network mocking, storage manipulation, iframes, CSS inspection, device emulation.",
                 "tools": {
-                    "intercept_network": {"params": "session_id, url_pattern, status?, body?, content_type?, once?", "note": "Mock API responses"},
+                    "intercept_network": {"params": "session_id, url_pattern, status?, body?, content_type?, method?, once?", "note": "Mock API responses"},
                     "clear_intercepts": {"params": "session_id, url_pattern?", "note": "Remove network mocks (all, or by pattern)"},
                     "get_local_storage": {"params": "session_id, storage?, keys?", "note": "Read localStorage or sessionStorage"},
                     "set_local_storage": {"params": "session_id, entries, storage?, clear_first?", "note": "Write to localStorage or sessionStorage"},
@@ -155,7 +156,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "description": "Assertions, smart finders, auto-fill, network log, snapshots, cookies, contrast checks. Designed to replace multiple tool calls with one.",
                 "tools": {
                     "assert_condition": {"params": "session_id, assertion, selector?, expected?, attribute?", "note": "Instant pass/fail: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals"},
-                    "find_element": {"params": "session_id, text?, tag?, role?, near?", "note": "Smart finder — search by text, tag, role, or proximity"},
+                    "find_element": {"params": "session_id, text?, tag?, role?, near?, max_results?", "note": "Smart finder — search by text, tag, role, or proximity"},
                     "auto_fill_form": {"params": "session_id, form_selector?, overrides?, submit?", "note": "Auto-detect fields, infer types, fill with test data. Date/time inputs filled with React-compatible events."},
                     "get_network_log": {"params": "session_id, url_filter?, clear?", "note": "All network requests (URL, status, method, type)"},
                     "snapshot_page_state": {"params": "session_id, name", "note": "Save URL + cookies + storage + DOM as checkpoint"},
@@ -171,7 +172,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "description": "Search the internet and fetch page content.",
                 "tools": {
                     "web_search": {"params": "query, max_results?", "note": "Search DuckDuckGo, returns titles + URLs + snippets"},
-                    "web_fetch": {"params": "url, max_length?, raw_html?", "note": "Fetch URL and extract readable text content"},
+                    "web_fetch": {"params": "url, max_length?, raw_html?, verify_ssl?", "note": "Fetch URL and extract readable text content"},
                 },
             },
         }

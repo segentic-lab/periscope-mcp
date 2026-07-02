@@ -11,10 +11,14 @@ class Crawler:
         self.to_visit = []
 
     def _normalize_url(self, url: str) -> str:
-        """Normalize URL by removing fragments and trailing slashes."""
+        """Normalize URL by removing fragments and trailing slashes.
+        Query strings are kept — /items?page=2 and /items?page=3 are distinct pages."""
         parsed = urlparse(url)
-        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        return normalized.rstrip("/") or normalized
+        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+        normalized = normalized or f"{parsed.scheme}://{parsed.netloc}"
+        if parsed.query:
+            normalized += f"?{parsed.query}"
+        return normalized
 
     def _is_same_domain(self, url: str, base_url: str) -> bool:
         """Check if URL is on the same domain as base URL."""
@@ -76,8 +80,8 @@ class Crawler:
 
         Returns list of discovered URLs.
         """
-        max_pages = max_pages or config.MAX_PAGES
-        max_depth = max_depth or config.MAX_DEPTH
+        max_pages = config.MAX_PAGES if max_pages is None else max_pages
+        max_depth = config.MAX_DEPTH if max_depth is None else max_depth
 
         start_url = self._normalize_url(start_url)
         self.visited = set()

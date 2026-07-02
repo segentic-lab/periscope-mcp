@@ -82,13 +82,14 @@ TOOLS: list[Tool] = [
                     "project": {"type": "string", "description": "Project name"},
                     "cookies": {
                         "type": ["array", "string"],
-                        "description": "List of cookies with name, value, domain",
+                        "description": "List of cookies with name, value, domain (and optionally path, defaults to '/'). Playwright requires a domain+path pair to inject them.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "name": {"type": "string"},
                                 "value": {"type": "string"},
-                                "domain": {"type": "string"}
+                                "domain": {"type": "string"},
+                                "path": {"type": "string", "description": "Cookie path (default: '/')"}
                             },
                             "required": ["name", "value", "domain"]
                         }
@@ -284,7 +285,7 @@ TOOLS: list[Tool] = [
                                 "target": {"type": "string", "description": "CSS selector of drop target (for drag action)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
                                 "url": {"type": "string", "description": "URL (for navigate)"},
-                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
                                 "label": {"type": "string", "description": "Label for screenshot filename (screenshot action), or option label text (select_option action)"},
                                 "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks on click (default: false)"},
@@ -293,6 +294,7 @@ TOOLS: list[Tool] = [
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"},
+                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"},
                                 "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
@@ -436,7 +438,7 @@ TOOLS: list[Tool] = [
                                 "target": {"type": "string", "description": "Drop target selector (for drag)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key)"},
                                 "url": {"type": "string", "description": "URL (for navigate)"},
-                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
                                 "state": {"type": "string", "description": "State to wait for (visible, hidden, attached, detached)"},
                                 "label": {"type": "string", "description": "Label for screenshot"},
                                 "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks"},
@@ -445,6 +447,7 @@ TOOLS: list[Tool] = [
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
+                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"},
                                 "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
@@ -505,13 +508,14 @@ TOOLS: list[Tool] = [
                                 "text": {"type": "string", "description": "Text to type or wait for"},
                                 "key": {"type": "string", "description": "Key to press (for press_key)"},
                                 "url": {"type": "string", "description": "URL (for navigate)"},
-                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait, wait_for)"},
+                                "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
                                 "state": {"type": "string", "description": "State to wait for"},
                                 "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels"},
-                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"}
+                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
+                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"}
                             },
                             "required": ["action"]
                         }

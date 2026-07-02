@@ -13,6 +13,20 @@ from sessions import real_page
 from .registry import tool
 
 
+async def _open_ephemeral_page(t, project_name: str, url: str):
+    """Create a page in the project context and navigate; close it if goto fails
+    so failed navigations don't leak live pages into the shared context."""
+    context = await t.get_context(project_name)
+    page = await context.new_page()
+    page.set_default_timeout(config.TIMEOUT)
+    try:
+        await page.goto(url, wait_until=config.WAIT_UNTIL)
+    except Exception:
+        await page.close()
+        raise
+    return page
+
+
 @tool("click_element")
 async def handle_click_element(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
@@ -54,24 +68,24 @@ async def handle_interact_and_test(args: dict) -> dict:
         continue_on_error = args.get("continue_on_error", False)
 
         ephemeral = False
+        session = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
             shot_dir = session.screenshot_dir
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            page = await _open_ephemeral_page(t, project_name, url)
             ephemeral = True
             proj_obj = project_manager.get(project_name)
             shot_dir = proj_obj.screenshot_dir if proj_obj else None
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
+        touch = (lambda: setattr(session, "last_accessed", time.time())) if session else None
         try:
             result = await interactions.execute_steps(
-                page, steps, project_name, continue_on_error, screenshot_dir=shot_dir
+                page, steps, project_name, continue_on_error, screenshot_dir=shot_dir,
+                touch=touch,
             )
 
             if screenshot_after:
@@ -120,10 +134,7 @@ async def handle_get_page_elements(args: dict) -> dict:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            page = await _open_ephemeral_page(t, project_name, url)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -153,10 +164,7 @@ async def handle_extract_text(args: dict) -> dict:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            page = await _open_ephemeral_page(t, project_name, url)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -196,10 +204,7 @@ async def handle_get_attribute(args: dict) -> dict:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            page = await _open_ephemeral_page(t, project_name, url)
             ephemeral = True
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -237,22 +242,37 @@ async def handle_get_attribute(args: dict) -> dict:
                 await page.close()
 
 
+# Per-session pending dialog handler and info captured when the last dialog fired.
+# Keyed by session_id so repeated handle_dialog calls replace (not stack) handlers.
+_pending_dialog = {}
+_last_dialog = {}
+
+
 @tool("handle_dialog")
 async def handle_handle_dialog(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
+        session_id = args["session_id"]
+        session = session_manager.get_session(session_id)
         dialog_page = real_page(session.page)
         action = args["action"]
         prompt_text = args.get("prompt_text")
 
-        dialog_info = {}
-
-        def on_dialog(dialog):
-            dialog_info["type"] = dialog.type
-            dialog_info["message"] = dialog.message
-            dialog_info["default_value"] = dialog.default_value
+        # Replace any still-pending handler from a previous call — stacked
+        # handlers would all fire on the next dialog and double-handle it.
+        prev = _pending_dialog.pop(session_id, None)
+        if prev is not None:
+            try:
+                dialog_page.remove_listener("dialog", prev)
+            except Exception:
+                pass
 
         async def handle(dialog):
-            on_dialog(dialog)
+            _last_dialog[session_id] = {
+                "type": dialog.type,
+                "message": dialog.message,
+                "default_value": dialog.default_value,
+                "action_taken": action,
+            }
+            _pending_dialog.pop(session_id, None)
             if action == "accept":
                 if prompt_text is not None:
                     await dialog.accept(prompt_text)
@@ -261,12 +281,14 @@ async def handle_handle_dialog(args: dict) -> dict:
             else:
                 await dialog.dismiss()
 
+        _pending_dialog[session_id] = handle
         dialog_page.once("dialog", handle)
 
         return {
             "success": True,
             "message": f"Dialog handler set: will {action} next dialog",
             "prompt_text": prompt_text,
+            "last_dialog": _last_dialog.get(session_id),
         }
 
 
@@ -298,7 +320,9 @@ async def handle_wait_for_network(args: dict) -> dict:
         method_filter = args.get("method")
         timeout = args.get("timeout", 30000)
 
-        async def match_request(response):
+        # Must be a plain function: Playwright calls predicates synchronously,
+        # and a coroutine object is always truthy (filter would never apply).
+        def match_request(response):
             if url_pattern not in response.url:
                 return False
             if method_filter and response.request.method.upper() != method_filter.upper():

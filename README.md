@@ -486,18 +486,25 @@ Claude Code calls:
 
 ## Configuration
 
-Edit `config.py` to change defaults:
+Edit `config.py` to change defaults (env-overridable settings note the variable):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `HEADLESS` | `True` | Run Chrome in headless mode |
+| `HEADLESS` | `True` | Run Chrome in headless mode (env: `HEADLESS=false`) |
+| `STARTUP_PAUSE` | `10` | Seconds to wait after a non-headless browser opens (env: `STARTUP_PAUSE`) |
 | `TIMEOUT` | `30000` | Page load timeout (ms) |
 | `VIEWPORT_WIDTH` | `1920` | Browser viewport width |
 | `VIEWPORT_HEIGHT` | `1080` | Browser viewport height |
+| `CHROMIUM_PATH` | unset | Path to a system Chromium binary (env: `CHROMIUM_PATH`); unset = Playwright's bundled build |
+| `WAIT_UNTIL` | `networkidle` | Navigation wait strategy (env: `NAV_WAIT_UNTIL=load` for sites with websockets/polling) |
 | `MAX_PAGES` | `20` | Default max pages to crawl |
 | `MAX_DEPTH` | `3` | Default max crawl depth |
-| `MAX_SESSIONS` | `10` | Max concurrent interactive sessions |
-| `SESSION_TIMEOUT` | `300` | Auto-expire idle sessions after N seconds |
+| `MAX_SESSIONS` | `20` | Max concurrent interactive sessions |
+| `SESSION_TIMEOUT` | `300` | Auto-expire idle sessions after N seconds (env: `SESSION_TIMEOUT`) |
+| `MAX_RESPONSE_BODY_SIZE` | `512000` | Max bytes captured per response body |
+| `MAX_RESPONSE_BODIES` | `100` | Max captured response bodies kept per session |
+| `MAX_CONSOLE_LOG` | `500` | Max console entries kept per session |
+| `MAX_NETWORK_LOG` | `1000` | Max network log entries kept per session |
 
 ## Data Storage
 

@@ -27,12 +27,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         coerce_args(arguments)
         handler = HANDLERS.get(name)
         if handler is None:
-            result = {"error": f"Unknown tool: {name}"}
+            result = {"success": False, "error": f"Unknown tool: {name}"}
         else:
             result = await handler(arguments)
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
     except Exception as e:
-        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+        # str(KeyError) wraps the message in repr quotes — unwrap via args.
+        message = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+        return [TextContent(type="text", text=json.dumps({"success": False, "error": message}))]
 
 
 async def main():

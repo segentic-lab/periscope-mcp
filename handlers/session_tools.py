@@ -64,7 +64,13 @@ async def handle_set_viewport(args: dict) -> dict:
             "desktop_lg": {"width": 2560, "height": 1440},  # QHD
         }
         device = args.get("device")
-        if device and device in device_presets:
+        if device:
+            if device not in device_presets:
+                return {
+                    "success": False,
+                    "error": f"Unknown device preset '{device}'. "
+                             f"Valid: {', '.join(device_presets)}",
+                }
             width = device_presets[device]["width"]
             height = device_presets[device]["height"]
         else:
@@ -87,10 +93,10 @@ async def handle_set_viewport(args: dict) -> dict:
 async def handle_screenshot_session(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         full_page = args.get("full_page", True)
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir)
-        if not full_page:
-            # Retake as viewport-only screenshot
+        if full_page:
+            screenshot_path = await interactions.take_screenshot(
+                session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir)
+        else:
             base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
             project_dir = os.path.join(base_dir, session.project_name)
             os.makedirs(project_dir, exist_ok=True)
@@ -99,6 +105,7 @@ async def handle_screenshot_session(args: dict) -> dict:
             screenshot_path = os.path.join(project_dir, f"interactive_{timestamp}_viewport.png")
             await real_page(session.page).screenshot(path=screenshot_path, full_page=False)
         return {
+            "success": True,
             "screenshot_path": screenshot_path,
             "url": session.url,
             "title": await session.page.title(),
@@ -114,6 +121,7 @@ async def handle_go_back(args: dict) -> dict:
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_back", screenshot_dir=session.screenshot_dir)
         return {
+            "success": True,
             "url": session.url,
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,
@@ -129,6 +137,7 @@ async def handle_go_forward(args: dict) -> dict:
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_forward", screenshot_dir=session.screenshot_dir)
         return {
+            "success": True,
             "url": session.url,
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,
@@ -144,6 +153,7 @@ async def handle_reload_page(args: dict) -> dict:
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_reload", screenshot_dir=session.screenshot_dir)
         return {
+            "success": True,
             "url": session.url,
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,

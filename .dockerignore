@@ -1,0 +1,15 @@
+
+# Never bake credentials or runtime data into the image
+data/
+.mcp.json
+
+# Local dev artifacts
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.github/
+tests/local/
+.claude/

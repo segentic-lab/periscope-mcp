@@ -17,8 +17,10 @@ from .registry import tool
 async def handle_web_search(args: dict) -> dict:
         from ddgs import DDGS
         query = args["query"]
-        max_results = args.get("max_results", 10)
-        results = DDGS().text(query, max_results=max_results)
+        max_results = int(args.get("max_results", 10))
+        # DDGS().text is synchronous network I/O — run it off the event loop
+        # so a slow search doesn't stall every other tool call.
+        results = await asyncio.to_thread(lambda: list(DDGS().text(query, max_results=max_results)))
         formatted = []
         for r in results:
             formatted.append({
@@ -38,13 +40,26 @@ async def handle_web_fetch(args: dict) -> dict:
         import httpx
         from bs4 import BeautifulSoup
         url = args["url"]
-        max_length = args.get("max_length", 50000)
+        max_length = int(args.get("max_length", 50000))
         raw_html = args.get("raw_html", False)
         verify_ssl = args.get("verify_ssl", True)
         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=verify_ssl) as client:
             response = await client.get(url)
             response.raise_for_status()
         content_type = response.headers.get("content-type", "")
+        # Don't decode-and-soup binary responses (PDFs, images) into garbage
+        main_type = content_type.split(";")[0].strip().lower()
+        if main_type and not (main_type.startswith("text/")
+                              or main_type in ("application/json", "application/xml",
+                                               "application/xhtml+xml", "application/javascript")
+                              or main_type.endswith("+json") or main_type.endswith("+xml")):
+            return {
+                "success": False,
+                "url": str(response.url),
+                "error": f"Unsupported content type '{content_type}' — web_fetch handles text content only",
+                "content_type": content_type,
+                "content_length": len(response.content),
+            }
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
         title_tag = soup.find("title")

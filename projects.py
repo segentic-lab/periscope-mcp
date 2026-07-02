@@ -25,7 +25,9 @@ class BasicAuth:
 
 @dataclass
 class CookieAuth:
-    cookies: list  # List of cookie dicts: {name, value, domain, path?, secure?, httpOnly?}
+    # List of cookie dicts: {name, value, domain, path, secure?, httpOnly?}.
+    # Playwright's add_cookies requires either url or a domain+path pair.
+    cookies: list
 
 
 @dataclass
@@ -106,17 +108,48 @@ class ProjectManager:
         self._load()
 
     def _load(self):
-        if os.path.exists(config.PROJECTS_FILE):
+        if not os.path.exists(config.PROJECTS_FILE):
+            return
+        try:
             with open(config.PROJECTS_FILE, "r") as f:
                 data = json.load(f)
-                for name, proj_data in data.items():
-                    self.projects[name] = Project.from_dict(proj_data)
+        except (json.JSONDecodeError, OSError) as e:
+            # A corrupt store must not prevent server startup; keep the bad
+            # file aside for manual recovery instead of overwriting it.
+            backup = config.PROJECTS_FILE + ".corrupt"
+            try:
+                os.replace(config.PROJECTS_FILE, backup)
+            except OSError:
+                backup = None
+            print(f"WARNING: could not load {config.PROJECTS_FILE} ({e});"
+                  f" starting empty{f', original moved to {backup}' if backup else ''}")
+            return
+        for name, proj_data in data.items():
+            self.projects[name] = Project.from_dict(proj_data)
+        # Login state lives in in-memory browser contexts, which don't survive
+        # a server restart — a persisted True flag would always be stale.
+        self.reset_login_flags(save=False)
 
     def _save(self):
         os.makedirs(os.path.dirname(config.PROJECTS_FILE), exist_ok=True)
         data = {name: proj.to_dict() for name, proj in self.projects.items()}
-        with open(config.PROJECTS_FILE, "w") as f:
+        # Atomic write: a crash mid-write must not corrupt the store, and the
+        # file holds plaintext credentials, so keep it owner-only.
+        tmp = config.PROJECTS_FILE + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, config.PROJECTS_FILE)
+
+    def reset_login_flags(self, save: bool = True):
+        """Clear is_logged_in on all projects (login state died with the browser)."""
+        changed = False
+        for p in self.projects.values():
+            if p.is_logged_in:
+                p.is_logged_in = False
+                changed = True
+        if changed and save:
+            self._save()
 
     def create(self, name: str, base_url: str, **kwargs) -> Project:
         if name in self.projects:

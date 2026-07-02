@@ -1,5 +1,6 @@
 from urllib.parse import urlparse
 from playwright.async_api import Page, BrowserContext
+import config
 from projects import Project, FormLogin, BasicAuth, CookieAuth
 
 
@@ -28,7 +29,7 @@ class AuthHandler:
         page = await context.new_page()
         try:
             # Navigate to login page
-            await page.goto(form.login_url, wait_until="networkidle")
+            await page.goto(form.login_url, wait_until=config.WAIT_UNTIL)
             login_url = page.url
             debug = {"login_url": login_url}
 
@@ -86,20 +87,19 @@ class AuthHandler:
 
             # Click submit and wait for navigation or network response
             try:
-                async with page.expect_navigation(timeout=10000, wait_until="networkidle"):
+                async with page.expect_navigation(timeout=10000, wait_until=config.WAIT_UNTIL):
                     await submit_button.click()
             except Exception:
                 # SPA might not trigger navigation event, wait for network to settle
                 import asyncio
                 await asyncio.sleep(2)
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state(config.WAIT_UNTIL)
 
             current_url = page.url
             debug["final_url"] = current_url
 
             # Take a debug screenshot
             import os
-            import config
             debug_path = os.path.join(config.SCREENSHOT_DIR, f"_login_debug_{project_name}.png")
             await page.screenshot(path=debug_path)
             debug["debug_screenshot"] = debug_path

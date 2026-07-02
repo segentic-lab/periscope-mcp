@@ -20,8 +20,9 @@ class PageSession:
     response_bodies: list = field(default_factory=list)
     snapshots: dict = field(default_factory=dict)
     screenshot_dir: str = None
-    intercepts: list = field(default_factory=list)  # active intercept routes: {glob, handler, pattern}
+    intercepts: list = field(default_factory=list)  # active intercept routes: {matcher, handler, pattern}
     cdp_session: object = None  # cached CDP session for network emulation
+    parent_session_id: str = None  # set on iframe sessions: the page session owning the frame
 
 
 def real_page(page_or_frame) -> Page:
@@ -117,8 +118,7 @@ class SessionManager:
                         "body_text": body,
                         "timestamp": time.time(),
                     })
-                    # Cap at 100 entries
-                    if len(response_bodies) > 100:
+                    if len(response_bodies) > config.MAX_RESPONSE_BODIES:
                         response_bodies.pop(0)
                 except Exception:
                     pass
@@ -127,7 +127,12 @@ class SessionManager:
         page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
         page.on("response", on_response)
 
-        await page.goto(url, wait_until=config.WAIT_UNTIL)
+        try:
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
+        except Exception:
+            # Not yet registered in self.sessions — close it or it leaks in the context.
+            await page.close()
+            raise
 
         now = time.time()
         session = PageSession(
@@ -157,18 +162,42 @@ class SessionManager:
             )
         session = self.sessions[session_id]
         session.last_accessed = time.time()
+        # Using an iframe session must keep its owning page session alive too.
+        if session.parent_session_id and session.parent_session_id in self.sessions:
+            self.sessions[session.parent_session_id].last_accessed = session.last_accessed
         return session
+
+    def register_session(self, session: PageSession):
+        """Register an externally built session (e.g. an iframe scope from
+        select_iframe), enforcing the same limits as create_session."""
+        self._cleanup_expired()
+        if len(self.sessions) >= config.MAX_SESSIONS:
+            self._evict_oldest()
+        self.sessions[session.session_id] = session
 
     async def close_session(self, session_id: str) -> bool:
         """Close a session and free its resources. Returns True if found."""
         if session_id in self.sessions:
             session = self.sessions.pop(session_id)
+            self._remove_children(session_id, "parent session closed")
             try:
                 await session.page.close()
             except Exception:
                 pass
             return True
         return False
+
+    def clear_all(self, reason: str = "browser restarted"):
+        """Drop all sessions without closing pages — used after a browser
+        crash/restart, when every held Page belongs to the dead browser."""
+        for sid in list(self.sessions):
+            self._record_removal(self.sessions.pop(sid), reason)
+
+    def _remove_children(self, parent_id: str, reason: str):
+        """Drop iframe sessions scoped to a removed parent — their Frame dies with it."""
+        for sid, child in list(self.sessions.items()):
+            if child.parent_session_id == parent_id:
+                self._record_removal(self.sessions.pop(sid), reason)
 
     def list_sessions(self) -> list[dict]:
         """Return summary info for all active sessions."""
@@ -194,8 +223,11 @@ class SessionManager:
             if now - s.last_accessed > config.SESSION_TIMEOUT
         ]
         for sid in expired:
-            session = self.sessions.pop(sid)
+            session = self.sessions.pop(sid, None)
+            if session is None:  # already removed as a child of an earlier expiry
+                continue
             self._record_removal(session, "expired")
+            self._remove_children(sid, "parent session expired")
             self._schedule_close(session)
 
     def _evict_oldest(self):
@@ -205,4 +237,5 @@ class SessionManager:
         oldest_id = min(self.sessions, key=lambda sid: self.sessions[sid].last_accessed)
         session = self.sessions.pop(oldest_id)
         self._record_removal(session, "evicted (MAX_SESSIONS reached)")
+        self._remove_children(oldest_id, "parent session evicted")
         self._schedule_close(session)

@@ -27,6 +27,23 @@ async def click_element(page: Page, selector: str, force: bool = False) -> dict:
 _DATE_TYPES = {"date", "time", "datetime-local", "month", "week"}
 
 
+def _owner_page(page) -> Page:
+    """Unwrap a Frame (iframe session) to its owning Page for Page-only APIs."""
+    return page if hasattr(page, "keyboard") else page.page
+
+
+def _as_bool(val) -> bool:
+    """Interpret step-level bool fields that MCP clients may send as strings."""
+    if isinstance(val, str):
+        return val.lower() not in ("false", "0", "")
+    return bool(val)
+
+
+def _q(text: str) -> str:
+    """Escape a string for embedding in a double-quoted Playwright selector."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
 async def _get_input_type(page: Page, selector: str) -> str | None:
     """Get the type attribute of an input element."""
     return await page.evaluate("""(selector) => {
@@ -156,11 +173,11 @@ async def select_option(
 
     # Cascade of selectors for finding the option by text
     option_selectors = [
-        f'[role="option"]:has-text("{search_text}")',
-        f'[role="menuitem"]:has-text("{search_text}")',
-        f'li:has-text("{search_text}")',
-        f'[data-value="{value}"]' if value else None,
-        f'text="{search_text}"',
+        f'[role="option"]:has-text("{_q(search_text)}")',
+        f'[role="menuitem"]:has-text("{_q(search_text)}")',
+        f'li:has-text("{_q(search_text)}")',
+        f'[data-value="{_q(value)}"]' if value else None,
+        f'text="{_q(search_text)}"',
     ]
 
     for opt_sel in option_selectors:
@@ -234,7 +251,8 @@ async def execute_steps(
     steps: list[dict],
     project_name: str = "default",
     continue_on_error: bool = False,
-    screenshot_dir: str = None
+    screenshot_dir: str = None,
+    touch=None,
 ) -> dict:
     """Execute a sequence of interaction steps.
 
@@ -274,9 +292,12 @@ async def execute_steps(
         action = step.get("action")
         step_result = {"step": i, "action": action, "success": True}
 
+        if touch:
+            touch()  # keep the owning session from idle-expiring during long runs
+
         try:
             if action == "click":
-                force = step.get("force", False)
+                force = _as_bool(step.get("force", False))
                 locator = page.locator(step["selector"]).first
                 if not force:
                     await locator.wait_for(state="visible", timeout=10000)
@@ -334,7 +355,7 @@ async def execute_steps(
                 await locator.hover()
 
             elif action == "press_key":
-                await page.keyboard.press(step["key"])
+                await _owner_page(page).keyboard.press(step["key"])
 
             elif action == "check":
                 locator = page.locator(step["selector"]).first
@@ -396,7 +417,7 @@ async def execute_steps(
 
             elif action == "right_click":
                 locator = page.locator(step["selector"]).first
-                force = step.get("force", False)
+                force = _as_bool(step.get("force", False))
                 if not force:
                     await locator.wait_for(state="visible", timeout=10000)
                 await locator.click(button="right", force=force)
@@ -405,15 +426,15 @@ async def execute_steps(
                 text = step["text"]
                 container = step.get("selector", "body")
                 timeout = step.get("timeout", 30000)
-                locator = page.locator(container).locator(f"text={text}").first
+                locator = page.locator(container).get_by_text(text).first
                 await locator.wait_for(state="visible", timeout=timeout)
 
             elif action == "go_back":
-                await page.go_back(wait_until="networkidle")
+                await _owner_page(page).go_back(wait_until=config.WAIT_UNTIL)
                 step_result["url"] = page.url
 
             elif action == "go_forward":
-                await page.go_forward(wait_until="networkidle")
+                await _owner_page(page).go_forward(wait_until=config.WAIT_UNTIL)
                 step_result["url"] = page.url
 
             elif action == "upload_file":
@@ -425,14 +446,16 @@ async def execute_steps(
                 method_filter = step.get("method")
                 timeout = step.get("timeout", 30000)
 
-                async def match_request(response):
-                    if url_pattern not in response.url:
+                # Must be a plain function: Playwright calls predicates
+                # synchronously, and a coroutine object is always truthy.
+                def match_request(response, _pat=url_pattern, _meth=method_filter):
+                    if _pat not in response.url:
                         return False
-                    if method_filter and response.request.method.upper() != method_filter.upper():
+                    if _meth and response.request.method.upper() != _meth.upper():
                         return False
                     return True
 
-                response = await page.wait_for_event(
+                response = await _owner_page(page).wait_for_event(
                     "response", predicate=match_request, timeout=timeout
                 )
                 step_result["matched_url"] = response.url
@@ -505,8 +528,8 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
     results = []
     for form_info in forms_data:
         # Try submitting the form empty to trigger validation
-        validation = await page.evaluate("""(formIndex) => {
-            const form = document.querySelectorAll('form')[formIndex];
+        validation = await page.evaluate("""([selector, formIndex]) => {
+            const form = document.querySelectorAll(selector)[formIndex];
             if (!form) return [];
             const invalids = form.querySelectorAll(':invalid');
             return Array.from(invalids).map(el => ({
@@ -516,11 +539,11 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
                 validationMessage: el.validationMessage || '',
                 required: el.required,
             }));
-        }""", form_info["index"])
+        }""", [selector, form_info["index"]])
 
         # Look for custom error elements near the form
-        custom_errors = await page.evaluate("""(formIndex) => {
-            const form = document.querySelectorAll('form')[formIndex];
+        custom_errors = await page.evaluate("""([selector, formIndex]) => {
+            const form = document.querySelectorAll(selector)[formIndex];
             if (!form) return [];
             const errorSelectors = [
                 '.error', '.field-error', '.form-error', '.invalid-feedback',
@@ -534,7 +557,7 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
                 });
             }
             return [...new Set(errors)];
-        }""", form_info["index"])
+        }""", [selector, form_info["index"]])
 
         results.append({
             "form": form_info,

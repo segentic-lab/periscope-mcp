@@ -43,12 +43,26 @@ async def handle_set_basic_auth(args: dict) -> dict:
 
 @tool("set_cookies")
 async def handle_set_cookies(args: dict) -> dict:
+        cookies = args["cookies"]
+        if not isinstance(cookies, list) or not all(isinstance(c, dict) for c in cookies):
+            return {
+                "success": False,
+                "error": "cookies must be an array of objects like "
+                         '{"name": ..., "value": ..., "domain": ..., "path": "/"}',
+            }
+        for c in cookies:
+            missing = [k for k in ("name", "value", "domain") if not c.get(k)]
+            if missing:
+                return {"success": False, "error": f"Cookie missing required field(s) {missing}: {c}"}
+            # Playwright's add_cookies requires url or a domain+path pair
+            c.setdefault("path", "/")
+
         success = project_manager.set_cookies(
             name=args["project"],
-            cookies=args["cookies"]
+            cookies=cookies
         )
         if success:
-            return {"success": True, "message": f"Set {len(args['cookies'])} cookies"}
+            return {"success": True, "message": f"Set {len(cookies)} cookies"}
         return {"success": False, "error": f"Project '{args['project']}' not found"}
 
 
@@ -84,13 +98,20 @@ async def handle_copy_auth(args: dict) -> dict:
         target.is_logged_in = False
         project_manager._save()
 
-        # Also copy browser context cookies if source is logged in
+        # Also carry over live login state if the source is logged in
         if source.is_logged_in:
             t = await get_tester()
-            if source.name in t.contexts:
+            target_ctx = await t.get_context(target.name)
+            if target.auth.method == "basic":
+                # Basic auth lives in a context route, not cookies — install it
+                # on the target context by performing the login there.
+                result = await auth_handler.login(target_ctx, target)
+                if result.get("success"):
+                    target.is_logged_in = True
+                    project_manager._save()
+            elif source.name in t.contexts:
                 source_ctx = t.contexts[source.name]
                 cookies = await source_ctx.cookies()
-                target_ctx = await t.get_context(target.name)
                 await target_ctx.add_cookies(cookies)
                 target.is_logged_in = True
                 project_manager._save()

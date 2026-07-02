@@ -93,6 +93,8 @@ class WebsiteTester:
         """
         if checks is None:
             checks = ["visual", "accessibility", "functionality", "seo", "performance"]
+        valid = {"visual", "accessibility", "functionality", "seo", "performance"}
+        unknown_checks = [c for c in checks if c not in valid]
 
         context = await self.get_context(project_name)
         page = await context.new_page()
@@ -116,6 +118,14 @@ class WebsiteTester:
 
             # Run checks
             all_issues = []
+            if unknown_checks:
+                # A typo'd check name must not silently pass as "no issues found"
+                all_issues.append({
+                    "type": "functionality",
+                    "severity": "warning",
+                    "message": f"Unknown check name(s) ignored: {unknown_checks}. "
+                               f"Valid: visual, accessibility, functionality, seo, performance",
+                })
 
             if "visual" in checks:
                 issues = await check_visual(page)

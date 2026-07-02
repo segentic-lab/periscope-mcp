@@ -48,9 +48,17 @@ async def handle_assert_condition(args: dict) -> dict:
                 passed = False
 
         elif assertion == "element_count":
+            try:
+                expected_count = int(expected)
+            except (TypeError, ValueError):
+                return {
+                    "success": False,
+                    "error": f"element_count needs an integer 'expected', got {expected!r}",
+                    "assertion": assertion,
+                }
             count = await page.locator(selector).count()
             actual = count
-            passed = count == int(expected)
+            passed = count == expected_count
 
         elif assertion == "url_contains":
             actual = page.url
@@ -61,8 +69,23 @@ async def handle_assert_condition(args: dict) -> dict:
             passed = expected in actual
 
         elif assertion == "attribute_equals":
+            if not attribute:
+                return {
+                    "success": False,
+                    "error": "attribute_equals requires the 'attribute' argument",
+                    "assertion": assertion,
+                }
             actual = await page.locator(selector).first.get_attribute(attribute)
             passed = actual == expected
+
+        else:
+            # Unknown assertion must not read as a failed-but-valid assertion
+            return {
+                "success": False,
+                "error": f"Unknown assertion '{assertion}'. Valid: text_contains, text_equals, "
+                         f"element_exists, element_visible, element_count, url_contains, "
+                         f"title_contains, attribute_equals",
+            }
 
         return {
             "assertion": assertion,
@@ -97,6 +120,7 @@ async def handle_find_element(args: dict) -> dict:
                 if (nearEl) nearRect = nearEl.getBoundingClientRect();
             }
 
+            let matched = [];
             for (const el of allEls) {
                 // Filter by role
                 if (role && el.getAttribute('role') !== role) continue;
@@ -108,6 +132,20 @@ async def handle_find_element(args: dict) -> dict:
                 // Skip invisible
                 const rect = el.getBoundingClientRect();
                 if (rect.width === 0 && rect.height === 0) continue;
+
+                matched.push(el);
+            }
+
+            // Text matches every ancestor of the target (html, body, wrappers all
+            // contain the text) — keep only innermost matches so the returned
+            // selector points at the actual element, not a container.
+            if (text) {
+                matched = matched.filter(el => !matched.some(other => other !== el && el.contains(other)));
+            }
+
+            for (const el of matched) {
+                const elText = (el.textContent || '').trim();
+                const rect = el.getBoundingClientRect();
 
                 // Build best selector
                 let bestSelector = el.tagName.toLowerCase();
@@ -199,7 +237,6 @@ async def handle_auto_fill_form(args: dict) -> dict:
             "email": "test@example.com",
             "password": "TestPassword123!",
             "tel": "+1234567890",
-            "phone": "+1234567890",
             "url": "https://example.com",
             "number": "42",
             "date": "2025-01-15",
@@ -212,11 +249,17 @@ async def handle_auto_fill_form(args: dict) -> dict:
             "search": "test search",
         }
         name_hints = {
+            # semantic hints first — a type="text" field named "email"/"phone"
+            # must still get plausible data, not "Test input"
+            "email": "test@example.com", "e-mail": "test@example.com",
+            "phone": "+1234567890", "mobile": "+1234567890", "tel": "+1234567890",
+            "website": "https://example.com", "url": "https://example.com",
+            "username": "testuser",  # before "name" — 'username' contains 'name'
             "first": "John", "last": "Doe", "name": "John Doe",
             "company": "Test Corp", "organization": "Test Corp", "org": "Test Corp",
             "address": "123 Test Street", "street": "123 Test Street",
             "city": "San Francisco", "state": "CA", "zip": "94105", "postal": "94105",
-            "country": "US", "username": "testuser", "user": "testuser",
+            "country": "US", "user": "testuser",
             "comment": "This is a test comment.", "message": "This is a test message.",
             "description": "Test description for automated testing.",
             "title": "Test Title", "subject": "Test Subject",
@@ -300,7 +343,8 @@ async def handle_get_network_log(args: dict) -> dict:
         if url_filter:
             log = [entry for entry in log if url_filter in entry["url"]]
 
-        capped = log[-100:]
+        # Return everything that matched — the buffer itself is already capped
+        # at MAX_NETWORK_LOG, and the schema promises "all requests".
         result = {
             "total_requests": len(session.network_log),
             "filtered_count": len(log),
@@ -311,7 +355,7 @@ async def handle_get_network_log(args: dict) -> dict:
                     "method": e["method"],
                     "resource_type": e["resource_type"],
                 }
-                for e in capped
+                for e in log
             ],
         }
 
@@ -384,12 +428,17 @@ async def handle_restore_page_state(args: dict) -> dict:
             return {"success": False, "error": f"Snapshot '{snap_name}' not found. Available: {list(session.snapshots.keys())}"}
 
         snap = session.snapshots[snap_name]
-        page = real_page(session.page)
+        # Operate on the session's own scope: for iframe sessions the snapshot
+        # was taken from the frame, so navigation/storage must target the frame
+        # too — using the parent Page would navigate the top-level page to the
+        # iframe URL and write storage into the wrong origin.
+        page = session.page
+        context = real_page(session.page).context
 
         # Restore cookies
-        await page.context.clear_cookies()
+        await context.clear_cookies()
         if snap["cookies"]:
-            await page.context.add_cookies(snap["cookies"])
+            await context.add_cookies(snap["cookies"])
 
         # Navigate to saved URL
         await page.goto(snap["url"], wait_until=config.WAIT_UNTIL)
@@ -408,7 +457,11 @@ async def handle_restore_page_state(args: dict) -> dict:
 
         # Reload so the app actually boots with the restored cookies + storage —
         # without this, an SPA that read storage on startup keeps its old state.
-        await page.reload(wait_until=config.WAIT_UNTIL)
+        # Frames have no reload(); a repeat goto serves the same purpose there.
+        if hasattr(page, "reload"):
+            await page.reload(wait_until=config.WAIT_UNTIL)
+        else:
+            await page.goto(snap["url"], wait_until=config.WAIT_UNTIL)
 
         session.url = page.url
         return {
@@ -477,6 +530,7 @@ async def handle_diff_page_state(args: dict) -> dict:
                 tag_diffs[tag] = {"old": old_tags.get(tag, 0), "new": new_tags.get(tag, 0)}
 
         return {
+            "success": True,
             "snapshot_name": snap_name,
             "url_changed": snap["url"] != session.page.url,
             "old_url": snap["url"],

@@ -148,6 +148,7 @@ close_session(session_id)
 - `MAX_SESSIONS = 20` — Max concurrent sessions
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle (env-overridable: `SESSION_TIMEOUT=600`)
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
+- `MAX_RESPONSE_BODIES = 100` — Max captured response bodies kept per session
 - `MAX_CONSOLE_LOG = 500` / `MAX_NETWORK_LOG = 1000` — Per-session log caps (oldest entries dropped)
 - `WAIT_UNTIL = "networkidle"` — Navigation wait strategy; set `NAV_WAIT_UNTIL=load` for sites with websockets/polling that never reach networkidle
 

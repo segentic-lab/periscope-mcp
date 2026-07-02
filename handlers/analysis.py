@@ -213,12 +213,23 @@ async def handle_check_color_contrast(args: dict) -> dict:
 
                 const style = window.getComputedStyle(el);
                 const fg = parseColor(style.color);
-                const bg = parseColor(style.backgroundColor);
+                if (!fg) continue;
 
-                if (!fg || !bg) continue;
-                // Skip transparent backgrounds (alpha check)
-                const bgAlpha = style.backgroundColor.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([\\d.]+)/);
-                if (bgAlpha && parseFloat(bgAlpha[1]) < 0.1) continue;
+                // Most text elements have a transparent background and inherit
+                // the effective one from an ancestor — walk up to find it.
+                function isTransparent(colorStr) {
+                    const a = colorStr.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([\\d.]+)/);
+                    return colorStr === 'transparent' || (a && parseFloat(a[1]) < 0.1);
+                }
+                let bgEl = el;
+                let bgColor = style.backgroundColor;
+                while (bgEl && isTransparent(bgColor)) {
+                    bgEl = bgEl.parentElement;
+                    bgColor = bgEl ? window.getComputedStyle(bgEl).backgroundColor : 'rgb(255, 255, 255)';
+                }
+                if (!bgEl) bgColor = 'rgb(255, 255, 255)';  // default page background
+                const bg = parseColor(bgColor);
+                if (!bg) continue;
 
                 const fgLum = luminance(fg[0], fg[1], fg[2]);
                 const bgLum = luminance(bg[0], bg[1], bg[2]);
@@ -238,7 +249,7 @@ async def handle_check_color_contrast(args: dict) -> dict:
                     ratio: Math.round(ratio * 100) / 100,
                     large: isLargeText,
                     foreground: style.color,
-                    background: style.backgroundColor,
+                    background: bgColor,
                 });
             }
             return results;
@@ -264,6 +275,7 @@ async def handle_check_color_contrast(args: dict) -> dict:
             "checked": len(elements),
             "fail_count": len(failures),
             "failures": failures[:30],
+            "failures_truncated": len(failures) > 30,
         }
 
 
