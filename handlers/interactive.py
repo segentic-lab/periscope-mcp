@@ -96,6 +96,7 @@ async def handle_interact_and_test(args: dict) -> dict:
                 from checks.visual import check_visual
                 from checks.accessibility import check_accessibility
                 from checks.functionality import check_functionality, check_seo, get_performance_metrics
+                from checks.geo import check_geo
 
                 all_issues = []
                 if "visual" in run_checks:
@@ -106,6 +107,8 @@ async def handle_interact_and_test(args: dict) -> dict:
                     all_issues.extend(await check_functionality(page))
                 if "seo" in run_checks:
                     all_issues.extend(await check_seo(page))
+                if "geo" in run_checks:
+                    all_issues.extend(await check_geo(page))
                 if "performance" in run_checks:
                     result["performance"] = await get_performance_metrics(page)
 

@@ -130,9 +130,10 @@ async def handle_run_checks_on_session(args: dict) -> dict:
         from checks.visual import check_visual
         from checks.accessibility import check_accessibility
         from checks.functionality import check_functionality, check_seo, get_performance_metrics
+        from checks.geo import check_geo
 
         session = session_manager.get_session(args["session_id"])
-        checks = args.get("checks", ["visual", "accessibility", "functionality", "seo", "performance"])
+        checks = args.get("checks", ["visual", "accessibility", "functionality", "seo", "performance", "geo"])
         page = session.page
 
         all_issues = []
@@ -146,6 +147,8 @@ async def handle_run_checks_on_session(args: dict) -> dict:
             all_issues.extend(await check_functionality(page))
         if "seo" in checks:
             all_issues.extend(await check_seo(page))
+        if "geo" in checks:
+            all_issues.extend(await check_geo(page))
         if "performance" in checks:
             performance = await get_performance_metrics(page)
 

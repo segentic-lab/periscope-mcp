@@ -111,7 +111,7 @@ TOOLS: list[Tool] = [
         # Testing
         Tool(
             name="test_url",
-            description="Test a single URL. Takes screenshot and runs checks for visual issues, accessibility, functionality, SEO, and performance.",
+            description="Test a single URL. Takes screenshot and runs checks for visual issues, accessibility, functionality, SEO, performance, and GEO (AI/agentic search readiness: robots.txt AI-crawler access, llms.txt, WebMCP, JSON-LD).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -119,8 +119,8 @@ TOOLS: list[Tool] = [
                     "project": {"type": "string", "description": "Project name (optional, uses 'default' if not specified)"},
                     "checks": {
                         "type": ["array", "string"],
-                        "description": "Types of checks to run (visual, accessibility, functionality, seo, performance). Default: all",
-                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                        "description": "Types of checks to run (visual, accessibility, functionality, seo, performance, geo). Default: all",
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     }
                 },
                 "required": ["url"]
@@ -150,7 +150,7 @@ TOOLS: list[Tool] = [
                     "checks": {
                         "type": ["array", "string"],
                         "description": "Types of checks to run",
-                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     }
                 },
                 "required": ["project"]
@@ -303,8 +303,8 @@ TOOLS: list[Tool] = [
                     "project": {"type": "string", "description": "Project name (optional)"},
                     "run_checks": {
                         "type": ["array", "string"],
-                        "description": "Checks to run after steps complete (visual, accessibility, functionality, seo, performance)",
-                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                        "description": "Checks to run after steps complete (visual, accessibility, functionality, seo, performance, geo)",
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     },
                     "screenshot_after": {"type": "boolean", "description": "Take a screenshot after all steps complete (default: true)"},
                     "continue_on_error": {"type": "boolean", "description": "Continue executing steps even if one fails (default: false)"}
@@ -379,7 +379,7 @@ TOOLS: list[Tool] = [
                     "run_checks": {
                         "type": ["array", "string"],
                         "description": "Checks to run at each viewport",
-                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     }
                 },
                 "required": ["url"]
@@ -614,7 +614,7 @@ TOOLS: list[Tool] = [
                     "checks": {
                         "type": ["array", "string"],
                         "description": "Check types to run (default: all)",
-                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance"]}
+                        "items": {"type": "string", "enum": ["visual", "accessibility", "functionality", "seo", "performance", "geo"]}
                     }
                 },
                 "required": ["session_id"]

@@ -45,7 +45,7 @@ class Project:
     auth: Optional[ProjectAuth] = None
     max_pages: int = 20
     max_depth: int = 3
-    test_types: list = field(default_factory=lambda: ["visual", "accessibility", "seo", "performance", "functionality"])
+    test_types: list = field(default_factory=lambda: ["visual", "accessibility", "seo", "performance", "functionality", "geo"])
     created_at: str = ""
     last_tested: str = ""
     is_logged_in: bool = False
@@ -94,7 +94,7 @@ class Project:
             auth=auth,
             max_pages=data.get("max_pages", 20),
             max_depth=data.get("max_depth", 3),
-            test_types=data.get("test_types", ["visual", "accessibility", "seo", "performance", "functionality"]),
+            test_types=data.get("test_types", ["visual", "accessibility", "seo", "performance", "functionality", "geo"]),
             created_at=data.get("created_at", ""),
             last_tested=data.get("last_tested", ""),
             is_logged_in=data.get("is_logged_in", False),

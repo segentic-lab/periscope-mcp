@@ -43,13 +43,13 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 1. Add function in `checks/*.py` returning `list[dict]` with keys: type, severity, message
 2. Import + call it in `tester.py` -> `test_url()`
 
-Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionality.py`, not separate files.
+Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionality.py`, not separate files. `checks/geo.py` holds the GEO/agentic-search check (`check_geo`) plus the shared robots.txt parser the SEO check reuses.
 
 ## Issue Format
 ```python
 {"type": "accessibility", "severity": "error", "message": "...", "details": [...]}
 ```
-- **type**: visual, accessibility, functionality, seo
+- **type**: visual, accessibility, functionality, seo, geo
 - **severity**: error, warning, info
 
 ## Project & Static Testing Tools

@@ -1,6 +1,8 @@
 from playwright.async_api import Page
 from urllib.parse import urljoin, urlparse
 
+from checks.geo import SEARCH_CRAWLERS, fetch_origin_file, is_blocked, parse_robots
+
 
 async def check_functionality(page: Page) -> list[dict]:
     """
@@ -419,6 +421,27 @@ async def check_seo(page: Page, response=None) -> list[dict]:
             "severity": "warning",
             "message": f"X-Robots-Tag header sets noindex (won't appear in search results): '{robots_header}'"
         })
+
+    # robots.txt: search engine crawlers must be allowed to crawl the site
+    robots_txt, origin = await fetch_origin_file(page, "/robots.txt")
+    if origin is not None:
+        if robots_txt is None:
+            issues.append({
+                "type": "seo",
+                "severity": "info",
+                "message": "No robots.txt found"
+            })
+        else:
+            groups = parse_robots(robots_txt)
+            blocked = [ua for ua in SEARCH_CRAWLERS if is_blocked(groups, ua)]
+            if blocked:
+                issues.append({
+                    "type": "seo",
+                    "severity": "error" if len(blocked) == len(SEARCH_CRAWLERS) else "warning",
+                    "message": f"robots.txt blocks {len(blocked)} search engine crawlers"
+                               f"{' — site is invisible to search engines' if len(blocked) == len(SEARCH_CRAWLERS) else ''}",
+                    "details": blocked,
+                })
 
     return issues
 

@@ -9,6 +9,7 @@ import config
 from checks.visual import check_visual
 from checks.accessibility import check_accessibility
 from checks.functionality import check_functionality, check_seo, get_performance_metrics
+from checks.geo import check_geo
 
 
 class WebsiteTester:
@@ -92,8 +93,8 @@ class WebsiteTester:
         Returns dict with test results.
         """
         if checks is None:
-            checks = ["visual", "accessibility", "functionality", "seo", "performance"]
-        valid = {"visual", "accessibility", "functionality", "seo", "performance"}
+            checks = ["visual", "accessibility", "functionality", "seo", "performance", "geo"]
+        valid = {"visual", "accessibility", "functionality", "seo", "performance", "geo"}
         unknown_checks = [c for c in checks if c not in valid]
 
         context = await self.get_context(project_name)
@@ -127,7 +128,7 @@ class WebsiteTester:
                     "type": "functionality",
                     "severity": "warning",
                     "message": f"Unknown check name(s) ignored: {unknown_checks}. "
-                               f"Valid: visual, accessibility, functionality, seo, performance",
+                               f"Valid: visual, accessibility, functionality, seo, performance, geo",
                 })
 
             if "visual" in checks:
@@ -144,6 +145,10 @@ class WebsiteTester:
 
             if "seo" in checks:
                 issues = await check_seo(page, response)
+                all_issues.extend(issues)
+
+            if "geo" in checks:
+                issues = await check_geo(page, response)
                 all_issues.extend(issues)
 
             # Get performance metrics
@@ -330,6 +335,8 @@ class WebsiteTester:
                         all_issues.extend(await check_functionality(page))
                     if "seo" in checks:
                         all_issues.extend(await check_seo(page))
+                    if "geo" in checks:
+                        all_issues.extend(await check_geo(page))
                     if "performance" in checks:
                         vp_result["performance"] = await get_performance_metrics(page)
 

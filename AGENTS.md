@@ -31,8 +31,10 @@ something you know by its text. Never guess selectors.
 
 **Static audit of a site:**
 `create_project(name, base_url)` → `test_project(project)` (crawls and runs
-visual/accessibility/functionality/seo/performance checks on every page,
+visual/accessibility/functionality/seo/performance/geo checks on every page,
 saves a JSON report) → `get_report(path)`. For one page: `test_url(url)`.
+The `geo` check covers AI/agentic-search readiness: robots.txt access for AI
+crawlers, llms.txt compliance, WebMCP form annotations, and JSON-LD presence.
 
 **Authenticated testing:** configure once with `set_form_login` /
 `set_basic_auth` / `set_cookies`, then `login_project(project)`. Pass
