@@ -156,7 +156,7 @@ close_session(session_id)
 
 ## Social / SEO Preview Validation
 
-No dedicated tool yet — validate directly from the DOM. Use `get_page_html(session_id, selector="head")` or `extract_text` to inspect:
+The `seo` check now covers the basics automatically: OG core-tag completeness (`og:title/description/image/url`), absolute `og:image`, `twitter:card` presence, JSON-LD parseability, H1 count, `noindex` (meta + `X-Robots-Tag` header), and — in `test_project` — duplicate titles/descriptions across pages. For content-level validation beyond presence/parsing, inspect the DOM via `get_page_html(session_id, selector="head")`:
 - **Open Graph:** `<meta property="og:title|og:description|og:image|og:url|og:type">` — title ≤60 chars, description ≤200, image absolute URL + 1.91:1 ratio (1200x630 ideal)
 - **Twitter Card:** `<meta name="twitter:card|twitter:title|twitter:description|twitter:image">` — `card` should be `summary_large_image` for rich previews
 - **JSON-LD:** `<script type="application/ld+json">` — validate Product/Service/Organization schemas

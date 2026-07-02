@@ -325,12 +325,15 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 - Autocomplete disabled inputs
 
 ### SEO (`checks/functionality.py` -> `check_seo`)
-- Missing or too-long page title (> 60 chars)
-- Missing or too-long meta description (> 160 chars)
+- Page title: missing, too long (> 60 chars), or very short (< 15 chars)
+- Meta description: missing, too long (> 160 chars), or very short (< 50 chars)
 - Missing viewport meta tag
 - Missing canonical URL
-- Missing Open Graph tags
-- `noindex` robots meta
+- H1 heading: missing or more than one
+- Open Graph: missing entirely, incomplete core tags (`og:title/description/image/url`), non-absolute `og:image`, missing `twitter:card`
+- JSON-LD structured data: missing or unparseable blocks
+- `noindex` via robots meta **or** `X-Robots-Tag` response header
+- Site-wide (via `test_project`): duplicate titles / meta descriptions across pages, reported under `site_issues`
 
 ### Performance (`checks/functionality.py` -> `get_performance_metrics`)
 - DOM content loaded time (ms)

@@ -115,6 +115,9 @@ class WebsiteTester:
 
             # Get page info
             title = await page.title()
+            meta_description = await page.evaluate(
+                """() => document.querySelector('meta[name="description"]')?.content || null"""
+            )
 
             # Run checks
             all_issues = []
@@ -140,7 +143,7 @@ class WebsiteTester:
                 all_issues.extend(issues)
 
             if "seo" in checks:
-                issues = await check_seo(page)
+                issues = await check_seo(page, response)
                 all_issues.extend(issues)
 
             # Get performance metrics
@@ -162,6 +165,7 @@ class WebsiteTester:
                 "status": "success",
                 "status_code": response.status if response else None,
                 "title": title,
+                "meta_description": meta_description,
                 "screenshot_path": screenshot_path,
                 "load_time_ms": load_time,
                 "issues": all_issues,
@@ -211,6 +215,13 @@ class WebsiteTester:
             for issue in r.get("issues", []):
                 all_issues.append({**issue, "url": r["url"]})
 
+        # Site-wide SEO: duplicate titles/descriptions across pages hurt
+        # rankings and are only detectable with the whole crawl in hand.
+        site_issues = []
+        if checks is None or "seo" in checks:
+            site_issues = self._find_duplicate_meta(results)
+            all_issues.extend(site_issues)
+
         now = datetime.now()
         return {
             "project": project_name,
@@ -223,9 +234,36 @@ class WebsiteTester:
             "total_issues": len(all_issues),
             "issues_by_severity": self._count_by_key(all_issues, "severity"),
             "issues_by_type": self._count_by_key(all_issues, "type"),
+            "site_issues": site_issues,
             "pages": results,
             "all_issues": all_issues
         }
+
+    def _find_duplicate_meta(self, results: list[dict]) -> list[dict]:
+        """Flag titles/meta descriptions shared by more than one page."""
+        titles, descriptions = {}, {}
+        for r in results:
+            if r.get("status") != "success":
+                continue
+            title = (r.get("title") or "").strip()
+            if title:
+                titles.setdefault(title, []).append(r["url"])
+            desc = (r.get("meta_description") or "").strip()
+            if desc:
+                descriptions.setdefault(desc, []).append(r["url"])
+
+        issues = []
+        for kind, bucket in (("title", titles), ("meta description", descriptions)):
+            for text, urls in bucket.items():
+                if len(urls) > 1:
+                    issues.append({
+                        "type": "seo",
+                        "severity": "warning",
+                        "message": f"{len(urls)} pages share the same {kind}: '{text[:60]}'",
+                        "details": urls[:10],
+                        "url": "(site-wide)",
+                    })
+        return issues
 
     async def test_responsive(
         self,

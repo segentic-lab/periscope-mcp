@@ -222,15 +222,21 @@ async def check_all_links(
     }
 
 
-async def check_seo(page: Page) -> list[dict]:
+async def check_seo(page: Page, response=None) -> list[dict]:
     """
     Run SEO checks on a page.
+
+    Args:
+        page: Playwright Page (or Frame for iframe sessions)
+        response: Optional navigation Response — enables the X-Robots-Tag
+                  header check without re-requesting the page.
+
     Returns list of issues found.
     """
     issues = []
 
-    # Check for title
-    title = await page.title()
+    # Title: presence + length band (recommended ~30-60 chars)
+    title = (await page.title() or "").strip()
     if not title:
         issues.append({
             "type": "seo",
@@ -243,8 +249,14 @@ async def check_seo(page: Page) -> list[dict]:
             "severity": "warning",
             "message": f"Page title is too long ({len(title)} chars, recommended < 60)"
         })
+    elif len(title) < 15:
+        issues.append({
+            "type": "seo",
+            "severity": "info",
+            "message": f"Page title is very short ({len(title)} chars, recommended 30-60)"
+        })
 
-    # Check for meta description
+    # Meta description: presence + length band (recommended ~50-160 chars)
     meta_desc = await page.evaluate("""() => {
         const meta = document.querySelector('meta[name="description"]');
         return meta ? meta.content : null;
@@ -260,6 +272,12 @@ async def check_seo(page: Page) -> list[dict]:
             "type": "seo",
             "severity": "info",
             "message": f"Meta description is long ({len(meta_desc)} chars, recommended < 160)"
+        })
+    elif len(meta_desc) < 50:
+        issues.append({
+            "type": "seo",
+            "severity": "info",
+            "message": f"Meta description is very short ({len(meta_desc)} chars, recommended 50-160)"
         })
 
     # Check for viewport meta
@@ -284,15 +302,89 @@ async def check_seo(page: Page) -> list[dict]:
             "message": "Missing canonical URL"
         })
 
-    # Check for Open Graph tags
-    has_og = await page.evaluate("""() => {
-        return !!document.querySelector('meta[property^="og:"]');
+    # H1: exactly one per page is the SEO convention
+    h1_count = await page.evaluate("() => document.querySelectorAll('h1').length")
+    if h1_count == 0:
+        issues.append({
+            "type": "seo",
+            "severity": "warning",
+            "message": "Missing H1 heading"
+        })
+    elif h1_count > 1:
+        issues.append({
+            "type": "seo",
+            "severity": "info",
+            "message": f"{h1_count} H1 headings (recommended: one per page)"
+        })
+
+    # Open Graph: presence, completeness of the core tags, absolute og:image
+    og = await page.evaluate("""() => {
+        const tags = {};
+        document.querySelectorAll('meta[property^="og:"]').forEach(m => {
+            tags[m.getAttribute('property')] = m.getAttribute('content') || '';
+        });
+        const tw = document.querySelector('meta[name="twitter:card"]');
+        return { tags, twitterCard: tw ? tw.content : null };
     }""")
-    if not has_og:
+    og_tags = og["tags"]
+    if not og_tags:
         issues.append({
             "type": "seo",
             "severity": "info",
             "message": "Missing Open Graph meta tags"
+        })
+    else:
+        core = ["og:title", "og:description", "og:image", "og:url"]
+        missing = [t for t in core if not og_tags.get(t)]
+        if missing:
+            issues.append({
+                "type": "seo",
+                "severity": "info",
+                "message": f"Incomplete Open Graph tags (missing: {', '.join(missing)})"
+            })
+        og_image = og_tags.get("og:image", "")
+        if og_image and not og_image.startswith(("http://", "https://")):
+            issues.append({
+                "type": "seo",
+                "severity": "info",
+                "message": "og:image is not an absolute URL (social platforms require one)"
+            })
+        if not og["twitterCard"]:
+            issues.append({
+                "type": "seo",
+                "severity": "info",
+                "message": "Missing twitter:card meta tag (use 'summary_large_image' for rich previews)"
+            })
+
+    # JSON-LD structured data: presence + parseability
+    jsonld = await page.evaluate("""() => {
+        const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        let invalid = 0;
+        const types = [];
+        scripts.forEach(s => {
+            try {
+                const data = JSON.parse(s.textContent);
+                const collect = (d) => {
+                    if (Array.isArray(d)) d.forEach(collect);
+                    else if (d && d['@type']) types.push(String(d['@type']));
+                };
+                collect(data && data['@graph'] ? data['@graph'] : data);
+            } catch { invalid++; }
+        });
+        return { count: scripts.length, invalid, types: types.slice(0, 10) };
+    }""")
+    if jsonld["count"] == 0:
+        issues.append({
+            "type": "seo",
+            "severity": "info",
+            "message": "No JSON-LD structured data found"
+        })
+    elif jsonld["invalid"]:
+        issues.append({
+            "type": "seo",
+            "severity": "warning",
+            "message": f"{jsonld['invalid']} JSON-LD block(s) contain invalid JSON",
+            "details": [f"valid types found: {jsonld['types']}"] if jsonld["types"] else []
         })
 
     # Check for robots meta
@@ -305,6 +397,27 @@ async def check_seo(page: Page) -> list[dict]:
             "type": "seo",
             "severity": "warning",
             "message": "Page is set to noindex (won't appear in search results)"
+        })
+
+    # X-Robots-Tag header — the other way pages get de-indexed, invisible in
+    # the DOM. Use the navigation response when available; otherwise probe
+    # with a cheap HEAD request in the same context.
+    robots_header = None
+    try:
+        if response is not None:
+            robots_header = (response.headers or {}).get("x-robots-tag")
+        else:
+            ctx = getattr(page, "context", None)
+            if ctx is not None and page.url.startswith(("http://", "https://")):
+                head = await ctx.request.head(page.url, timeout=5000)
+                robots_header = head.headers.get("x-robots-tag")
+    except Exception:
+        pass
+    if robots_header and "noindex" in robots_header.lower():
+        issues.append({
+            "type": "seo",
+            "severity": "warning",
+            "message": f"X-Robots-Tag header sets noindex (won't appear in search results): '{robots_header}'"
         })
 
     return issues
