@@ -13,8 +13,26 @@ from sessions import real_page
 from .registry import tool
 
 
+def _replaced_method_warning(project_name: str, new_method: str) -> dict:
+    """Extra response keys when a set_* auth call replaces a different method.
+
+    A project has exactly one auth config — silently flipping method=basic to
+    method=cookies surprised agents (issue #6). Still allowed, but announced.
+    """
+    project = project_manager.get(project_name)
+    prev = project.auth.method if project and project.auth else None
+    if prev and prev != new_method:
+        return {
+            "replaced_auth_method": prev,
+            "warning": f"This replaced the project's previous '{prev}' auth config — "
+                       f"a project holds one auth method at a time.",
+        }
+    return {}
+
+
 @tool("set_form_login")
 async def handle_set_form_login(args: dict) -> dict:
+        extra = _replaced_method_warning(args["project"], "form")
         success = project_manager.set_form_login(
             name=args["project"],
             login_url=args["login_url"],
@@ -25,19 +43,24 @@ async def handle_set_form_login(args: dict) -> dict:
             submit_selector=args.get("submit_selector")
         )
         if success:
-            return {"success": True, "message": "Form login configured"}
+            return {"success": True,
+                    "message": f"Form login configured — call login_project('{args['project']}') to execute it",
+                    **extra}
         return {"success": False, "error": f"Project '{args['project']}' not found"}
 
 
 @tool("set_basic_auth")
 async def handle_set_basic_auth(args: dict) -> dict:
+        extra = _replaced_method_warning(args["project"], "basic")
         success = project_manager.set_basic_auth(
             name=args["project"],
             username=args["username"],
             password=args["password"]
         )
         if success:
-            return {"success": True, "message": "HTTP Basic Auth configured"}
+            return {"success": True,
+                    "message": f"HTTP Basic Auth configured — call login_project('{args['project']}') to apply it",
+                    **extra}
         return {"success": False, "error": f"Project '{args['project']}' not found"}
 
 
@@ -57,12 +80,18 @@ async def handle_set_cookies(args: dict) -> dict:
             # Playwright's add_cookies requires url or a domain+path pair
             c.setdefault("path", "/")
 
+        extra = _replaced_method_warning(args["project"], "cookies")
         success = project_manager.set_cookies(
             name=args["project"],
             cookies=cookies
         )
         if success:
-            return {"success": True, "message": f"Set {len(cookies)} cookies"}
+            # "Set N cookies" implied they were live — they're only stored
+            # config until login_project injects them (issue #6).
+            return {"success": True,
+                    "message": f"Stored {len(cookies)} cookies for project '{args['project']}' — "
+                               f"call login_project('{args['project']}') to inject them into the browser",
+                    **extra}
         return {"success": False, "error": f"Project '{args['project']}' not found"}
 
 
@@ -98,27 +127,58 @@ async def handle_copy_auth(args: dict) -> dict:
         target.is_logged_in = False
         project_manager._save()
 
-        # Also carry over live login state if the source is logged in
+        # Carry over live login state if the source is logged in. SPAs keep
+        # auth tokens in localStorage as often as in cookies (issue #7), so a
+        # cookie-only copy can silently produce a logged-out "copy".
+        session_copied = False
+        copied = []
+        note = None
         if source.is_logged_in:
             t = await get_tester()
-            target_ctx = await t.get_context(target.name)
             if target.auth.method == "basic":
                 # Basic auth lives in a context route, not cookies — install it
                 # on the target context by performing the login there.
+                target_ctx = await t.get_context(target.name)
                 result = await auth_handler.login(target_ctx, target)
                 if result.get("success"):
-                    target.is_logged_in = True
-                    project_manager._save()
+                    session_copied = True
+                    copied = ["basic-auth route"]
             elif source.name in t.contexts:
                 source_ctx = t.contexts[source.name]
-                cookies = await source_ctx.cookies()
-                await target_ctx.add_cookies(cookies)
+                state = await source_ctx.storage_state()
+                if target.name not in t.contexts:
+                    # Full transfer: create the target context pre-seeded with
+                    # the source's cookies AND localStorage.
+                    t.contexts[target.name] = await t.browser.new_context(
+                        viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+                        ignore_https_errors=True,
+                        storage_state=state,
+                    )
+                    session_copied = True
+                    copied = ["cookies", "localStorage"]
+                else:
+                    # Target context already exists — Playwright can only add
+                    # cookies to it. Be honest: apps holding tokens in
+                    # localStorage will NOT be logged in.
+                    await t.contexts[target.name].add_cookies(state.get("cookies", []))
+                    copied = ["cookies"]
+                    session_copied = False
+                    note = ("target context already existed, so only cookies were transferred "
+                            "(not localStorage) — run login_project if the app doesn't "
+                            "authenticate from cookies alone")
+            if session_copied:
                 target.is_logged_in = True
                 project_manager._save()
 
-        return {
+        result = {
             "success": True,
             "message": f"Auth copied from '{args['from_project']}' to '{args['to_project']}'",
             "method": target.auth.method,
-            "session_copied": target.is_logged_in,
+            "session_copied": session_copied,
+            "copied": copied,
         }
+        if note:
+            result["note"] = note
+        if not session_copied:
+            result["message"] += f" — run login_project('{args['to_project']}') to authenticate"
+        return result
