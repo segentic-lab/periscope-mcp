@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
-- `tool_schemas.py` - All 70 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 71 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -98,6 +98,7 @@ close_session(session_id)
 - `measure_interaction(session_id, selector, wait_for?)` — Measure click-to-result timing
 - `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
 - `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
+- `run_lighthouse(url, categories?[], device?, timeout?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, full report saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
 
 ### Advanced Tools
 - `record_session(url, steps[], project?)` — Record workflow as video

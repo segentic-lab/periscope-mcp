@@ -175,6 +175,149 @@ async def handle_run_checks_on_session(args: dict) -> dict:
         }
 
 
+def _find_lighthouse_cmd():
+    """Locate the Lighthouse CLI (or npx to bootstrap it).
+
+    Searches PATH first, then nvm installs (~/.nvm or $NVM_DIR) — MCP server
+    processes are often spawned without nvm's PATH. Returns (cmd, bin_dir,
+    note); cmd is None when no Node toolchain exists at all.
+    """
+    import glob
+    import re
+    import shutil
+
+    npm_tip = "Tip: 'npm install -g lighthouse' makes runs start faster than npx."
+
+    lh = shutil.which("lighthouse")
+    if lh:
+        return [lh], os.path.dirname(lh), None
+    npx = shutil.which("npx")
+    if npx:
+        return [npx, "--yes", "lighthouse"], os.path.dirname(npx), npm_tip
+
+    # nvm installs, newest Node version first
+    nvm_dir = os.environ.get("NVM_DIR", os.path.expanduser("~/.nvm"))
+    def _ver(path):
+        m = re.search(r"/v(\d+)\.(\d+)\.(\d+)/", path + "/")
+        return tuple(int(g) for g in m.groups()) if m else (0, 0, 0)
+    for bin_dir in sorted(glob.glob(os.path.join(nvm_dir, "versions/node/*/bin")), key=_ver, reverse=True):
+        lh = os.path.join(bin_dir, "lighthouse")
+        if os.path.exists(lh):
+            return [lh], bin_dir, None
+        npx = os.path.join(bin_dir, "npx")
+        if os.path.exists(npx):
+            return [npx, "--yes", "lighthouse"], bin_dir, npm_tip
+
+    return None, None, None
+
+
+@tool("run_lighthouse")
+async def handle_run_lighthouse(args: dict) -> dict:
+        from datetime import datetime
+
+        url = args["url"]
+        categories = args.get("categories") or ["performance", "accessibility", "best-practices", "seo"]
+        device = args.get("device", "mobile")
+        timeout_s = int(args.get("timeout", 180))
+
+        cmd, node_bin_dir, note = _find_lighthouse_cmd()
+        if cmd is None:
+            return {
+                "success": False,
+                "error": "Lighthouse requires Node.js, and none was found (checked PATH and ~/.nvm). "
+                         "Install it with nvm, then re-run this tool:",
+                "install_commands": [
+                    "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
+                    '\\. "$HOME/.nvm/nvm.sh"',
+                    "nvm install --lts",
+                    "npm install -g lighthouse",
+                ],
+            }
+
+        cmd += [
+            url,
+            "--output=json",
+            "--output-path=stdout",
+            "--quiet",
+            "--chrome-flags=--headless=new --no-sandbox --disable-gpu",
+            f"--only-categories={','.join(categories)}",
+        ]
+        if device == "desktop":
+            cmd.append("--preset=desktop")
+
+        env = dict(os.environ)
+        # The lighthouse/npx launchers are '#!/usr/bin/env node' scripts — the
+        # subprocess must be able to find node even when it came from ~/.nvm.
+        if node_bin_dir:
+            env["PATH"] = node_bin_dir + os.pathsep + env.get("PATH", "")
+        if config.CHROMIUM_PATH:
+            env["CHROME_PATH"] = config.CHROMIUM_PATH  # lighthouse's chrome-launcher honors this
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {"success": False, "error": f"Lighthouse timed out after {timeout_s}s"}
+
+        try:
+            report = json.loads(stdout.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {
+                "success": False,
+                "error": f"Lighthouse failed (exit {proc.returncode}): {stderr.decode(errors='replace')[-500:]}",
+            }
+
+        scores = {
+            key: round(cat["score"] * 100) if cat.get("score") is not None else None
+            for key, cat in report.get("categories", {}).items()
+        }
+        audits = report.get("audits", {})
+        metric_ids = [
+            "first-contentful-paint", "largest-contentful-paint", "total-blocking-time",
+            "cumulative-layout-shift", "speed-index", "interactive",
+        ]
+        metrics = {
+            mid: {
+                "value": audits[mid].get("numericValue"),
+                "display": audits[mid].get("displayValue"),
+                "score": audits[mid].get("score"),
+            }
+            for mid in metric_ids if mid in audits
+        }
+        failed = [
+            {"id": aid, "title": a.get("title"), "score": a["score"], "display": a.get("displayValue")}
+            for aid, a in audits.items()
+            if a.get("score") is not None and a["score"] < 0.9
+            and a.get("scoreDisplayMode") in ("binary", "numeric", "metricSavings")
+        ]
+        failed.sort(key=lambda a: a["score"])
+
+        # Persist the full report next to Periscope's own reports
+        os.makedirs(config.REPORTS_DIR, exist_ok=True)
+        report_path = os.path.join(
+            config.REPORTS_DIR, f"lighthouse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=2)
+
+        result_note = {"note": note} if note else {}
+        return {
+            "success": True,
+            **result_note,
+            "url": report.get("finalDisplayedUrl") or report.get("finalUrl") or url,
+            "device": device,
+            "lighthouse_version": report.get("lighthouseVersion"),
+            "scores": scores,
+            "metrics": metrics,
+            "failed_audits": failed[:40],
+            "failed_audit_count": len(failed),
+            "report_path": report_path,
+        }
+
+
 @tool("check_color_contrast")
 async def handle_check_color_contrast(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

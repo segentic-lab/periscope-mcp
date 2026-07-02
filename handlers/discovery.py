@@ -105,6 +105,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "test_form_validation": {"params": "url|session_id, form_selector?", "note": "Submit empty forms, collect validation messages"},
                     "compare_screenshots": {"params": "screenshot1, screenshot2, threshold?", "note": "Pixel diff — returns % changed + diff image"},
                     "test_responsive": {"params": "url, viewports?[], run_checks?[]", "note": "Test at mobile/tablet/desktop viewports"},
+                    "run_lighthouse": {"params": "url, categories?[], device?, timeout?", "note": "Real Google Lighthouse audit: 0-100 scores + Core Web Vitals + failed audits. Needs Node.js."},
                     "check_links": {"params": "url|session_id, check_external?, max_links?", "note": "Comprehensive link status checker"},
                     "measure_interaction": {"params": "session_id, selector, wait_for?", "note": "Measure click-to-result timing (ms)"},
                     "get_table_data": {"params": "session_id, selector?, max_rows?", "note": "Parse HTML table into structured JSON with headers"},

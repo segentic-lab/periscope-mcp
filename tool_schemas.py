@@ -936,6 +936,24 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="run_lighthouse",
+            description="Run a real Google Lighthouse audit against a URL. Returns 0-100 category scores, Core Web Vitals lab metrics (LCP, TBT, CLS, Speed Index), and the failed audits, and saves the full JSON report. Requires Node.js — finds it on PATH or auto-detects nvm installs (~/.nvm); if none exists, returns the exact nvm install commands. Launches its own headless Chrome: no session or project auth state applies.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to audit"},
+                    "categories": {
+                        "type": ["array", "string"],
+                        "description": "Categories to audit (default: all four)",
+                        "items": {"type": "string", "enum": ["performance", "accessibility", "best-practices", "seo"]}
+                    },
+                    "device": {"type": "string", "enum": ["mobile", "desktop"], "description": "Emulation preset (default: mobile, like Lighthouse's default)"},
+                    "timeout": {"type": "integer", "description": "Max seconds to wait (default: 180)"}
+                },
+                "required": ["url"]
+            }
+        ),
+        Tool(
             name="check_color_contrast",
             description="Check WCAG color contrast ratios for text elements on the page. Reports elements that fail AA or AAA standards.",
             inputSchema={

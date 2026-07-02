@@ -447,8 +447,13 @@ async def check_seo(page: Page, response=None) -> list[dict]:
 
 
 async def get_performance_metrics(page: Page) -> dict:
-    """Get page performance metrics using Navigation Timing Level 2 API."""
-    metrics = await page.evaluate("""() => {
+    """Page performance metrics: Navigation Timing Level 2 + Core Web Vitals.
+
+    LCP/CLS/TBT are read from buffered PerformanceObserver entries — lab
+    values as of the moment the check runs (CLS keeps accumulating while the
+    page lives; long-task TBT is an approximation of Lighthouse's TBT).
+    """
+    metrics = await page.evaluate("""async () => {
         const [nav] = performance.getEntriesByType('navigation');
         const paint = performance.getEntriesByType('paint');
         const resources = performance.getEntriesByType('resource');
@@ -459,11 +464,39 @@ async def get_performance_metrics(page: Page) -> dict:
             if (r.transferSize) totalSize += r.transferSize;
         });
 
+        // Core Web Vitals from buffered observer entries
+        const observe = (type, cb) => new Promise(resolve => {
+            try {
+                const po = new PerformanceObserver(list => cb(list.getEntries()));
+                po.observe({ type, buffered: true });
+                setTimeout(() => { po.disconnect(); resolve(); }, 60);
+            } catch { resolve(); }  // entry type unsupported in this browser
+        });
+
+        let lcp = null;
+        await observe('largest-contentful-paint', entries => {
+            if (entries.length) lcp = entries[entries.length - 1].startTime;
+        });
+
+        let cls = 0;
+        await observe('layout-shift', entries => {
+            entries.forEach(e => { if (!e.hadRecentInput) cls += e.value; });
+        });
+
+        let tbt = 0, longTasks = 0;
+        await observe('longtask', entries => {
+            entries.forEach(e => { longTasks++; tbt += Math.max(0, e.duration - 50); });
+        });
+
         return {
             dom_content_loaded_ms: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
             load_complete_ms: nav ? Math.round(nav.loadEventEnd) : null,
             first_paint_ms: paint.find(p => p.name === 'first-paint')?.startTime || null,
             first_contentful_paint_ms: paint.find(p => p.name === 'first-contentful-paint')?.startTime || null,
+            largest_contentful_paint_ms: lcp !== null ? Math.round(lcp) : null,
+            cumulative_layout_shift: Math.round(cls * 1000) / 1000,
+            total_blocking_time_ms: Math.round(tbt),
+            long_task_count: longTasks,
             resource_count: resources.length,
             total_size_bytes: totalSize,
             total_size_kb: Math.round(totalSize / 1024)

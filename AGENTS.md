@@ -3,7 +3,7 @@
 
 # Website Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 70 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 71 Playwright/Chrome tools
 for testing websites. Call `describe_tools(category?)` anytime for the full
 catalog with parameters and workflows.
 
@@ -89,6 +89,11 @@ actually change anything?".
 - `test_dark_mode(session_id, "dark")` toggles prefers-color-scheme.
 - Accessibility: `check_color_contrast` (WCAG AA/AAA ratios),
   `test_keyboard_navigation` (tab order + focus indicators).
+- `run_lighthouse(url)` runs a real Google Lighthouse audit (0-100 scores,
+  official Core Web Vitals, failed audits). Requires Node.js on the server;
+  it launches its own Chrome, so session/login state does not apply — use it
+  for public pages, and Periscope's own checks for authenticated ones. The
+  `performance` check also reports lab LCP/CLS/TBT natively, no Node needed.
 
 ## Ordering rules and pitfalls
 

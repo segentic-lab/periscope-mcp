@@ -1,6 +1,6 @@
 # periscope-mcp
 
-An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 70 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
+An MCP (Model Context Protocol) server that gives AI agents website testing tools. It uses Playwright with headless Chrome to crawl websites, take screenshots, run automated checks, and interactively test web applications. 71 tools covering static analysis, interactive testing, responsive testing, network mocking, accessibility audits, and more.
 
 Works with **any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom agents, or anything else that speaks MCP over stdio.
 
@@ -15,14 +15,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 70 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 71 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 70 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 71 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -172,10 +172,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 70 tools
+agent's system prompt (or custom instructions) so it drives the 71 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (70 tools)
+## MCP Tools Reference (71 tools)
 
 ### Project Management (4 tools)
 
@@ -242,7 +242,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 **`interact_and_test` supports 25 step actions:**
 `click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
 
-### Analysis (7 tools)
+### Analysis (8 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -253,6 +253,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
 | `get_table_data` | Parse HTML table into structured JSON (headers → cell values) | `session_id` |
 | `get_toast_messages` | Capture visible toast/notification messages | `session_id` |
+| `run_lighthouse` | Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits (needs Node.js) | `url` |
 
 ### Workflow Speed (9 tools)
 
@@ -372,8 +373,11 @@ robots.txt and llms.txt are fetched once per origin and cached for the server's 
 - DOM content loaded time (ms)
 - Full page load time (ms)
 - First paint / first contentful paint (ms)
+- Core Web Vitals (lab values via buffered PerformanceObserver): Largest Contentful Paint (ms), Cumulative Layout Shift, Total Blocking Time approximation from long tasks (+ long-task count)
 - Resource count
 - Total transfer size (bytes / KB)
+
+For scored, Lighthouse-official metrics use the `run_lighthouse` tool — it runs the real Lighthouse CLI (requires Node.js) and returns 0-100 category scores, official Core Web Vitals, and failed audits, saving the full JSON report to `data/reports/`.
 
 ## Test Output Format
 
