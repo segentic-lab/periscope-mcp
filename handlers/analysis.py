@@ -337,11 +337,14 @@ async def handle_check_color_contrast(args: dict) -> dict:
                 return (lighter + 0.05) / (darker + 0.05);
             }
 
-            // Cap on collected RESULTS, not scanned candidates — capping the
-            // scan meant a page whose first 50 matches are hidden nav items
-            // reported "checked: 1" (issue #4).
+            // Dedupe by style signature (issue #4 follow-up): contrast is a
+            // property of the color combination, not the element. 60 nav items
+            // sharing one style consume ONE slot, so the budget reaches the
+            // table headers / buttons further down instead of filling up on
+            // the first repeated style in DOM order.
+            const styleGroups = new Map();  // signature -> result index
+            let truncatedGroups = 0;
             for (const el of els) {
-                if (results.length >= maxResults) break;
                 const rect = el.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
 
@@ -372,11 +375,19 @@ async def handle_check_color_contrast(args: dict) -> dict:
                 const fontWeight = parseInt(style.fontWeight) || 400;
                 const isLargeText = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
 
+                const signature = style.color + '|' + bgColor + '|' + (isLargeText ? 'L' : 'N');
+                if (styleGroups.has(signature)) {
+                    results[styleGroups.get(signature)].elements_with_style++;
+                    continue;
+                }
+                if (results.length >= maxResults) { truncatedGroups++; continue; }
+
                 let selector_str = el.tagName.toLowerCase();
                 if (el.id) selector_str = '#' + el.id;
                 else if (el.className && typeof el.className === 'string')
                     selector_str += '.' + el.className.trim().split(/\\s+/)[0];
 
+                styleGroups.set(signature, results.length);
                 results.push({
                     selector: selector_str,
                     text: (el.textContent || '').trim().substring(0, 40),
@@ -384,10 +395,13 @@ async def handle_check_color_contrast(args: dict) -> dict:
                     large: isLargeText,
                     foreground: style.color,
                     background: bgColor,
+                    elements_with_style: 1,
                 });
             }
-            return results;
+            return { results, truncatedGroups };
         }""", [selector, max_results])
+        truncated_groups = elements["truncatedGroups"]
+        elements = elements["results"]
 
         # Evaluate against WCAG thresholds
         aa_normal = 4.5
@@ -406,7 +420,9 @@ async def handle_check_color_contrast(args: dict) -> dict:
 
         return {
             "level": level,
-            "checked": len(elements),
+            "checked": len(elements),  # unique text-style combinations sampled
+            "elements_represented": sum(e["elements_with_style"] for e in elements),
+            "style_groups_skipped": truncated_groups,
             "fail_count": len(failures),
             "failures": failures[:30],
             "failures_truncated": len(failures) > 30,
@@ -420,7 +436,8 @@ async def handle_get_page_html(args: dict) -> dict:
         max_length = args.get("max_length", 50000)
 
         if selector:
-            elements = await session.page.evaluate("""(args) => {
+            try:
+                elements = await session.page.evaluate("""(args) => {
                 const [selector, maxLen] = args;
                 const stripBase64 = html => html.replace(/(<[^>]+(?:src|href|data|style)=["'])data:[^;]+;base64,[^"']+/gi, '$1[base64-removed]');
                 const els = document.querySelectorAll(selector);
@@ -445,6 +462,15 @@ async def handle_get_page_html(args: dict) -> dict:
                 }
                 return results;
             }""", [selector, max_length])
+            except Exception as e:
+                if "not a valid selector" in str(e) or "SyntaxError" in str(e):
+                    return {
+                        "success": False,
+                        "error": f"Invalid CSS selector '{selector}'. This tool accepts standard "
+                                 f"CSS only — Playwright pseudo-classes like :has-text() and "
+                                 f":visible are not supported here.",
+                    }
+                raise
             return {
                 "selector": selector,
                 "count": len(elements),

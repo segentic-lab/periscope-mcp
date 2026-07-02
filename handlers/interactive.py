@@ -155,9 +155,19 @@ async def handle_get_page_elements(args: dict) -> dict:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
         try:
-            elements = await interactions.get_elements(
-                page, args["selector"], max_results, attributes=attributes, full_text=full_text
-            )
+            try:
+                elements = await interactions.get_elements(
+                    page, args["selector"], max_results, attributes=attributes, full_text=full_text
+                )
+            except Exception as e:
+                if "not a valid selector" in str(e) or "SyntaxError" in str(e):
+                    return {
+                        "success": False,
+                        "error": f"Invalid CSS selector '{args['selector']}'. This tool accepts "
+                                 f"standard CSS only — Playwright pseudo-classes like :has-text() "
+                                 f"and :visible are not supported here.",
+                    }
+                raise
             result = {
                 "selector": args["selector"],
                 "count": len(elements),

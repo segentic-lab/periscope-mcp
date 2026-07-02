@@ -122,27 +122,74 @@ async def handle_find_element(args: dict) -> dict:
                 if (nearEl) nearRect = nearEl.getBoundingClientRect();
             }
 
+            // Implicit ARIA roles (issue #10): <a href> IS a link even without
+            // role="link" — match the common implicit mappings too.
+            const implicitRole = (el) => {
+                const t = el.tagName.toLowerCase();
+                if (t === 'a' && el.hasAttribute('href')) return 'link';
+                if (t === 'button') return 'button';
+                if (t === 'nav') return 'navigation';
+                if (t === 'main') return 'main';
+                if (t === 'header') return 'banner';
+                if (t === 'footer') return 'contentinfo';
+                if (t === 'aside') return 'complementary';
+                if (t === 'form') return 'form';
+                if (t === 'img') return 'img';
+                if (t === 'table') return 'table';
+                if (t === 'ul' || t === 'ol') return 'list';
+                if (t === 'li') return 'listitem';
+                if (t === 'select') return el.multiple ? 'listbox' : 'combobox';
+                if (t === 'textarea') return 'textbox';
+                if (/^h[1-6]$/.test(t)) return 'heading';
+                if (t === 'input') {
+                    const it = (el.getAttribute('type') || 'text').toLowerCase();
+                    if (['button', 'submit', 'reset', 'image'].includes(it)) return 'button';
+                    if (it === 'checkbox') return 'checkbox';
+                    if (it === 'radio') return 'radio';
+                    if (it === 'range') return 'slider';
+                    if (it === 'number') return 'spinbutton';
+                    if (it === 'search') return 'searchbox';
+                    return 'textbox';
+                }
+                return null;
+            };
+
+            // Real visibility, not just geometry: responsive layouts render
+            // hidden duplicates (mobile drawer + desktop sidebar) that have
+            // size but visibility:hidden ancestors (issue #10).
+            const isVisible = (el, rect) => {
+                if (rect.width === 0 && rect.height === 0) return false;
+                if (el.checkVisibility) {
+                    return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+                }
+                return true;
+            };
+
             let matched = [];
             for (const el of allEls) {
-                // Filter by role
-                if (role && el.getAttribute('role') !== role) continue;
+                // Filter by role (explicit attribute or implicit)
+                if (role && el.getAttribute('role') !== role && implicitRole(el) !== role) continue;
 
                 // Filter by text
                 const elText = (el.textContent || '').trim();
                 if (text && !elText.toLowerCase().includes(text.toLowerCase())) continue;
 
-                // Skip invisible
                 const rect = el.getBoundingClientRect();
-                if (rect.width === 0 && rect.height === 0) continue;
+                matched.push({ el, visible: isVisible(el, rect) });
+            }
 
-                matched.push(el);
+            // Prefer visible matches; only fall back to hidden ones when
+            // nothing visible matches (issue #10) — results carry `visible`
+            // so the caller can tell.
+            if (matched.some(m => m.visible)) {
+                matched = matched.filter(m => m.visible);
             }
 
             // Text matches every ancestor of the target (html, body, wrappers all
             // contain the text) — keep only innermost matches so the returned
             // selector points at the actual element, not a container.
             if (text) {
-                matched = matched.filter(el => !matched.some(other => other !== el && el.contains(other)));
+                matched = matched.filter(m => !matched.some(other => other.el !== m.el && m.el.contains(other.el)));
             }
 
             // Tailwind variant classes (hover:bg-x, [&_svg]:size-4, w-1/2) are
@@ -165,7 +212,8 @@ async def handle_find_element(args: dict) -> dict:
                 return parts.join(' > ');
             };
 
-            for (const el of matched) {
+            for (const m of matched) {
+                const el = m.el;
                 const elText = (el.textContent || '').trim();
                 const rect = el.getBoundingClientRect();
 
@@ -201,8 +249,9 @@ async def handle_find_element(args: dict) -> dict:
                 candidates.push({
                     selector: bestSelector,
                     text: elText.substring(0, 60),
-                    role: el.getAttribute('role') || null,
+                    role: el.getAttribute('role') || implicitRole(el),
                     aria_label: el.getAttribute('aria-label') || null,
+                    visible: m.visible,
                     distance: nearRect ? Math.round(distance) : null,
                 });
             }

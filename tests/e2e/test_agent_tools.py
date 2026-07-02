@@ -39,6 +39,34 @@ def test_find_element_tailwind_classes_yield_valid_selector(run, handlers, sessi
     assert check["elements"][0]["text"] == "Tailwind Btn"
 
 
+def test_find_element_prefers_visible_and_implicit_roles(run, handlers, session):
+    # Issue #10: a visibility:hidden duplicate precedes the visible copy
+    r = run(handlers["find_element"]({"session_id": session, "text": "Nadzorna plošča"}))
+    assert r["found"] >= 1
+    top = r["elements"][0]
+    assert top["visible"] is True, r["elements"]
+    # returned selector must resolve to the visible copy
+    check = run(handlers["interact_and_test"]({
+        "session_id": session, "screenshot_after": False,
+        "steps": [{"action": "evaluate_js",
+                   "script": "document.querySelector(" + repr(top["selector"]) + ").closest('a') !== null"}],
+    }))
+    assert check["steps"][0]["result"] is True, top
+
+    # implicit role: <a href> is a link without role="link"
+    r = run(handlers["find_element"]({
+        "session_id": session, "text": "Nadzorna plošča", "role": "link",
+    }))
+    assert r["found"] == 1, r
+    assert r["elements"][0]["role"] == "link"
+
+
+def test_get_page_elements_friendly_dialect_error(run, handlers, session):
+    r = run(handlers["get_page_elements"]({"session_id": session, "selector": "button:visible"}))
+    assert r["success"] is False
+    assert "standard CSS only" in r["error"], r
+
+
 def test_auto_fill_form_placeholder_aria_and_path_selectors(run, handlers, session):
     # Issue #2: id/name-less fields must get unambiguous selectors and fill fast
     import time

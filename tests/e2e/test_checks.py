@@ -83,14 +83,18 @@ def test_keyboard_navigation_identity_cycle(run, handlers, good_site):
     assert r["issues"] == []
 
 
-def test_color_contrast_skips_hidden_without_burning_budget(run, handlers, good_site):
-    # Issue #4: 60 hidden spans precede the visible table — the sweep must
-    # still reach and check the visible text, not report checked: 1
+def test_color_contrast_style_dedupe_reaches_deep_content(run, handlers, good_site):
+    # Issue #4 (reopened): 60 hidden spans AND 60 visible same-styled spans
+    # precede a low-contrast table header. Style-dedupe must let the budget
+    # reach it — first-50-in-DOM-order sampling would report fail_count: 0.
     r = run(handlers["open_session"]({"url": f"{good_site}/app.html"}))
     sid = r["session_id"]
     try:
         r = run(handlers["check_color_contrast"]({"session_id": sid}))
-        assert r["checked"] >= 10, r
+        assert r["elements_represented"] >= 70, r
+        assert r["fail_count"] >= 1, r
+        low = [f for f in r["failures"] if "Low Contrast Header" in f["text"]]
+        assert low and low[0]["ratio"] < 3.0, r["failures"]
     finally:
         run(handlers["close_session"]({"session_id": sid}))
 

@@ -41,11 +41,18 @@
     <input type="text">
   </form>
 
-  <!-- dense hidden-first markup: contrast sweep must skip these, not count them
-       against its scan budget (issue #4) -->
+  <!-- responsive-style hidden duplicate (issue #10): the drawer copy has
+       geometry but visibility:hidden; find_element must prefer the visible one -->
+  <div style="visibility:hidden"><span class="navdup">Nadzorna plošča</span></div>
+  <a href="/dash" class="navdup"><span>Nadzorna plošča</span></a>
+
+  <!-- dense repeated-style markup before a low-contrast table header: the
+       contrast sweep must dedupe by style so its budget reaches the header
+       (issue #4, reopened) -->
   <div id="hidden-farm"></div>
+  <div id="visible-farm"></div>
   <table id="contrast-table">
-    <tr><th>Col</th></tr>
+    <tr><th style="color:#999999;background:#ffffff">Low Contrast Header</th></tr>
   </table>
   <script>
     const farm = document.getElementById('hidden-farm');
@@ -54,6 +61,12 @@
       s.style.display = 'none';
       s.textContent = 'hidden ' + i;
       farm.appendChild(s);
+    }
+    const vfarm = document.getElementById('visible-farm');
+    for (let i = 0; i < 60; i++) {
+      const s = document.createElement('span');
+      s.textContent = 'nav item ' + i + ' ';
+      vfarm.appendChild(s);
     }
     const table = document.getElementById('contrast-table');
     for (let i = 0; i < 10; i++) {
