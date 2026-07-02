@@ -169,7 +169,7 @@ Platform-side rendering (image caches, crop ratios, SERP appearance) can only be
 - Twitter Card Validator — https://cards-dev.twitter.com/validator (deprecated 2023; Twitter/X no longer provides a working validator)
 
 ## Known Limitations
-- Drag and drop fails with `@hello-pangea/dnd` and similar React DnD libs (Playwright limitation, not a bug)
+- Default drag (`drag_to`) is ignored by pointer-tracking DnD libs (`@hello-pangea/dnd` etc.) — the step succeeds but nothing moves. Retry the drag step with `method: "mouse"` (stepped manual drag), or use the library's keyboard mode (focus handle → Space → arrows → Space). Verify with `diff_page_state`/`assert_condition`.
 
 ## Data
 - Projects: `data/projects.json` (contains credentials - never commit)

@@ -44,6 +44,39 @@ def _q(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+async def _mouse_drag(page: Page, source_sel: str, target_sel: str):
+    """Manual stepped-mouse drag for pointer-tracking DnD libraries.
+
+    drag_to()'s fast synthetic sequence is ignored by libraries that track the
+    pointer themselves with a drag-start threshold and animation-frame pacing
+    (@hello-pangea/dnd and similar): the threshold crossing and paced moves
+    below are what make them recognize a drag.
+    """
+    owner = _owner_page(page)
+    source = page.locator(source_sel).first
+    target = page.locator(target_sel).first
+    await source.wait_for(state="visible", timeout=10000)
+    await target.wait_for(state="visible", timeout=10000)
+    await source.scroll_into_view_if_needed()
+    sb = await source.bounding_box()
+    tb = await target.bounding_box()
+    if not sb or not tb:
+        raise Exception(f"Could not resolve bounding boxes for drag ('{source_sel}' -> '{target_sel}')")
+    sx, sy = sb["x"] + sb["width"] / 2, sb["y"] + sb["height"] / 2
+    tx, ty = tb["x"] + tb["width"] / 2, tb["y"] + tb["height"] / 2
+
+    mouse = owner.mouse
+    await mouse.move(sx, sy)
+    await mouse.down()
+    await mouse.move(sx + 8, sy + 8, steps=2)   # cross the drag-start threshold
+    await owner.wait_for_timeout(100)           # let the library register the lift
+    await mouse.move(tx, ty, steps=15)          # paced travel
+    await owner.wait_for_timeout(100)
+    await mouse.move(tx, ty)                    # final move event over the target
+    await owner.wait_for_timeout(50)
+    await mouse.up()
+
+
 async def _get_input_type(page: Page, selector: str) -> str | None:
     """Get the type attribute of an input element."""
     return await page.evaluate("""(selector) => {
@@ -273,7 +306,8 @@ async def execute_steps(
         scroll_to: {action: "scroll_to", selector: str} — scroll element into view
         scroll_within: {action: "scroll_within", selector: str, direction: "up"|"down"|"left"|"right", amount: int?}
         evaluate_js: {action: "evaluate_js", script: str} — run JS snippet, result stored in step_result
-        drag: {action: "drag", selector: str, target: str} — drag element to target
+        drag: {action: "drag", selector: str, target: str, method?: "auto"|"mouse"} — drag element to target;
+            "mouse" does a stepped manual drag for pointer-tracking DnD libs that ignore drag_to
         right_click: {action: "right_click", selector: str} — right-click / context menu
         wait_for_text: {action: "wait_for_text", text: str, selector?: str, timeout?: int} — wait for text to appear
         go_back: {action: "go_back"} — browser back button
@@ -407,9 +441,12 @@ async def execute_steps(
                 step_result["result"] = result
 
             elif action == "drag":
-                source = page.locator(step["selector"]).first
-                target = page.locator(step["target"]).first
-                await source.drag_to(target)
+                if step.get("method") == "mouse":
+                    await _mouse_drag(page, step["selector"], step["target"])
+                else:
+                    source = page.locator(step["selector"]).first
+                    target = page.locator(step["target"]).first
+                    await source.drag_to(target)
                 try:
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:

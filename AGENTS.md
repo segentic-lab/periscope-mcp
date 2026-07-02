@@ -103,8 +103,18 @@ actually change anything?".
 - `select_iframe(session_id, selector)` returns a **new** session id scoped to
   the iframe; use it like a normal session, and keep using the parent id for
   page-level actions.
-- Drag-and-drop does not work with `@hello-pangea/dnd`-style React DnD
-  libraries (Playwright limitation, not your mistake — report it as untestable).
+- **Drag-and-drop fails silently** — pointer-tracking DnD libraries
+  (`@hello-pangea/dnd`, react-beautiful-dnd) ignore the default drag: the step
+  reports success but nothing moves. Always verify a drag had an effect
+  (`assert_condition` on the new order, or `snapshot_page_state` before /
+  `diff_page_state` after). If nothing changed, escalate in order:
+  1. Retry the same drag step with `method: "mouse"` (stepped manual drag —
+     handles most pointer-tracking libraries).
+  2. Use the library's keyboard mode: focus the drag handle
+     (`evaluate_js`: `document.querySelector(...).focus()`), then `press_key`
+     `" "` to lift, `ArrowDown`/`ArrowUp` to move, `" "` to drop.
+  3. If both fail, report drag-and-drop as untestable for this widget rather
+     than claiming it works or is broken.
 - Sites with websockets/constant polling can make navigation waits hang until
   timeout; if every navigation is slow, tell the user to set
   `NAV_WAIT_UNTIL=load` in the server env.

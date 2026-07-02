@@ -624,7 +624,7 @@ async def check_something(page: Page) -> list[dict]:
 - No parallel page testing (pages are tested sequentially)
 - Interactive sessions auto-expire after 300s idle (configurable via `SESSION_TIMEOUT`)
 - Max 20 concurrent sessions (configurable via `MAX_SESSIONS`)
-- Drag and drop doesn't work via Playwright automation with some libraries (known limitation with `@hello-pangea/dnd` and similar React DnD libs — not a bug in this tool)
+- The default `drag` step (Playwright `drag_to`) is silently ignored by pointer-tracking DnD libraries (`@hello-pangea/dnd` and similar) — the step succeeds but nothing moves. Retry with `method: "mouse"` on the drag step (stepped manual drag that crosses the library's drag-start threshold), or drive the library's keyboard mode (focus the drag handle, Space to lift, arrows to move, Space to drop). Verify drags with `diff_page_state` or `assert_condition`.
 - Date/time inputs are filled with React-compatible synthetic events automatically (`fill`, `force_fill`, `auto_fill_form`)
 
 ## Troubleshooting

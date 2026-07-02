@@ -294,7 +294,7 @@ TOOLS: list[Tool] = [
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"},
-                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"},
+                                "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
                                 "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
@@ -447,7 +447,7 @@ TOOLS: list[Tool] = [
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
-                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"},
+                                "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
                                 "index": {"type": "integer", "description": "Option index (for select_option)"}
                             },
                             "required": ["action"]
@@ -515,7 +515,7 @@ TOOLS: list[Tool] = [
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels"},
                                 "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
-                                "method": {"type": "string", "description": "HTTP method filter (for wait_for_network, e.g. 'POST')"}
+                                "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"}
                             },
                             "required": ["action"]
                         }
