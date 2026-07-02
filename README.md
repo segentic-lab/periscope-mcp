@@ -305,15 +305,16 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 - Images without explicit width/height dimensions
 
 ### Accessibility (`checks/accessibility.py`)
-- Images missing `alt` text
-- Links without accessible text (no text, no aria-label)
-- Form inputs without associated labels
+- Images missing `alt` text (decorative images exempt: `alt=""`, `role="presentation"/"none"`, `aria-hidden`)
+- Links and buttons without accessible names (checks text, `aria-label`, resolvable `aria-labelledby`, `title`, `img[alt]`, svg `<title>`; `aria-hidden` elements exempt)
+- Form inputs without associated labels (`label[for]`, wrapping label, `aria-label`/`aria-labelledby`, `title`)
 - Heading hierarchy (missing H1, multiple H1, skipped levels)
 - Missing `lang` attribute on `<html>`
-- Buttons without accessible names
-- Missing skip navigation link
+- Duplicate `id` values (break `label[for]` and aria references)
+- ARIA validity: unknown `role` values, `aria-labelledby`/`describedby`/`controls`/`owns`/`activedescendant` references to non-existent ids
+- Missing skip navigation link (scans the first 5 links)
 - Elements with `tabindex > 0`
-- Keyboard navigation audit (tab order, visible focus indicators) — via `test_keyboard_navigation` tool
+- Keyboard navigation audit (tab order, visible focus indicators, element-identity cycle detection) — via `test_keyboard_navigation` tool
 
 ### Functionality (`checks/functionality.py`)
 - Broken internal links (HTTP HEAD check, up to 20 links in `check_functionality`)
