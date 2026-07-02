@@ -15,6 +15,9 @@ catalog with parameters and workflows.
   (login, forms, SPA flows, debugging) belongs in a session. One-shot tools
   that take a bare `url` open and close a throwaway page each call; use them
   only for single lookups.
+- **Isolation:** calls without a `project` run in private, isolated browser
+  contexts — no cookies or login state are shared between them. Pass
+  `project` when you *want* shared state (authenticated testing).
 - Sessions expire after 300s idle and there is a 20-session cap. Close sessions
   with `close_session` when done. If a call returns "Session not found or
   expired", reopen with `open_session` and continue — don't retry the dead id.

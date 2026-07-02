@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional
@@ -121,8 +122,10 @@ class ProjectManager:
                 os.replace(config.PROJECTS_FILE, backup)
             except OSError:
                 backup = None
+            # stderr only: stdout is the MCP protocol channel
             print(f"WARNING: could not load {config.PROJECTS_FILE} ({e});"
-                  f" starting empty{f', original moved to {backup}' if backup else ''}")
+                  f" starting empty{f', original moved to {backup}' if backup else ''}",
+                  file=sys.stderr)
             return
         for name, proj_data in data.items():
             self.projects[name] = Project.from_dict(proj_data)

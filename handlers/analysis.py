@@ -16,21 +16,16 @@ from .registry import tool
 @tool("test_form_validation")
 async def handle_test_form_validation(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
         session_id = args.get("session_id")
         url = args.get("url")
         form_selector = args.get("form_selector")
 
-        ephemeral = False
+        cleanup = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
-            ephemeral = True
+            page, cleanup = await t.open_page(args.get("project"), url)
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
@@ -39,8 +34,8 @@ async def handle_test_form_validation(args: dict) -> dict:
             result["url"] = page.url
             return result
         finally:
-            if ephemeral:
-                await page.close()
+            if cleanup:
+                await cleanup()
 
 
 @tool("check_links")
@@ -48,20 +43,15 @@ async def handle_check_links(args: dict) -> dict:
         from checks.functionality import check_all_links
 
         t = await get_tester()
-        project_name = args.get("project", "default")
         session_id = args.get("session_id")
         url = args.get("url")
 
-        ephemeral = False
+        cleanup = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
-            ephemeral = True
+            page, cleanup = await t.open_page(args.get("project"), url)
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
@@ -74,8 +64,8 @@ async def handle_check_links(args: dict) -> dict:
             )
             return result
         finally:
-            if ephemeral:
-                await page.close()
+            if cleanup:
+                await cleanup()
 
 
 @tool("measure_interaction")
@@ -98,21 +88,16 @@ async def handle_test_keyboard_navigation(args: dict) -> dict:
         from checks.accessibility import check_keyboard_navigation
 
         t = await get_tester()
-        project_name = args.get("project", "default")
         session_id = args.get("session_id")
         url = args.get("url")
         max_tabs = args.get("max_tabs", 50)
 
-        ephemeral = False
+        cleanup = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            context = await t.get_context(project_name)
-            page = await context.new_page()
-            page.set_default_timeout(config.TIMEOUT)
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
-            ephemeral = True
+            page, cleanup = await t.open_page(args.get("project"), url)
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
@@ -121,8 +106,8 @@ async def handle_test_keyboard_navigation(args: dict) -> dict:
             result["url"] = page.url
             return result
         finally:
-            if ephemeral:
-                await page.close()
+            if cleanup:
+                await cleanup()
 
 
 @tool("run_checks_on_session")

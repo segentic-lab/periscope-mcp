@@ -141,7 +141,8 @@ close_session(session_id)
 - `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
 
 ### Session Config (`config.py`)
-- `MAX_SESSIONS = 20` — Max concurrent sessions
+- `MAX_SESSIONS = 20` — Max concurrent sessions (env-overridable: `MAX_SESSIONS=50`); oldest session is evicted at the cap
+- Project-less calls are context-isolated (no cookie sharing); pass `project` for shared auth state
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle (env-overridable: `SESSION_TIMEOUT=600`)
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
 - `MAX_RESPONSE_BODIES = 100` — Max captured response bodies kept per session

@@ -16,11 +16,28 @@ from .registry import tool
 @tool("open_session")
 async def handle_open_session(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
-        context = await t.get_context(project_name)
-        proj_obj = project_manager.get(project_name)
+        project = args.get("project")
+        project_name = project or "default"
+        proj_obj = project_manager.get(project) if project else None
         proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
-        session = await session_manager.create_session(context, args["url"], project_name, screenshot_dir=proj_screenshot_dir)
+
+        # With a project: share its (authenticated) context. Without: a private
+        # context per session, so unrelated targets never see each other's
+        # cookies (issue #8). Closed together with the session.
+        own_context = None
+        if project:
+            context = await t.get_context(project)
+        else:
+            own_context = await t.new_ephemeral_context()
+            context = own_context
+        try:
+            session = await session_manager.create_session(
+                context, args["url"], project_name, screenshot_dir=proj_screenshot_dir)
+        except Exception:
+            if own_context is not None:
+                await own_context.close()
+            raise
+        session.own_context = own_context
         screenshot_path = await interactions.take_screenshot(
             session.page, project_name, "session_open", screenshot_dir=proj_screenshot_dir
         )

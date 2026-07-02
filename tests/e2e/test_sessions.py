@@ -37,5 +37,28 @@ def test_failed_open_does_not_leak_session(run, handlers):
 
 
 def test_expired_session_id_gives_clear_error(run, handlers):
-    with pytest.raises(KeyError, match="not found or expired"):
+    with pytest.raises(KeyError, match="unknown session id"):
         run(handlers["screenshot_session"]({"session_id": "deadbeef0000"}))
+
+
+def test_projectless_sessions_do_not_share_cookies(run, handlers, good_site):
+    # Issue #8: a cookie set in one project-less session must not appear in
+    # another — each gets a private browser context.
+    r1 = run(handlers["open_session"]({"url": f"{good_site}/app.html"}))
+    sid1 = r1["session_id"]
+    r2 = run(handlers["open_session"]({"url": f"{good_site}/app.html"}))
+    sid2 = r2["session_id"]
+    try:
+        run(handlers["interact_and_test"]({
+            "session_id": sid1, "screenshot_after": False,
+            "steps": [{"action": "evaluate_js",
+                       "script": "document.cookie = 'leak_test=1; path=/'"}],
+        }))
+        c1 = run(handlers["get_cookies"]({"session_id": sid1}))
+        assert any(c["name"] == "leak_test" for c in c1["cookies"])
+        c2 = run(handlers["get_cookies"]({"session_id": sid2}))
+        assert not any(c["name"] == "leak_test" for c in c2["cookies"]), \
+            "cookie bled across project-less sessions"
+    finally:
+        run(handlers["close_session"]({"session_id": sid1}))
+        run(handlers["close_session"]({"session_id": sid2}))

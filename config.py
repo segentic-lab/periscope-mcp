@@ -18,7 +18,7 @@ MAX_PAGES = 20
 MAX_DEPTH = 3
 
 # Session settings
-MAX_SESSIONS = 20
+MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "20"))  # max concurrent sessions
 SESSION_TIMEOUT = int(os.environ.get("SESSION_TIMEOUT", "300"))  # seconds idle before expiry
 MAX_RESPONSE_BODY_SIZE = 512000  # 500KB max per response body capture
 MAX_RESPONSE_BODIES = 100  # max captured response bodies kept per session

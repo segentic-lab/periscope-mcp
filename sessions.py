@@ -23,6 +23,7 @@ class PageSession:
     intercepts: list = field(default_factory=list)  # active intercept routes: {matcher, handler, pattern}
     cdp_session: object = None  # cached CDP session for network emulation
     parent_session_id: str = None  # set on iframe sessions: the page session owning the frame
+    own_context: object = None  # set on project-less sessions: their private context, closed with them
 
 
 def real_page(page_or_frame) -> Page:
@@ -52,18 +53,27 @@ class SessionManager:
             "reason": reason,
             "at": time.time(),
         })
-        del self.recent_removals[:-5]
+        # Keep enough history that a busy agent can still learn why an older
+        # session id stopped working.
+        del self.recent_removals[:-20]
 
     def _schedule_close(self, session: PageSession):
         """Fire-and-forget page close from sync context, holding a task ref so it isn't GC'd."""
         close = getattr(session.page, "close", None)  # Frame (iframe session) has no close()
-        if close is None:
+        own_context = session.own_context
+        if close is None and own_context is None:
             return
         async def _close():
             try:
-                await close()
+                if close is not None:
+                    await close()
             except Exception:
                 pass
+            if own_context is not None:
+                try:
+                    await own_context.close()
+                except Exception:
+                    pass
         try:
             task = asyncio.get_running_loop().create_task(_close())
             self._pending_closes.add(task)
@@ -155,9 +165,23 @@ class SessionManager:
         """Get a session by ID, updating last_accessed. Raises KeyError if not found or expired."""
         self._cleanup_expired()
         if session_id not in self.sessions:
+            # Tell the caller what actually happened — "expired" was a lie for
+            # evictions and browser restarts and sent agents down wrong paths.
+            removal = next(
+                (r for r in reversed(self.recent_removals) if r["session_id"] == session_id),
+                None,
+            )
+            if removal is None:
+                detail = "unknown session id"
+            elif removal["reason"] == "expired":
+                detail = f"it idle-expired (limit: {config.SESSION_TIMEOUT}s, env-overridable via SESSION_TIMEOUT)"
+            elif removal["reason"] == "browser restarted":
+                detail = ("the browser crashed and was restarted — all sessions and login "
+                          "state were lost; re-run login_project if the project needs auth")
+            else:
+                detail = f"it was removed: {removal['reason']} (session cap: {config.MAX_SESSIONS}, env-overridable via MAX_SESSIONS)"
             raise KeyError(
-                f"Session '{session_id}' not found or expired "
-                f"(sessions expire after {config.SESSION_TIMEOUT}s idle). "
+                f"Session '{session_id}' not found — {detail}. "
                 f"Open a new one with open_session."
             )
         session = self.sessions[session_id]
@@ -184,6 +208,11 @@ class SessionManager:
                 await session.page.close()
             except Exception:
                 pass
+            if session.own_context is not None:
+                try:
+                    await session.own_context.close()
+                except Exception:
+                    pass
             return True
         return False
 

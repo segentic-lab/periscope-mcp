@@ -16,9 +16,9 @@ from .registry import tool
 @tool("test_url")
 async def handle_test_url(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
+        project_name = args.get("project")  # None -> isolated ephemeral context
         checks = args.get("checks")
-        proj_obj = project_manager.get(project_name)
+        proj_obj = project_manager.get(project_name) if project_name else None
         proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
 
         result = await t.test_url(
@@ -152,8 +152,8 @@ async def handle_compare_screenshots(args: dict) -> dict:
 @tool("test_responsive")
 async def handle_test_responsive(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
-        proj_obj = project_manager.get(project_name)
+        project_name = args.get("project")  # None -> isolated ephemeral context
+        proj_obj = project_manager.get(project_name) if project_name else None
         result = await t.test_responsive(
             url=args["url"],
             project_name=project_name,

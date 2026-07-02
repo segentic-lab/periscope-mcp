@@ -1,5 +1,6 @@
 """Shared singletons for the MCP server: project store, sessions, auth, browser."""
 import asyncio
+import sys
 
 from auth import AuthHandler
 from projects import ProjectManager
@@ -25,6 +26,10 @@ async def get_tester() -> WebsiteTester:
             if restarted:
                 # Every held Page belonged to the dead browser — drop them so
                 # session tools return "session not found" instead of "Target closed".
+                dropped = len(session_manager.sessions)
                 session_manager.clear_all("browser restarted")
                 project_manager.reset_login_flags()
+                # stderr only: stdout is the MCP protocol channel
+                print(f"periscope: browser crashed/disconnected — restarted; "
+                      f"{dropped} session(s) dropped, login flags reset", file=sys.stderr)
         return tester

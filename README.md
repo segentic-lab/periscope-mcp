@@ -566,7 +566,7 @@ Edit `config.py` to change defaults (env-overridable settings note the variable)
 | `WAIT_UNTIL` | `networkidle` | Navigation wait strategy (env: `NAV_WAIT_UNTIL=load` for sites with websockets/polling) |
 | `MAX_PAGES` | `20` | Default max pages to crawl |
 | `MAX_DEPTH` | `3` | Default max crawl depth |
-| `MAX_SESSIONS` | `20` | Max concurrent interactive sessions |
+| `MAX_SESSIONS` | `20` | Max concurrent interactive sessions (env: `MAX_SESSIONS`) |
 | `SESSION_TIMEOUT` | `300` | Auto-expire idle sessions after N seconds (env: `SESSION_TIMEOUT`) |
 | `MAX_RESPONSE_BODY_SIZE` | `512000` | Max bytes captured per response body |
 | `MAX_RESPONSE_BODIES` | `100` | Max captured response bodies kept per session |

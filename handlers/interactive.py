@@ -13,20 +13,6 @@ from sessions import real_page
 from .registry import tool
 
 
-async def _open_ephemeral_page(t, project_name: str, url: str):
-    """Create a page in the project context and navigate; close it if goto fails
-    so failed navigations don't leak live pages into the shared context."""
-    context = await t.get_context(project_name)
-    page = await context.new_page()
-    page.set_default_timeout(config.TIMEOUT)
-    try:
-        await page.goto(url, wait_until=config.WAIT_UNTIL)
-    except Exception:
-        await page.close()
-        raise
-    return page
-
-
 @tool("click_element")
 async def handle_click_element(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
@@ -60,7 +46,8 @@ async def handle_fill_form(args: dict) -> dict:
 @tool("interact_and_test")
 async def handle_interact_and_test(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
+        project = args.get("project")  # None -> isolated ephemeral context in url mode
+        project_name = project or "default"
         session_id = args.get("session_id")
         url = args.get("url")
         steps = args["steps"]
@@ -69,16 +56,15 @@ async def handle_interact_and_test(args: dict) -> dict:
         continue_on_error = args.get("continue_on_error", False)
         capture_console = args.get("capture_console", False)
 
-        ephemeral = False
+        cleanup = None
         session = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
             shot_dir = session.screenshot_dir
         elif url:
-            page = await _open_ephemeral_page(t, project_name, url)
-            ephemeral = True
-            proj_obj = project_manager.get(project_name)
+            page, cleanup = await t.open_page(project, url)
+            proj_obj = project_manager.get(project) if project else None
             shot_dir = proj_obj.screenshot_dir if proj_obj else None
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
@@ -146,27 +132,25 @@ async def handle_interact_and_test(args: dict) -> dict:
             if capture_console:
                 listen_page.remove_listener("console", on_console)
                 listen_page.remove_listener("pageerror", on_pageerror)
-            if ephemeral:
-                await page.close()
+            if cleanup:
+                await cleanup()
 
 
 @tool("get_page_elements")
 async def handle_get_page_elements(args: dict) -> dict:
         t = await get_tester()
-        project_name = args.get("project", "default")
         session_id = args.get("session_id")
         url = args.get("url")
         max_results = args.get("max_results", 50)
         attributes = args.get("attributes")
         full_text = args.get("full_text", False)
 
-        ephemeral = False
+        cleanup = None
         if session_id:
             session = session_manager.get_session(session_id)
             page = session.page
         elif url:
-            page = await _open_ephemeral_page(t, project_name, url)
-            ephemeral = True
+            page, cleanup = await t.open_page(args.get("project"), url)
         else:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
@@ -184,8 +168,8 @@ async def handle_get_page_elements(args: dict) -> dict:
                 result["attributes_requested"] = attributes
             return result
         finally:
-            if ephemeral:
-                await page.close()
+            if cleanup:
+                await cleanup()
 
 
 # Per-session pending dialog handler and info captured when the last dialog fired.

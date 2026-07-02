@@ -59,6 +59,49 @@ class WebsiteTester:
             await self.contexts[project_name].close()
             del self.contexts[project_name]
 
+    async def new_ephemeral_context(self) -> BrowserContext:
+        """Isolated context for a project-less call — the caller must close it.
+
+        Project-less tools must not share one persistent context: an external
+        link check visiting linkedin.com would leave cookies that a later,
+        unrelated session sees (issue #8)."""
+        return await self.browser.new_context(
+            viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+            ignore_https_errors=True,
+        )
+
+    async def open_page(self, project_name, url: str):
+        """Open a navigated page for a one-shot call. Returns (page, cleanup).
+
+        With a project: page lives in the project's shared (authenticated)
+        context. Without: a fresh ephemeral context, fully isolated. cleanup()
+        closes the page and, when ephemeral, the context — call it in finally.
+        """
+        own_ctx = None
+        if project_name:
+            context = await self.get_context(project_name)
+        else:
+            own_ctx = await self.new_ephemeral_context()
+            context = own_ctx
+        page = await context.new_page()
+        page.set_default_timeout(config.TIMEOUT)
+        try:
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
+        except Exception:
+            await page.close()
+            if own_ctx:
+                await own_ctx.close()
+            raise
+
+        async def cleanup():
+            try:
+                await page.close()
+            finally:
+                if own_ctx:
+                    await own_ctx.close()
+
+        return page, cleanup
+
     def _url_to_filename(self, url: str) -> str:
         """Convert URL to a safe filename."""
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
@@ -77,7 +120,7 @@ class WebsiteTester:
     async def test_url(
         self,
         url: str,
-        project_name: str = "default",
+        project_name: str = None,
         checks: list[str] = None,
         screenshot_dir: str = None
     ) -> dict:
@@ -97,7 +140,15 @@ class WebsiteTester:
         valid = {"visual", "accessibility", "functionality", "seo", "performance", "geo"}
         unknown_checks = [c for c in checks if c not in valid]
 
-        context = await self.get_context(project_name)
+        # Project-less calls get an isolated context (no cookie bleed);
+        # screenshots still file under "default" so get_screenshot finds them.
+        own_ctx = None
+        if project_name:
+            context = await self.get_context(project_name)
+        else:
+            own_ctx = await self.new_ephemeral_context()
+            context = own_ctx
+            project_name = "default"
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
 
@@ -191,6 +242,8 @@ class WebsiteTester:
             }
         finally:
             await page.close()
+            if own_ctx:
+                await own_ctx.close()
 
     def _count_by_key(self, items: list[dict], key: str) -> dict:
         """Count items by a key value."""
@@ -274,7 +327,7 @@ class WebsiteTester:
     async def test_responsive(
         self,
         url: str,
-        project_name: str = "default",
+        project_name: str = None,
         viewports: list[dict] = None,
         checks: list[str] = None,
         screenshot_dir: str = None,
@@ -296,7 +349,13 @@ class WebsiteTester:
                 {"name": "desktop", "width": 1920, "height": 1080},
             ]
 
-        context = await self.get_context(project_name)
+        own_ctx = None
+        if project_name:
+            context = await self.get_context(project_name)
+        else:
+            own_ctx = await self.new_ephemeral_context()
+            context = own_ctx
+            project_name = "default"
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
 
@@ -353,6 +412,8 @@ class WebsiteTester:
             }
         finally:
             await page.close()
+            if own_ctx:
+                await own_ctx.close()
 
     async def save_report(self, results: dict, project_name: str) -> str:
         """Save test results to a JSON report file."""
