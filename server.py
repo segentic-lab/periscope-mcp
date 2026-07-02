@@ -1,6 +1,9 @@
 """Periscope MCP server — stdio entry point.
 
 Tool schemas live in tool_schemas.py, handlers in handlers/, shared state in runtime.py.
+
+Copyright (C) 2026 Sebastijan Bandur
+Licensed under the GNU Affero General Public License v3.0 (see LICENSE).
 """
 import asyncio
 import json
