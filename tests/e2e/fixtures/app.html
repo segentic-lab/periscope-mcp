@@ -30,6 +30,40 @@
     <div id="overlay"></div>
   </div>
 
+  <!-- Tailwind-style variant classes: invalid as CSS class selectors (issue #3) -->
+  <button class="hover:bg-accent [&_svg]:size-4 text-foreground/70">Tailwind Btn</button>
+
+  <!-- shadcn-style form: no id/name, only placeholder / aria-label / nothing (issue #2) -->
+  <form id="g" action="/submit">
+    <input type="text" placeholder="Vaš e-poštni naslov">
+    <input type="text" aria-label="Phone number">
+    <input type="text">
+  </form>
+
+  <!-- dense hidden-first markup: contrast sweep must skip these, not count them
+       against its scan budget (issue #4) -->
+  <div id="hidden-farm"></div>
+  <table id="contrast-table">
+    <tr><th>Col</th></tr>
+  </table>
+  <script>
+    const farm = document.getElementById('hidden-farm');
+    for (let i = 0; i < 60; i++) {
+      const s = document.createElement('span');
+      s.style.display = 'none';
+      s.textContent = 'hidden ' + i;
+      farm.appendChild(s);
+    }
+    const table = document.getElementById('contrast-table');
+    for (let i = 0; i < 10; i++) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.textContent = 'visible cell ' + i;
+      tr.appendChild(td);
+      table.appendChild(tr);
+    }
+  </script>
+
   <script>
     async function loadItems() {
       console.log('fetching items');

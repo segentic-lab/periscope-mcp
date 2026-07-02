@@ -334,14 +334,19 @@ async def check_accessibility(page: Page) -> list[dict]:
             "details": aria_problems["brokenRefs"][:5]
         })
 
-    # Check for missing skip link — scan the first few links, not just the
-    # very first (cookie banners and logos commonly precede it)
+    # Check for missing skip link — behavior-based, not English-text-based
+    # (issue #5: "Preskoči na vsebino" is a perfectly good skip link). A
+    # same-page anchor among the first few links whose target element exists
+    # counts, whatever language it's written in.
     has_skip_link = await page.evaluate("""() => {
         const links = Array.from(document.querySelectorAll('a'));
         if (links.length === 0) return true;  // No links at all
         return links.slice(0, 5).some(a => {
             const href = a.getAttribute('href') || '';
-            if (!href.startsWith('#')) return false;
+            if (!href.startsWith('#') || href.length < 2) return false;
+            let target = null;
+            try { target = document.getElementById(decodeURIComponent(href.slice(1))); } catch {}
+            if (target) return true;  // anchor to a real element = skip link behavior
             const text = (a.textContent + ' ' + (a.getAttribute('aria-label') || '') + ' ' + a.className).toLowerCase();
             return text.includes('skip') || text.includes('main') || text.includes('content');
         });

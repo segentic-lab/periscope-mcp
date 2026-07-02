@@ -83,6 +83,24 @@ def test_keyboard_navigation_identity_cycle(run, handlers, good_site):
     assert r["issues"] == []
 
 
+def test_color_contrast_skips_hidden_without_burning_budget(run, handlers, good_site):
+    # Issue #4: 60 hidden spans precede the visible table — the sweep must
+    # still reach and check the visible text, not report checked: 1
+    r = run(handlers["open_session"]({"url": f"{good_site}/app.html"}))
+    sid = r["session_id"]
+    try:
+        r = run(handlers["check_color_contrast"]({"session_id": sid}))
+        assert r["checked"] >= 10, r
+    finally:
+        run(handlers["close_session"]({"session_id": sid}))
+
+
+def test_skip_link_language_independent(run, handlers, good_site):
+    # Issue #5: "Preskoči na vsebino" -> #main must count as a skip link
+    r = run(handlers["test_url"]({"url": f"{good_site}/a11y_good.html", "checks": ["accessibility"]}))
+    assert not any("skip navigation" in m for m in _messages(r["issues"])), _messages(r["issues"])
+
+
 def test_unknown_check_name_warns(run, handlers, good_site):
     r = run(handlers["test_url"]({"url": f"{good_site}/seo_good.html", "checks": ["acessibility"]}))
     assert any("Unknown check name" in m for m in _messages(r["issues"]))

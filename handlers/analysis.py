@@ -337,8 +337,11 @@ async def handle_check_color_contrast(args: dict) -> dict:
                 return (lighter + 0.05) / (darker + 0.05);
             }
 
-            for (let i = 0; i < Math.min(els.length, maxResults); i++) {
-                const el = els[i];
+            // Cap on collected RESULTS, not scanned candidates — capping the
+            // scan meant a page whose first 50 matches are hidden nav items
+            // reported "checked: 1" (issue #4).
+            for (const el of els) {
+                if (results.length >= maxResults) break;
                 const rect = el.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
 

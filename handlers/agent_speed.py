@@ -143,6 +143,26 @@ async def handle_find_element(args: dict) -> dict:
                 matched = matched.filter(el => !matched.some(other => other !== el && el.contains(other)));
             }
 
+            // Tailwind variant classes (hover:bg-x, [&_svg]:size-4, w-1/2) are
+            // not valid CSS class selectors — only use CSS-safe classes, and
+            // fall back to an nth-child path when the built selector is
+            // invalid or matches a different element (issue #3).
+            const cssSafe = (c) => /^-?[A-Za-z_][A-Za-z0-9_-]*$/.test(c);
+            const nthPath = (el) => {
+                const parts = [];
+                let cur = el;
+                while (cur && cur !== document.documentElement && parts.length < 5) {
+                    const parent = cur.parentElement;
+                    if (!parent) break;
+                    const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
+                    parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
+                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent === document.body) { parts.unshift('body'); break; }
+                    cur = parent;
+                }
+                return parts.join(' > ');
+            };
+
             for (const el of matched) {
                 const elText = (el.textContent || '').trim();
                 const rect = el.getBoundingClientRect();
@@ -150,14 +170,22 @@ async def handle_find_element(args: dict) -> dict:
                 // Build best selector
                 let bestSelector = el.tagName.toLowerCase();
                 if (el.id) {
-                    bestSelector = '#' + el.id;
+                    bestSelector = '#' + CSS.escape(el.id);
                 } else if (el.getAttribute('data-testid')) {
-                    bestSelector = `[data-testid="${el.getAttribute('data-testid')}"]`;
+                    bestSelector = '[data-testid=' + JSON.stringify(el.getAttribute('data-testid')) + ']';
                 } else if (el.name) {
-                    bestSelector = `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+                    bestSelector = el.tagName.toLowerCase() + '[name=' + JSON.stringify(el.name) + ']';
                 } else if (el.className && typeof el.className === 'string' && el.className.trim()) {
-                    bestSelector = el.tagName.toLowerCase() + '.' + el.className.trim().split(/\\s+/).join('.');
+                    const classes = el.className.trim().split(/\\s+/).filter(cssSafe).slice(0, 3);
+                    if (classes.length) {
+                        bestSelector = el.tagName.toLowerCase() + '.' + classes.join('.');
+                    }
                 }
+                // The advertised selector must be valid AND resolve to this
+                // exact element — otherwise use the precise path.
+                let resolves = false;
+                try { resolves = document.querySelector(bestSelector) === el; } catch { resolves = false; }
+                if (!resolves) bestSelector = nthPath(el);
 
                 let distance = 0;
                 if (nearRect) {
@@ -202,19 +230,45 @@ async def handle_auto_fill_form(args: dict) -> dict:
         fields = await session.page.evaluate("""(formSelector) => {
             const form = document.querySelector(formSelector);
             if (!form) return [];
+            // shadcn/Radix inputs often expose only placeholder/aria-label —
+            // a bare 'input' fallback selector is ambiguous and times out (issue #2)
+            const nthPath = (el) => {
+                const parts = [];
+                let cur = el;
+                while (cur && cur !== document.documentElement && parts.length < 5) {
+                    const parent = cur.parentElement;
+                    if (!parent) break;
+                    const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
+                    parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
+                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent === document.body) { parts.unshift('body'); break; }
+                    cur = parent;
+                }
+                return parts.join(' > ');
+            };
             const inputs = form.querySelectorAll('input, select, textarea');
             return Array.from(inputs).map(el => {
                 const name = (el.name || el.id || '').toLowerCase();
                 const type = el.type || el.tagName.toLowerCase();
                 const placeholder = (el.placeholder || '').toLowerCase();
+                const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
                 const label_el = el.id ? document.querySelector(`label[for="${el.id}"]`) : el.closest('label');
                 const label = label_el ? label_el.textContent.trim().toLowerCase() : '';
-                const all_hints = name + ' ' + placeholder + ' ' + label;
+                const all_hints = name + ' ' + placeholder + ' ' + ariaLabel + ' ' + label;
 
-                // Build best selector
-                let selector = el.tagName.toLowerCase();
-                if (el.id) selector = '#' + el.id;
-                else if (el.name) selector = `${el.tagName.toLowerCase()}[name="${el.name}"]`;
+                // Build best selector: id/name, then placeholder/aria-label,
+                // then a precise nth-child path — never a bare tag.
+                const tag = el.tagName.toLowerCase();
+                let selector = null;
+                if (el.id) selector = '#' + CSS.escape(el.id);
+                else if (el.name) selector = tag + '[name=' + JSON.stringify(el.name) + ']';
+                else if (el.placeholder) selector = tag + '[placeholder=' + JSON.stringify(el.placeholder) + ']';
+                else if (el.getAttribute('aria-label')) selector = tag + '[aria-label=' + JSON.stringify(el.getAttribute('aria-label')) + ']';
+                let resolves = false;
+                if (selector) {
+                    try { resolves = document.querySelector(selector) === el; } catch { resolves = false; }
+                }
+                if (!resolves) selector = nthPath(el);
 
                 return {
                     selector: selector,
@@ -266,7 +320,11 @@ async def handle_auto_fill_form(args: dict) -> dict:
             "age": "30", "quantity": "1", "amount": "100",
         }
 
+        # One bad field must not stall the whole call for the 30s default —
+        # cap each interaction, and report failures honestly (issue #2).
+        FIELD_TIMEOUT = 3000
         filled = []
+        failed = []
         handled_radio_groups = set()
         for f in fields:
             selector = f["selector"]
@@ -287,10 +345,11 @@ async def handle_auto_fill_form(args: dict) -> dict:
             try:
                 if f["tag"] == "select" and f["options"]:
                     # Pick first non-empty option
-                    await session.page.locator(selector).first.select_option(f["options"][0])
+                    await session.page.locator(selector).first.select_option(
+                        f["options"][0], timeout=FIELD_TIMEOUT)
                     filled.append({"selector": selector, "value": f["options"][0]})
                 elif f["type"] == "checkbox":
-                    await session.page.locator(selector).first.check()
+                    await session.page.locator(selector).first.check(timeout=FIELD_TIMEOUT)
                     filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "radio":
                     # Check one radio per group, not every radio (later checks would undo earlier ones)
@@ -298,7 +357,7 @@ async def handle_auto_fill_form(args: dict) -> dict:
                     if group in handled_radio_groups:
                         filled.append({"selector": selector, "value": "skipped (group already selected)"})
                     else:
-                        await session.page.locator(selector).first.check()
+                        await session.page.locator(selector).first.check(timeout=FIELD_TIMEOUT)
                         handled_radio_groups.add(group)
                         filled.append({"selector": selector, "value": "checked"})
                 elif f["type"] == "file":
@@ -308,13 +367,19 @@ async def handle_auto_fill_form(args: dict) -> dict:
                     filled.append({"selector": selector, "value": str(value)})
                 else:
                     locator = session.page.locator(selector).first
-                    await locator.click()
-                    await locator.fill(str(value))
+                    await locator.click(timeout=FIELD_TIMEOUT)
+                    await locator.fill(str(value), timeout=FIELD_TIMEOUT)
                     filled.append({"selector": selector, "value": str(value)})
             except Exception as e:
-                filled.append({"selector": selector, "error": str(e)[:100]})
+                failed.append({"selector": selector, "error": str(e)[:100]})
 
-        result = {"success": True, "fields_filled": filled, "submitted": False}
+        result = {
+            "success": len(failed) == 0,
+            "fields_filled": filled,
+            "fields_failed": failed,
+            "failed_count": len(failed),
+            "submitted": False,
+        }
 
         if submit:
             try:

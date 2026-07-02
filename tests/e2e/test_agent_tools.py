@@ -29,6 +29,36 @@ def test_assert_condition_variants(run, handlers, session):
     assert unknown["success"] is False and "Unknown assertion" in unknown["error"]
 
 
+def test_find_element_tailwind_classes_yield_valid_selector(run, handlers, session):
+    # Issue #3: hover:bg-accent / [&_svg]:size-4 must never appear in the selector
+    r = run(handlers["find_element"]({"session_id": session, "text": "Tailwind Btn"}))
+    sel = r["elements"][0]["selector"]
+    # the advertised selector must be valid CSS and resolve to the element
+    check = run(handlers["get_page_elements"]({"session_id": session, "selector": sel}))
+    assert check["count"] == 1, (sel, check)
+    assert check["elements"][0]["text"] == "Tailwind Btn"
+
+
+def test_auto_fill_form_placeholder_aria_and_path_selectors(run, handlers, session):
+    # Issue #2: id/name-less fields must get unambiguous selectors and fill fast
+    import time
+    start = time.time()
+    r = run(handlers["auto_fill_form"]({"session_id": session, "form_selector": "#g"}))
+    assert time.time() - start < 15, "auto_fill_form stalled on per-field timeouts"
+    assert r["success"] is True, r["fields_failed"]
+    assert r["failed_count"] == 0
+    values = {f["selector"]: f.get("value") for f in r["fields_filled"]}
+    assert len(values) == 3
+    # placeholder hint carried e-mail inference; selectors are not bare 'input'
+    assert all(sel != "input" for sel in values)
+    filled = run(handlers["interact_and_test"]({
+        "session_id": session, "screenshot_after": False,
+        "steps": [{"action": "evaluate_js",
+                   "script": "Array.from(document.querySelectorAll('#g input')).map(i => i.value)"}],
+    }))
+    assert all(v for v in filled["steps"][0]["result"]), filled["steps"][0]["result"]
+
+
 def test_auto_fill_form_semantic_hints(run, handlers, session):
     r = run(handlers["auto_fill_form"]({"session_id": session, "form_selector": "#f"}))
     values = {f["selector"]: f.get("value") for f in r["fields_filled"]}
