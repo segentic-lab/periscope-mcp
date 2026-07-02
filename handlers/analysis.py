@@ -1,0 +1,436 @@
+"""Analysis tools (forms, links, keyboard nav, tables, toasts, contrast, checks)."""
+import asyncio
+import json
+import os
+import time
+
+import config
+import interactions
+from crawler import Crawler
+from runtime import auth_handler, get_tester, project_manager, session_manager
+from sessions import real_page
+
+from .registry import tool
+
+
+@tool("test_form_validation")
+async def handle_test_form_validation(args: dict) -> dict:
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        form_selector = args.get("form_selector")
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await interactions.test_form_validation(page, form_selector)
+            result["url"] = page.url
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+
+@tool("check_links")
+async def handle_check_links(args: dict) -> dict:
+        from checks.functionality import check_all_links
+
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await check_all_links(
+                page,
+                page.url,
+                check_external=args.get("check_external", False),
+                max_links=args.get("max_links", 100),
+            )
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+
+@tool("measure_interaction")
+async def handle_measure_interaction(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.measure_interaction_timing(
+            session.page,
+            args["selector"],
+            wait_for=args.get("wait_for"),
+        )
+        session.url = result["url"]
+        screenshot_path = await interactions.take_screenshot(
+            session.page, session.project_name, "after_measure", screenshot_dir=session.screenshot_dir)
+        result["screenshot_path"] = screenshot_path
+        return result
+
+
+@tool("test_keyboard_navigation")
+async def handle_test_keyboard_navigation(args: dict) -> dict:
+        from checks.accessibility import check_keyboard_navigation
+
+        t = await get_tester()
+        project_name = args.get("project", "default")
+        session_id = args.get("session_id")
+        url = args.get("url")
+        max_tabs = args.get("max_tabs", 50)
+
+        ephemeral = False
+        if session_id:
+            session = session_manager.get_session(session_id)
+            page = session.page
+        elif url:
+            context = await t.get_context(project_name)
+            page = await context.new_page()
+            page.set_default_timeout(config.TIMEOUT)
+            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            ephemeral = True
+        else:
+            return {"success": False, "error": "Provide either 'url' or 'session_id'"}
+
+        try:
+            result = await check_keyboard_navigation(page, max_tabs)
+            result["url"] = page.url
+            return result
+        finally:
+            if ephemeral:
+                await page.close()
+
+
+@tool("run_checks_on_session")
+async def handle_run_checks_on_session(args: dict) -> dict:
+        from checks.visual import check_visual
+        from checks.accessibility import check_accessibility
+        from checks.functionality import check_functionality, check_seo, get_performance_metrics
+
+        session = session_manager.get_session(args["session_id"])
+        checks = args.get("checks", ["visual", "accessibility", "functionality", "seo", "performance"])
+        page = session.page
+
+        all_issues = []
+        performance = {}
+
+        if "visual" in checks:
+            all_issues.extend(await check_visual(page))
+        if "accessibility" in checks:
+            all_issues.extend(await check_accessibility(page))
+        if "functionality" in checks:
+            all_issues.extend(await check_functionality(page))
+        if "seo" in checks:
+            all_issues.extend(await check_seo(page))
+        if "performance" in checks:
+            performance = await get_performance_metrics(page)
+
+        screenshot_path = await interactions.take_screenshot(
+            page, session.project_name, "after_checks", screenshot_dir=session.screenshot_dir)
+
+        issues_by_severity = {}
+        issues_by_type = {}
+        for issue in all_issues:
+            sev = issue.get("severity", "unknown")
+            typ = issue.get("type", "unknown")
+            issues_by_severity[sev] = issues_by_severity.get(sev, 0) + 1
+            issues_by_type[typ] = issues_by_type.get(typ, 0) + 1
+
+        return {
+            "url": session.url,
+            "title": await page.title(),
+            "issues": all_issues,
+            "issue_count": len(all_issues),
+            "issues_by_severity": issues_by_severity,
+            "issues_by_type": issues_by_type,
+            "performance": performance,
+            "screenshot_path": screenshot_path,
+        }
+
+
+@tool("check_color_contrast")
+async def handle_check_color_contrast(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector", "p, span, a, li, td, th, h1, h2, h3, h4, h5, h6, label, button")
+        level = args.get("level", "AA")
+        max_results = args.get("max_results", 50)
+
+        # Get computed colors for text elements
+        elements = await session.page.evaluate("""(args) => {
+            const [selector, maxResults] = args;
+            const els = document.querySelectorAll(selector);
+            const results = [];
+
+            function parseColor(color) {
+                // Parse rgb/rgba string to [r, g, b]
+                const match = color.match(/rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)/);
+                if (match) return [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
+                return null;
+            }
+
+            function luminance(r, g, b) {
+                const [rs, gs, bs] = [r, g, b].map(c => {
+                    c = c / 255;
+                    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+                });
+                return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+            }
+
+            function contrastRatio(l1, l2) {
+                const lighter = Math.max(l1, l2);
+                const darker = Math.min(l1, l2);
+                return (lighter + 0.05) / (darker + 0.05);
+            }
+
+            for (let i = 0; i < Math.min(els.length, maxResults); i++) {
+                const el = els[i];
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+
+                const style = window.getComputedStyle(el);
+                const fg = parseColor(style.color);
+                const bg = parseColor(style.backgroundColor);
+
+                if (!fg || !bg) continue;
+                // Skip transparent backgrounds (alpha check)
+                const bgAlpha = style.backgroundColor.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([\\d.]+)/);
+                if (bgAlpha && parseFloat(bgAlpha[1]) < 0.1) continue;
+
+                const fgLum = luminance(fg[0], fg[1], fg[2]);
+                const bgLum = luminance(bg[0], bg[1], bg[2]);
+                const ratio = contrastRatio(fgLum, bgLum);
+                const fontSize = parseFloat(style.fontSize);
+                const fontWeight = parseInt(style.fontWeight) || 400;
+                const isLargeText = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+
+                let selector_str = el.tagName.toLowerCase();
+                if (el.id) selector_str = '#' + el.id;
+                else if (el.className && typeof el.className === 'string')
+                    selector_str += '.' + el.className.trim().split(/\\s+/)[0];
+
+                results.push({
+                    selector: selector_str,
+                    text: (el.textContent || '').trim().substring(0, 40),
+                    ratio: Math.round(ratio * 100) / 100,
+                    large: isLargeText,
+                    foreground: style.color,
+                    background: style.backgroundColor,
+                });
+            }
+            return results;
+        }""", [selector, max_results])
+
+        # Evaluate against WCAG thresholds
+        aa_normal = 4.5
+        aa_large = 3.0
+        aaa_normal = 7.0
+        aaa_large = 4.5
+
+        failures = []
+        for el in elements:
+            ratio = el["ratio"]
+            is_large = el["large"]
+            threshold = (aa_large if is_large else aa_normal) if level == "AA" else (aaa_large if is_large else aaa_normal)
+            if ratio < threshold:
+                el["required"] = threshold
+                failures.append(el)
+
+        return {
+            "level": level,
+            "checked": len(elements),
+            "fail_count": len(failures),
+            "failures": failures[:30],
+        }
+
+
+@tool("get_page_html")
+async def handle_get_page_html(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector")
+        max_length = args.get("max_length", 50000)
+
+        if selector:
+            elements = await session.page.evaluate("""(args) => {
+                const [selector, maxLen] = args;
+                const stripBase64 = html => html.replace(/(<[^>]+(?:src|href|data|style)=["'])data:[^;]+;base64,[^"']+/gi, '$1[base64-removed]');
+                const els = document.querySelectorAll(selector);
+                const results = [];
+                let totalLen = 0;
+                for (const el of els) {
+                    const html = stripBase64(el.outerHTML);
+                    if (totalLen + html.length > maxLen) {
+                        results.push({
+                            tag: el.tagName.toLowerCase(),
+                            id: el.id || null,
+                            outer_html: html.substring(0, maxLen - totalLen) + '... [truncated]',
+                        });
+                        break;
+                    }
+                    results.push({
+                        tag: el.tagName.toLowerCase(),
+                        id: el.id || null,
+                        outer_html: html,
+                    });
+                    totalLen += html.length;
+                }
+                return results;
+            }""", [selector, max_length])
+            return {
+                "selector": selector,
+                "count": len(elements),
+                "elements": elements,
+            }
+        else:
+            html = await session.page.content()
+            import re
+            html = re.sub(r'(<[^>]+(?:src|href|data|style)=["\'])data:[^;]+;base64,[^"\']+', r'\1[base64-removed]', html, flags=re.IGNORECASE)
+            truncated = len(html) > max_length
+            return {
+                "html": html[:max_length] + ("... [truncated]" if truncated else ""),
+                "truncated": truncated,
+                "full_length": len(html),
+            }
+
+
+@tool("get_table_data")
+async def handle_get_table_data(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        selector = args.get("selector", "table")
+        max_rows = args.get("max_rows", 100)
+
+        table_data = await session.page.evaluate("""(args) => {
+            const [selector, maxRows] = args;
+            const table = document.querySelector(selector);
+            if (!table) return null;
+
+            // Extract headers
+            let headers = [];
+            const thead = table.querySelector('thead');
+            if (thead) {
+                const headerRow = thead.querySelector('tr');
+                if (headerRow) {
+                    headers = Array.from(headerRow.querySelectorAll('th, td')).map(
+                        cell => cell.textContent.trim()
+                    );
+                }
+            }
+
+            // If no thead, use first row as headers
+            if (headers.length === 0) {
+                const firstRow = table.querySelector('tr');
+                if (firstRow) {
+                    headers = Array.from(firstRow.querySelectorAll('th, td')).map(
+                        cell => cell.textContent.trim()
+                    );
+                }
+            }
+
+            // Extract body rows
+            const rows = [];
+            const tbody = table.querySelector('tbody') || table;
+            const trs = tbody.querySelectorAll('tr');
+            const startIdx = (!thead && trs.length > 0) ? 1 : 0;  // skip header row if no thead
+
+            for (let i = startIdx; i < trs.length && rows.length < maxRows; i++) {
+                const cells = trs[i].querySelectorAll('td, th');
+                if (cells.length === 0) continue;
+                const row = {};
+                for (let j = 0; j < cells.length; j++) {
+                    const key = j < headers.length ? headers[j] : `col_${j}`;
+                    row[key] = cells[j].textContent.trim();
+                }
+                rows.push(row);
+            }
+
+            // Total rows count
+            const allBodyRows = tbody.querySelectorAll('tr');
+            const totalRows = allBodyRows.length - ((!thead && allBodyRows.length > 0) ? 1 : 0);
+
+            return { headers, rows, total_rows: totalRows };
+        }""", [selector, max_rows])
+
+        if table_data is None:
+            return {"success": False, "error": f"No table found matching '{selector}'"}
+
+        return {
+            "success": True,
+            "selector": selector,
+            "headers": table_data["headers"],
+            "rows": table_data["rows"],
+            "rows_returned": len(table_data["rows"]),
+            "total_rows": table_data["total_rows"],
+        }
+
+
+@tool("get_toast_messages")
+async def handle_get_toast_messages(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        wait_ms = args.get("wait_ms", 0)
+        custom_selector = args.get("selector")
+
+        if wait_ms > 0:
+            await asyncio.sleep(wait_ms / 1000)
+
+        if custom_selector:
+            toast_selectors = [custom_selector]
+        else:
+            toast_selectors = [
+                '[role="alert"]', '[role="status"]',
+                '[aria-live="polite"]', '[aria-live="assertive"]',
+                '.toast', '.notification',
+                '[data-sonner-toast]', '[data-radix-toast-announce]',
+                '.Toastify__toast',
+                '[class*="toast"]', '[class*="notification"]', '[class*="snackbar"]',
+            ]
+
+        messages = await session.page.evaluate("""(selectors) => {
+            const seen = new Set();
+            const results = [];
+            for (const sel of selectors) {
+                try {
+                    const els = document.querySelectorAll(sel);
+                    for (const el of els) {
+                        const text = el.textContent.trim();
+                        if (!text || seen.has(text)) continue;
+                        seen.add(text);
+                        const rect = el.getBoundingClientRect();
+                        results.push({
+                            text: text.substring(0, 500),
+                            selector_matched: sel,
+                            role: el.getAttribute('role') || null,
+                            visible: rect.width > 0 && rect.height > 0,
+                        });
+                    }
+                } catch(e) {}
+            }
+            return results;
+        }""", toast_selectors)
+
+        return {
+            "count": len(messages),
+            "messages": messages,
+        }
