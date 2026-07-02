@@ -170,21 +170,24 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 
 `set_viewport` presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
-### Interactive Actions (6 tools)
+### Interactive Actions (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `click_element` | Click element (`force=true` bypasses overlays) | `session_id`, `selector` |
 | `fill_form` | Fill form fields, optionally submit | `session_id`, `fields` |
-| `interact_and_test` | Multi-step workflow with 23 actions (see below) | `steps` |
+| `force_fill` | Fill input bypassing actionability checks (overlays, dialogs) | `session_id`, `selector`, `value` |
+| `select_option` | Native `<select>` or custom dropdown (Radix/shadcn) — auto-detects | `session_id`, `selector` |
+| `interact_and_test` | Multi-step workflow with 25 actions (see below) | `steps` |
 | `get_page_elements` | List matching elements with attributes | `selector` |
 | `get_attribute` | Get specific HTML attribute values (data-*, aria-*, style, etc.) | `selector`, `attributes` |
 | `extract_text` | Get text content from matching elements | `selector` |
+| `scroll_into_view` | Scroll element into viewport without clicking | `session_id`, `selector` |
 
-**`interact_and_test` supports 23 step actions:**
-`click`, `force_click`, `fill`, `type`, `select`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
+**`interact_and_test` supports 25 step actions:**
+`click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
 
-### Analysis (5 tools)
+### Analysis (7 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -193,8 +196,10 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `test_responsive` | Test at mobile/tablet/desktop viewports | `url` |
 | `check_links` | Comprehensive link checker (internal + external) | _(url or session_id)_ |
 | `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
+| `get_table_data` | Parse HTML table into structured JSON (headers → cell values) | `session_id` |
+| `get_toast_messages` | Capture visible toast/notification messages | `session_id` |
 
-### Workflow Speed (7 tools)
+### Workflow Speed (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -205,12 +210,15 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `handle_dialog` | Accept/dismiss JS alert/confirm/prompt (call BEFORE trigger) | `session_id`, `action` |
 | `upload_file` | Set file(s) on `<input type="file">` | `session_id`, `selector`, `files` |
 | `wait_for_network` | Wait for specific API URL pattern to complete | `session_id`, `url_pattern` |
+| `wait_for_gone` | Wait for element to disappear (modal close, spinner gone) | `session_id`, `selector` |
+| `get_page_html` | Raw outerHTML of elements, or full page HTML | `session_id` |
 
-### Advanced Testing (8 tools)
+### Advanced Testing (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `intercept_network` | Mock API responses (test error/empty/loading states) | `session_id`, `url_pattern` |
+| `clear_intercepts` | Remove network mocks (all, or by pattern) | `session_id` |
 | `get_local_storage` | Read localStorage or sessionStorage | `session_id` |
 | `set_local_storage` | Write to localStorage or sessionStorage | `session_id`, `entries` |
 | `select_iframe` | Switch into iframe content (returns new session) | `session_id`, `selector` |
@@ -228,7 +236,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `check_console_during_interaction` | Capture console output during workflow | `session_id`, `steps` |
 | `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
 
-### AI Agent Speed Tools (9 tools)
+### AI Agent Speed Tools (10 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -236,11 +244,20 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `find_element` | Smart finder by text, tag, role, or proximity to another element | `session_id` |
 | `auto_fill_form` | Auto-detect fields, infer types, fill with test data. One call = many fills. | `session_id` |
 | `get_network_log` | All captured network requests (URL, status, method, type) | `session_id` |
+| `get_response_body` | Actual API response body text (diagnose 400/500 errors) | `session_id`, `url_pattern` |
 | `snapshot_page_state` | Save URL + cookies + storage + DOM as named checkpoint | `session_id`, `name` |
 | `restore_page_state` | Restore a previously saved snapshot | `session_id`, `name` |
 | `diff_page_state` | Compare current DOM vs snapshot: added/removed/changed elements | `session_id`, `name` |
 | `get_cookies` | Read all cookies from session | `session_id` |
 | `check_color_contrast` | WCAG AA/AAA contrast ratio checks on text elements | `session_id` |
+
+### Web & Discovery (3 tools)
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `web_search` | Search DuckDuckGo: titles + URLs + snippets | `query` |
+| `web_fetch` | Fetch URL, extract readable text (or raw HTML); TLS verified by default | `url` |
+| `describe_tools` | Structured catalog of all tools with workflows and tips | _(none)_ |
 
 ## Test Checks
 

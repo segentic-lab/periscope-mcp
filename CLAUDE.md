@@ -50,6 +50,16 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 - **type**: visual, accessibility, functionality, seo
 - **severity**: error, warning, info
 
+## Project & Static Testing Tools
+
+- `create_project(name, base_url, max_pages?, max_depth?, screenshot_dir?)` / `list_projects()` / `get_project(name)` / `delete_project(name)`
+- `set_form_login(project, login_url, username, password, selectors?)` / `set_basic_auth(project, username, password)` / `set_cookies(project, cookies[])` — configure auth, then `login_project(project)` to execute
+- `test_url(url, project?, checks?[])` — Screenshot + checks for one URL
+- `crawl_project(project, max_pages?, max_depth?)` — BFS page discovery
+- `test_project(project, checks?[])` — Crawl + test all pages, saves JSON report
+- `get_screenshot(project, url)` / `list_reports(project?)` / `get_report(report_path)`
+- `describe_tools(category?)` — Structured tool catalog with workflows and tips
+
 ## Interactive Testing (Session-Based)
 
 Sessions keep browser pages alive across tool calls, enabling multi-step workflows.
@@ -67,7 +77,7 @@ close_session(session_id)
 - `open_session(url, project?)` — Create persistent session, returns session_id + screenshot
 - `close_session(session_id)` — Close session and free resources
 - `list_sessions()` — List all active sessions with URLs/idle times
-- `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile` (375x812), `tablet` (768x1024), `desktop` (1920x1080)
+- `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
 ### Interactive Tools
 - `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
