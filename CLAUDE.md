@@ -1,7 +1,7 @@
 # periscope-mcp - Project Guide
 
 ## What This Is
-MCP server that gives Claude Code tools to test websites using Playwright + headless Chrome.
+MCP server that gives AI agents (Claude Code and any MCP client) tools to test websites and web apps — static sites, SPAs, and apps behind a login — using Playwright + headless Chrome.
 
 ## How to Run
 ```bash

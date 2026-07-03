@@ -1,14 +1,18 @@
 # periscope-mcp
 
-A website testing MCP server **built for AI agents** — not a thin wrapper around
-browser APIs. Its 66 Playwright-powered tools are shaped around how agents
-actually work:
+A **website and web-app testing** MCP server **built for AI agents** — not a
+thin wrapper around browser APIs. Static sites, SPAs, dashboards behind a login:
+its 66 Playwright-powered tools are shaped around how agents actually work:
 
 - **Hard results, not screenshot-squinting** — `assert_condition` returns
   `passed: true/false` with the actual value; checks return structured issues.
 - **One call instead of ten** — `auto_fill_form` detects, infers, and fills a
   whole form; `interact_and_test` batches 25 action types with checks;
   `test_project` crawls and audits an entire site.
+- **Real web-app testing** — persistent authenticated sessions (form/basic/
+  cookie auth, plus a **visible interactive login** for 2FA/SSO/CAPTCHA that
+  then runs headless), multi-step flows, network mocking, state snapshots, and
+  **real INP** measured from the interactions it drives.
 - **Honest responses** — failures say what happened *and* what to do next
   (expired session vs. browser crash vs. eviction); silent no-ops like ignored
   drags come back flagged, not as fake success.
@@ -18,10 +22,10 @@ actually work:
   GEO/agentic-search readiness (robots.txt AI-crawler access, llms.txt, WebMCP),
   plus real Lighthouse.
 
-Playwright + headless Chrome underneath; persistent authenticated sessions,
-site crawling, responsive testing, and screenshot diffing on top. Works with
-**any MCP client** — Claude Code, Codex, Cursor, Windsurf, Gemini CLI, custom
-agents, or anything else that speaks MCP over stdio.
+Playwright + headless Chrome underneath; site crawling, responsive testing, and
+screenshot diffing on top. Works with **any MCP client** — Claude Code, Codex,
+Cursor, Windsurf, Gemini CLI, custom agents, or anything else that speaks MCP
+over stdio.
 
 ## Why not just playwright-mcp?
 
@@ -30,8 +34,8 @@ what it is: general browser control over MCP, with tools that mirror
 Playwright's own API. If the job is "browse this site, click around, extract
 something," use it.
 
-Periscope exists for a different job: **testing and auditing a site, then
-reporting findings** — and its tools encode the testing knowledge an agent
+Periscope exists for a different job: **testing and auditing a site or web app,
+then reporting findings** — and its tools encode the testing knowledge an agent
 would otherwise have to reinvent every session:
 
 | | Raw browser control | Periscope |

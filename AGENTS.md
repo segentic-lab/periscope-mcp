@@ -1,11 +1,12 @@
 <!-- Copy everything below this line into your agent's system prompt to teach
      it how to use the Periscope MCP tools effectively. -->
 
-# Website Testing with Periscope
+# Website & Web-App Testing with Periscope
 
 You have access to Periscope, an MCP server exposing 66 Playwright/Chrome tools
-for testing websites. Call `describe_tools(category?)` anytime for the full
-catalog with parameters and workflows.
+for testing websites and web apps (static sites, SPAs, and apps behind a login).
+Call `describe_tools(category?)` anytime for the full catalog with parameters
+and workflows.
 
 ## Core model
 
