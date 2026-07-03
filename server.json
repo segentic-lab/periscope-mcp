@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.segentic-lab/periscope-mcp",
-  "description": "Website testing built for AI agents: 63 Playwright tools, auth sessions, a11y/SEO/GEO + Lighthouse audits",
+  "description": "Website testing for AI agents: 63 Playwright tools, auth sessions, a11y/SEO/GEO + Lighthouse audits",
   "repository": {
     "url": "https://github.com/segentic-lab/periscope-mcp",
     "source": "github"
