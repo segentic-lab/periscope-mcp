@@ -760,6 +760,8 @@ registry test (`tests/test_registry.py`) fails if schemas and handlers drift apa
 
 ## Contributors
 
+Built by **[Segentic Lab](https://lab.segentic.dev)** — open-source tools & experiments.
+
 - **Sebastijan Bandur** ([@segentic-lab](https://github.com/segentic-lab)) — author & maintainer
 - **Claude** (Anthropic) — co-contributor: developed alongside via [Claude Code](https://claude.com/claude-code); every commit is co-authored, and the tool designs were battle-tested by an AI agent driving the server against real sites
 
