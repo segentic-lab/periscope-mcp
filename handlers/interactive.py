@@ -101,6 +101,12 @@ async def handle_interact_and_test(args: dict) -> dict:
                 path = await interactions.take_screenshot(page, project_name, "after_steps", screenshot_dir=shot_dir)
                 result["screenshot_path"] = path
 
+            # Real INP for the interactions these steps just drove (None if none)
+            inp = await interactions.read_inp(page)
+            if inp:
+                result["interaction_to_next_paint_ms"] = inp["inp_ms"]
+                result["inp_interaction_count"] = inp["interaction_count"]
+
             if run_checks and result["success"]:
                 from checks.visual import check_visual
                 from checks.accessibility import check_accessibility

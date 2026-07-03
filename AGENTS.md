@@ -3,7 +3,7 @@
 
 # Website Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 65 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 66 Playwright/Chrome tools
 for testing websites. Call `describe_tools(category?)` anytime for the full
 catalog with parameters and workflows.
 
@@ -113,6 +113,13 @@ anything?".
   it launches its own Chrome, so session/login state does not apply — use it
   for public pages, and Periscope's own checks for authenticated ones. The
   `performance` check also reports lab LCP/CLS/TBT natively, no Node needed.
+- **Real INP** (Interaction to Next Paint): unlike Lighthouse (which can't
+  measure INP in lab mode), Periscope measures it from the actual interactions
+  you drive. `interact_and_test` results and the `performance` check include
+  `interaction_to_next_paint_ms` (null until you've interacted). For a long
+  interactive test, `get_interaction_log(session_id, format="json"|"csv")`
+  exports every interaction's INP as a graphable time series + percentile
+  stats — plot `inp_ms` over `t_ms`.
 
 ## Ordering rules and pitfalls
 

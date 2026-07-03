@@ -137,6 +137,48 @@ def test_never_idle_page_downgrades_instead_of_failing(run, handlers, good_site,
     run(handlers["close_session"]({"session_id": s["session_id"]}))
 
 
+def test_real_inp_measured_for_driven_interactions(run, handlers, good_site):
+    # INP is measured from real Event Timing entries for the interactions
+    # Periscope drives — a slow click handler yields a real input-to-next-paint.
+    r = run(handlers["open_session"]({"url": f"{good_site}/inp.html"}))
+    sid = r["session_id"]
+    try:
+        r = run(handlers["interact_and_test"]({
+            "session_id": sid, "screenshot_after": False,
+            "steps": [{"action": "click", "selector": "#slow"}],
+        }))
+        assert r["interaction_to_next_paint_ms"] >= 150, r
+        assert r["inp_interaction_count"] >= 1
+
+        # also exposed via the performance check
+        r2 = run(handlers["run_checks_on_session"]({"session_id": sid, "checks": ["performance"]}))
+        assert r2["performance"]["interaction_to_next_paint_ms"] >= 150, r2["performance"]
+
+        # export the time series (JSON) with percentile stats
+        run(handlers["click_element"]({"session_id": sid, "selector": "#fast"}))
+        exp = run(handlers["get_interaction_log"]({"session_id": sid, "format": "json"}))
+        assert exp["interaction_count"] >= 2, exp
+        assert set(exp["inp_ms"]) == {"p50", "p75", "p90", "p98", "worst"}
+        import json as _json
+        data = _json.load(open(exp["report_path"]))
+        rows = data["interactions"]
+        assert rows and set(rows[0]) == {"t_ms", "epoch_ms", "inp_ms", "type", "target", "url"}
+
+        # CSV export + clear
+        csv_exp = run(handlers["get_interaction_log"]({"session_id": sid, "format": "csv", "clear": True}))
+        assert open(csv_exp["report_path"]).read().startswith("t_ms,epoch_ms,inp_ms,type,target,url")
+        assert run(handlers["get_interaction_log"]({"session_id": sid}))["interaction_count"] == 0
+    finally:
+        run(handlers["close_session"]({"session_id": sid}))
+
+
+def test_inp_null_without_interactions(run, handlers, good_site):
+    # A page that just loaded (no interactions) honestly reports INP null
+    r = run(handlers["test_url"]({"url": f"{good_site}/inp.html", "checks": ["performance"]}))
+    assert r["performance"]["interaction_to_next_paint_ms"] is None
+    assert r["performance"]["inp_interaction_count"] == 0
+
+
 def test_unknown_check_name_warns(run, handlers, good_site):
     r = run(handlers["test_url"]({"url": f"{good_site}/seo_good.html", "checks": ["acessibility"]}))
     assert any("Unknown check name" in m for m in _messages(r["issues"]))

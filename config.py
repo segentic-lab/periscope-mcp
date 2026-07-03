@@ -24,6 +24,7 @@ MAX_RESPONSE_BODY_SIZE = 512000  # 500KB max per response body capture
 MAX_RESPONSE_BODIES = 100  # max captured response bodies kept per session
 MAX_CONSOLE_LOG = 500    # max console entries kept per session
 MAX_NETWORK_LOG = 1000   # max network log entries kept per session
+MAX_INTERACTION_LOG = 5000  # max INP interaction records kept per session (oldest dropped)
 
 # Storage paths. PERISCOPE_DATA_DIR overrides the data root (tests/CI use it
 # to avoid touching the real projects/screenshots store).

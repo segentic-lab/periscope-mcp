@@ -6,6 +6,89 @@ import config
 from nav import resilient_goto
 
 
+# Injected before page scripts so it captures every interaction across a
+# session. Records the worst interaction latency (input -> next paint) per
+# interactionId from the Event Timing API — a REAL INP for the interactions
+# Periscope drives (Playwright clicks/typing fire trusted events the API sees),
+# not the TBT lab proxy Lighthouse falls back to.
+# Records one entry per real interaction (input -> next paint) from the Event
+# Timing API, with target/type/timestamp, so a long interactive test yields a
+# graphable INP time series. add_init_script runs this as raw source, so it
+# must be a self-invoking IIFE. CAP bounds memory on very long runs (oldest
+# interactions drop). Playwright's clicks/typing fire trusted events that get a
+# real interactionId — so this is a REAL INP, not the TBT lab proxy.
+INP_INIT_SCRIPT = """(() => {
+    if (window.__periscope_inp) return;
+    const CAP = %d;
+    const byId = new Map();  // interactionId -> {id, ts, epoch_ms, dur, type, target, url}
+    window.__periscope_inp = byId;
+    const sel = (el) => {
+        if (!el || !el.tagName) return null;
+        let s = el.tagName.toLowerCase();
+        if (el.id) return s + '#' + el.id;
+        if (el.className && typeof el.className === 'string') {
+            const c = el.className.trim().split(/\\s+/)[0];
+            if (c) s += '.' + c;
+        }
+        return s;
+    };
+    try {
+        const po = new PerformanceObserver((list) => {
+            for (const e of list.getEntries()) {
+                if (!e.interactionId) continue;                 // real interactions only
+                let rec = byId.get(e.interactionId);
+                if (!rec) {
+                    rec = { id: e.interactionId, ts: Math.round(e.startTime),
+                            epoch_ms: Math.round(performance.timeOrigin + e.startTime),
+                            dur: 0, type: e.name, target: sel(e.target), url: location.href };
+                    byId.set(e.interactionId, rec);
+                    if (byId.size > CAP) byId.delete(byId.keys().next().value);
+                }
+                if (e.duration > rec.dur) rec.dur = e.duration;
+                // prefer the semantic trigger over pointer/mouse noise
+                if (e.name === 'click' || e.name === 'keydown' || e.name === 'keyup') rec.type = e.name;
+            }
+        });
+        po.observe({ type: 'event', durationThreshold: 16, buffered: true });
+    } catch (e) { /* Event Timing unsupported */ }
+})();""" % config.MAX_INTERACTION_LOG
+
+
+async def _flush_and_read_interactions(page) -> list:
+    """Return the recorded interaction records, flushing pending entries first."""
+    try:
+        return await page.evaluate(
+            """() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+                const m = window.__periscope_inp;
+                r(m ? Array.from(m.values()) : []);
+            }, 0))))"""
+        ) or []
+    except Exception:
+        return []
+
+
+async def read_inp(page) -> dict | None:
+    """Session INP so far: worst interaction latency (ms) + count, or None if
+    no measurable interaction has happened yet."""
+    log = await _flush_and_read_interactions(page)
+    if not log:
+        return None
+    return {"inp_ms": round(max(r["dur"] for r in log)), "interaction_count": len(log)}
+
+
+async def read_interaction_log(page) -> list:
+    """Full per-interaction INP records (sorted by time) for export/graphing."""
+    log = await _flush_and_read_interactions(page)
+    return sorted(log, key=lambda r: r["ts"])
+
+
+async def clear_interaction_log(page):
+    try:
+        await page.evaluate("() => { if (window.__periscope_inp) window.__periscope_inp.clear(); }")
+    except Exception:
+        pass
+
+
 async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     """Click an element and return post-click state.
 

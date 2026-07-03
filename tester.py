@@ -169,6 +169,8 @@ class WebsiteTester:
             context = own_ctx
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
+        from interactions import INP_INIT_SCRIPT  # capture INP if the one-shot drives interactions
+        await page.add_init_script(INP_INIT_SCRIPT)
         try:
             await resilient_goto(page, url)
         except Exception:

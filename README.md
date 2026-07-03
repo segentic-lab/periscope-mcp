@@ -1,7 +1,7 @@
 # periscope-mcp
 
 A website testing MCP server **built for AI agents** — not a thin wrapper around
-browser APIs. Its 65 Playwright-powered tools are shaped around how agents
+browser APIs. Its 66 Playwright-powered tools are shaped around how agents
 actually work:
 
 - **Hard results, not screenshot-squinting** — `assert_condition` returns
@@ -60,14 +60,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 65 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 66 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 65 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 66 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -217,10 +217,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 65 tools
+agent's system prompt (or custom instructions) so it drives the 66 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (65 tools)
+## MCP Tools Reference (66 tools)
 
 ### Project Management (4 tools)
 
@@ -293,7 +293,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 **`interact_and_test` supports 25 step actions:**
 `click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
 
-### Analysis (8 tools)
+### Analysis (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -305,6 +305,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_table_data` | Parse HTML table into structured JSON (headers → cell values) | `session_id` |
 | `get_toast_messages` | Capture visible toast/notification messages | `session_id` |
 | `run_lighthouse` | Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits (needs Node.js) | `url` |
+| `get_interaction_log` | Export real **INP** time series (per interaction) as JSON/CSV + percentile stats | `session_id` |
 
 ### Workflow Speed (8 tools)
 
@@ -420,10 +421,20 @@ robots.txt and llms.txt are fetched once per origin and cached for the server's 
 - Full page load time (ms)
 - First paint / first contentful paint (ms)
 - Core Web Vitals (lab values via buffered PerformanceObserver): Largest Contentful Paint (ms), Cumulative Layout Shift, Total Blocking Time approximation from long tasks (+ long-task count)
+- **Interaction to Next Paint (INP)** — `interaction_to_next_paint_ms`: the *real* INP, measured from Event Timing entries for the interactions Periscope drives (null until you've interacted). This is a genuine field-style measurement, not the TBT lab proxy — Lighthouse can't produce INP in lab mode at all.
 - Resource count
 - Total transfer size (bytes / KB)
 
 For scored, Lighthouse-official metrics use the `run_lighthouse` tool — it runs the real Lighthouse CLI (requires Node.js) and returns 0-100 category scores, official Core Web Vitals, and failed audits, saving the full JSON report to `data/reports/`.
+
+### INP time series (`get_interaction_log`)
+
+Because Periscope drives *real* interactions, it can log each one's INP over an
+extended interactive test. `get_interaction_log(session_id, format="json"|"csv")`
+writes a file to `data/reports/` — one row per interaction (`t_ms`, `epoch_ms`,
+`inp_ms`, `type`, `target`, `url`) plus percentile stats (p50/p75/p90/p98/worst)
+— for graphing INP over time. `clear=true` resets the recording. Records are
+capped per session (`MAX_INTERACTION_LOG`, oldest dropped).
 
 ## Test Output Format
 

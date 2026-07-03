@@ -502,4 +502,10 @@ async def get_performance_metrics(page: Page) -> dict:
             total_size_kb: Math.round(totalSize / 1024)
         };
     }""")
+    # Real INP for interactions Periscope drove on this page (None if none) —
+    # only present on session / interact_and_test pages where the observer runs.
+    from interactions import read_inp
+    inp = await read_inp(page)
+    metrics["interaction_to_next_paint_ms"] = inp["inp_ms"] if inp else None
+    metrics["inp_interaction_count"] = inp["interaction_count"] if inp else 0
     return metrics

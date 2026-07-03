@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
-- `tool_schemas.py` - All 65 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 66 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -99,6 +99,7 @@ close_session(session_id)
 - `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
 - `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
 - `run_lighthouse(url, categories?[], device?, timeout?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, full report saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
+- `get_interaction_log(session_id, format?, clear?)` — Export the real **INP** time series (one record per interaction Periscope drove: input→next-paint latency, type, target, ts, url) as JSON (graphable) or CSV, with p50/p75/p90/p98/worst stats. INP is also surfaced inline: `interaction_to_next_paint_ms` on `interact_and_test` results and the `performance` check. Measured from actual Event Timing entries (Lighthouse can't do INP in lab mode — it falls back to TBT); null until interactions happen.
 
 ### Advanced Tools
 - `record_session(url, steps[], project?)` — Record workflow as video
@@ -148,7 +149,7 @@ close_session(session_id)
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle (env-overridable: `SESSION_TIMEOUT=600`)
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
 - `MAX_RESPONSE_BODIES = 100` — Max captured response bodies kept per session
-- `MAX_CONSOLE_LOG = 500` / `MAX_NETWORK_LOG = 1000` — Per-session log caps (oldest entries dropped)
+- `MAX_CONSOLE_LOG = 500` / `MAX_NETWORK_LOG = 1000` / `MAX_INTERACTION_LOG = 5000` — Per-session log caps (oldest entries dropped)
 - `WAIT_UNTIL = "networkidle"` — Navigation wait strategy. Never-idle pages (Turnstile, websockets, polling) auto-downgrade to `load` per page and are flagged `wait_downgraded` instead of failing; `NAV_WAIT_UNTIL=load` still forces it globally
 
 ## Social / SEO Preview Validation

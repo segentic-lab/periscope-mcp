@@ -849,6 +849,19 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="get_interaction_log",
+            description="Export the real INP (Interaction to Next Paint) time series for a session — one record per interaction Periscope drove (click/typing), each with its input-to-next-paint latency, event type, target, timestamp, and URL. Saves a JSON (for graphing) or CSV file and returns percentile stats (p50/p75/p90/p98/worst). Use after driving interactions (interact_and_test, click_element, fill_form…) — ideal for a long interactive test where you want to see all INP times, not just the worst. Unlike Lighthouse (which can't measure INP in lab mode and falls back to TBT), this is measured from actual Event Timing entries.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "format": {"type": "string", "enum": ["json", "csv"], "description": "Export format (default: json). JSON is easiest to graph; CSV for spreadsheets."},
+                    "clear": {"type": ["boolean", "string"], "description": "Reset the recorded interactions after exporting (default: false)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
             name="run_lighthouse",
             description="Run a real Google Lighthouse audit against a URL. Returns 0-100 category scores, Core Web Vitals lab metrics (LCP, TBT, CLS, Speed Index), and the failed audits, and saves the full JSON report. Requires Node.js — finds it on PATH or auto-detects nvm installs (~/.nvm); if none exists, returns the exact nvm install commands. Launches its own headless Chrome: no session or project auth state applies.",
             inputSchema={

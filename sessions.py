@@ -139,6 +139,10 @@ class SessionManager:
         page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
         page.on("response", on_response)
 
+        # Capture real INP across the session's interactions (before page scripts)
+        from interactions import INP_INIT_SCRIPT
+        await page.add_init_script(INP_INIT_SCRIPT)
+
         try:
             _, downgraded = await resilient_goto(page, url)
         except Exception:

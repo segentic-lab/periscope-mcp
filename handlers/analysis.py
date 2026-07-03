@@ -196,6 +196,68 @@ def _find_lighthouse_cmd():
     return None, None, None
 
 
+@tool("get_interaction_log")
+async def handle_get_interaction_log(args: dict) -> dict:
+        from datetime import datetime
+        session = session_manager.get_session(args["session_id"])
+        fmt = args.get("format", "json")
+        if fmt not in ("json", "csv"):
+            return {"success": False, "error": "format must be 'json' or 'csv'"}
+
+        log = await interactions.read_interaction_log(session.page)
+        if not log:
+            return {"success": True, "interaction_count": 0,
+                    "message": "No interactions recorded yet. INP is measured for the "
+                               "interactions Periscope drives (clicks, typing); drive some first."}
+
+        durs = sorted(round(r["dur"]) for r in log)
+
+        def pct(p):
+            return durs[min(len(durs) - 1, int(round((p / 100) * (len(durs) - 1))))]
+
+        summary = {
+            "interaction_count": len(log),
+            "inp_ms": {"p50": pct(50), "p75": pct(75), "p90": pct(90), "p98": pct(98), "worst": durs[-1]},
+        }
+        # Real-INP percentile: Google's INP is roughly the 98th percentile of
+        # interaction latencies (worst for small counts).
+        summary["inp_ms_representative"] = summary["inp_ms"]["p98"] if len(log) >= 50 else summary["inp_ms"]["worst"]
+
+        rows = [{"t_ms": r["ts"], "epoch_ms": r["epoch_ms"], "inp_ms": round(r["dur"]),
+                 "type": r["type"], "target": r["target"], "url": r["url"]} for r in log]
+
+        os.makedirs(config.REPORTS_DIR, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(config.REPORTS_DIR, f"interactions_{session.project_name}_{ts}.{fmt}")
+        if fmt == "csv":
+            import csv, io
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+            with open(path, "w") as f:
+                f.write(buf.getvalue())
+        else:
+            with open(path, "w") as f:
+                json.dump({"summary": summary, "interactions": rows}, f, indent=2)
+
+        if args.get("clear"):
+            await interactions.clear_interaction_log(session.page)
+
+        # Small inline sample (first 3 + worst 3) — the file has everything
+        worst3 = sorted(rows, key=lambda r: r["inp_ms"], reverse=True)[:3]
+        return {
+            "success": True,
+            **summary,
+            "format": fmt,
+            "report_path": path,
+            "sample_first": rows[:3],
+            "sample_worst": worst3,
+            "message": f"{len(rows)} interactions saved to {path}. "
+                       f"For graphing: plot inp_ms over t_ms (per-page) or epoch_ms (absolute).",
+        }
+
+
 @tool("run_lighthouse")
 async def handle_run_lighthouse(args: dict) -> dict:
         from datetime import datetime

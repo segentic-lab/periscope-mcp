@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>INP Fixture Page Title Here</title></head><body>
+<h1>INP test</h1>
+<button id="slow" onclick="block(200)">Slow button</button>
+<button id="fast" onclick="void 0">Fast button</button>
+<div id="out"></div>
+<script>
+  // Block the main thread inside the click handler so the interaction has a
+  // measurable input->next-paint latency (real INP), then mutate the DOM.
+  function block(ms){ const t0=performance.now(); while(performance.now()-t0<ms){} document.getElementById('out').textContent='done '+ms; }
+</script></body></html>
