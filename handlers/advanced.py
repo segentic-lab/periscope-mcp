@@ -8,6 +8,7 @@ import config
 import interactions
 from crawler import Crawler
 from runtime import auth_handler, get_tester, project_manager, session_manager
+from nav import resilient_goto
 from sessions import real_page
 
 from .registry import tool
@@ -38,7 +39,7 @@ async def handle_record_session(args: dict) -> dict:
         video = page.video
         result, error = None, None
         try:
-            await page.goto(args["url"], wait_until=config.WAIT_UNTIL)
+            await resilient_goto(page, args["url"])
             result = await interactions.execute_steps(
                 page, args["steps"], project_name, screenshot_dir=proj_screenshot_dir
             )

@@ -131,9 +131,10 @@ anything?".
      `" "` to lift, `ArrowDown`/`ArrowUp` to move, `" "` to drop.
   3. If both fail, report drag-and-drop as untestable for this widget rather
      than claiming it works or is broken.
-- Sites with websockets/constant polling can make navigation waits hang until
-  timeout; if every navigation is slow, tell the user to set
-  `NAV_WAIT_UNTIL=load` in the server env.
+- Never-idle pages (Cloudflare Turnstile, websockets, polling) are handled
+  automatically: navigation retries with `load` and the result carries a
+  `wait_downgraded` flag — expect slower first loads on such pages, not
+  errors. Only a page that fails even the `load` wait is genuinely broken.
 - Don't screenshot after every step — interactive tools already return
   screenshots where useful. Ask for extra screenshots only when you need to
   *see* something.

@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from playwright.async_api import Page, BrowserContext
 import config
+from nav import resilient_goto
 
 
 @dataclass
@@ -24,6 +25,7 @@ class PageSession:
     cdp_session: object = None  # cached CDP session for network emulation
     parent_session_id: str = None  # set on iframe sessions: the page session owning the frame
     own_context: object = None  # set on project-less sessions: their private context, closed with them
+    wait_downgraded: bool = False  # networkidle never settled; navigation used 'load' (issue #14)
 
 
 def real_page(page_or_frame) -> Page:
@@ -138,7 +140,7 @@ class SessionManager:
         page.on("response", on_response)
 
         try:
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            _, downgraded = await resilient_goto(page, url)
         except Exception:
             # Not yet registered in self.sessions — close it or it leaks in the context.
             await page.close()
@@ -157,6 +159,7 @@ class SessionManager:
             network_log=network_log,
             response_bodies=response_bodies,
             screenshot_dir=screenshot_dir,
+            wait_downgraded=downgraded,
         )
         self.sessions[session_id] = session
         return session

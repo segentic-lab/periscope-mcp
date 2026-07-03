@@ -1,6 +1,7 @@
 from urllib.parse import urljoin, urlparse
 from playwright.async_api import Page, BrowserContext
 import config
+from nav import resilient_goto
 
 
 class Crawler:
@@ -102,7 +103,7 @@ class Crawler:
 
                 # Only count pages we can actually reach
                 try:
-                    await page.goto(url, wait_until=config.WAIT_UNTIL, timeout=config.TIMEOUT)
+                    await resilient_goto(page, url)
                 except Exception:
                     continue
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 import config
+from nav import resilient_goto
 from checks.visual import check_visual
 from checks.accessibility import check_accessibility
 from checks.functionality import check_functionality, check_seo, get_performance_metrics
@@ -94,7 +95,7 @@ class WebsiteTester:
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
         try:
-            await page.goto(url, wait_until=config.WAIT_UNTIL)
+            await resilient_goto(page, url)
         except Exception:
             await page.close()
             if own_ctx:
@@ -167,7 +168,7 @@ class WebsiteTester:
 
         try:
             start_time = time.time()
-            response = await page.goto(url, wait_until=config.WAIT_UNTIL)
+            response, wait_downgraded = await resilient_goto(page, url)
             load_time = int((time.time() - start_time) * 1000)
 
             # Take screenshot
@@ -240,6 +241,7 @@ class WebsiteTester:
             return {
                 "url": url,
                 "status": "auth_lost" if auth_redirected else "success",
+                **({"wait_downgraded": "load"} if wait_downgraded else {}),
                 **({"final_url": page.url} if auth_redirected else {}),
                 "status_code": response.status if response else None,
                 "title": title,
@@ -390,7 +392,7 @@ class WebsiteTester:
                 await page.set_viewport_size(
                     {"width": vp["width"], "height": vp["height"]}
                 )
-                await page.goto(url, wait_until=config.WAIT_UNTIL)
+                _, vp_downgraded = await resilient_goto(page, url)
 
                 # Screenshot
                 base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
@@ -408,6 +410,8 @@ class WebsiteTester:
                     "screenshot_path": screenshot_path,
                     "title": await page.title(),
                 }
+                if vp_downgraded:
+                    vp_result["wait_downgraded"] = "load"
 
                 # Run checks if requested
                 if checks:

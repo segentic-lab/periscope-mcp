@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from playwright.async_api import Page
 import config
+from nav import resilient_goto
 
 
 async def click_element(page: Page, selector: str, force: bool = False) -> dict:
@@ -401,7 +402,9 @@ async def execute_steps(
                 step_result["screenshot_path"] = path
 
             elif action == "navigate":
-                await page.goto(step["url"], wait_until=config.WAIT_UNTIL)
+                _, downgraded = await resilient_goto(page, step["url"])
+                if downgraded:
+                    step_result["wait_downgraded"] = "load"
                 step_result["url"] = page.url
 
             elif action == "hover":

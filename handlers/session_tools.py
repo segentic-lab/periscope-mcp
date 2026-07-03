@@ -48,6 +48,9 @@ async def handle_open_session(args: dict) -> dict:
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,
         }
+        if session.wait_downgraded:
+            result["wait_downgraded"] = ("networkidle never settled (busy widget like Turnstile/"
+                                         "websockets) — navigation completed with 'load' instead")
         # Landing on the project's login page usually means auth expired (issue #11)
         from tester import redirected_to_login
         if (proj_obj and proj_obj.auth and proj_obj.auth.method == "form"

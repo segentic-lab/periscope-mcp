@@ -8,6 +8,7 @@ import config
 import interactions
 from crawler import Crawler
 from runtime import auth_handler, get_tester, project_manager, session_manager
+from nav import resilient_goto
 from sessions import real_page
 
 from .registry import tool
@@ -568,7 +569,7 @@ async def _restore_page_state(args: dict) -> dict:
             await context.add_cookies(snap["cookies"])
 
         # Navigate to saved URL
-        await page.goto(snap["url"], wait_until=config.WAIT_UNTIL)
+        await resilient_goto(page, snap["url"])
 
         # Restore storage
         await page.evaluate("""(state) => {
@@ -588,7 +589,7 @@ async def _restore_page_state(args: dict) -> dict:
         if hasattr(page, "reload"):
             await page.reload(wait_until=config.WAIT_UNTIL)
         else:
-            await page.goto(snap["url"], wait_until=config.WAIT_UNTIL)
+            await resilient_goto(page, snap["url"])
 
         session.url = page.url
         return {

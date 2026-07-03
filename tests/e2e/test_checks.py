@@ -121,6 +121,22 @@ def test_skip_link_language_independent(run, handlers, good_site):
     assert not any("skip navigation" in m for m in _messages(r["issues"])), _messages(r["issues"])
 
 
+def test_never_idle_page_downgrades_instead_of_failing(run, handlers, good_site, monkeypatch):
+    # Issue #14: Turnstile-style constant network activity means networkidle
+    # never settles — the page must be tested via a 'load' downgrade and
+    # flagged, not reported as a hard error.
+    import config
+    monkeypatch.setattr(config, "TIMEOUT", 4000)  # keep the first wait short
+    r = run(handlers["test_url"]({"url": f"{good_site}/busy.html", "checks": ["functionality"]}))
+    assert r["status"] == "success", r.get("error")
+    assert r["wait_downgraded"] == "load", r
+    assert r["title"] == "Never Idle Fixture Page Title"
+
+    s = run(handlers["open_session"]({"url": f"{good_site}/busy.html"}))
+    assert s["success"] and "networkidle never settled" in s.get("wait_downgraded", ""), s
+    run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
 def test_unknown_check_name_warns(run, handlers, good_site):
     r = run(handlers["test_url"]({"url": f"{good_site}/seo_good.html", "checks": ["acessibility"]}))
     assert any("Unknown check name" in m for m in _messages(r["issues"]))

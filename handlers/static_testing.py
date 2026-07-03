@@ -11,6 +11,7 @@ from runtime import auth_handler, get_tester, project_manager, session_manager
 from sessions import real_page
 
 from .registry import tool
+from nav import resilient_goto
 from tester import redirected_to_login
 
 
@@ -36,7 +37,7 @@ async def _preflight_auth(t, project) -> dict | None:
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
         try:
-            await page.goto(project.base_url, wait_until=config.WAIT_UNTIL)
+            await resilient_goto(page, project.base_url)
             return redirected_to_login(page.url, login_url)
         finally:
             await page.close()

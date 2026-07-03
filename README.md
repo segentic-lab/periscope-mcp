@@ -608,7 +608,7 @@ Edit `config.py` to change defaults (env-overridable settings note the variable)
 | `VIEWPORT_WIDTH` | `1920` | Browser viewport width |
 | `VIEWPORT_HEIGHT` | `1080` | Browser viewport height |
 | `CHROMIUM_PATH` | unset | Path to a system Chromium binary (env: `CHROMIUM_PATH`); unset = Playwright's bundled build |
-| `WAIT_UNTIL` | `networkidle` | Navigation wait strategy (env: `NAV_WAIT_UNTIL=load` for sites with websockets/polling) |
+| `WAIT_UNTIL` | `networkidle` | Navigation wait strategy; never-idle pages (Turnstile, websockets) auto-downgrade to `load` per page, flagged as `wait_downgraded` (env: `NAV_WAIT_UNTIL=load` forces it globally) |
 | `MAX_PAGES` | `20` | Default max pages to crawl |
 | `MAX_DEPTH` | `3` | Default max crawl depth |
 | `MAX_SESSIONS` | `20` | Max concurrent interactive sessions (env: `MAX_SESSIONS`) |

@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 from playwright.async_api import Page, BrowserContext
 import config
+from nav import resilient_goto
 from projects import Project, FormLogin, BasicAuth, CookieAuth
 
 
@@ -29,7 +30,7 @@ class AuthHandler:
         page = await context.new_page()
         try:
             # Navigate to login page
-            await page.goto(form.login_url, wait_until=config.WAIT_UNTIL)
+            await resilient_goto(page, form.login_url)
             login_url = page.url
             debug = {"login_url": login_url}
 
