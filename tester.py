@@ -24,60 +24,135 @@ def redirected_to_login(current_url: str, login_url: str) -> bool:
 class WebsiteTester:
     def __init__(self):
         self.playwright = None
-        self.browser: Browser = None
-        self.contexts: dict[str, BrowserContext] = {}  # project_name -> context
+        self.browser: Browser = None            # headless (default)
+        self.headed_browser: Browser = None     # visible; launched on demand
+        self.contexts: dict[str, BrowserContext] = {}         # headless: project_name -> context
+        self.headed_contexts: dict[str, BrowserContext] = {}  # headed: project_name -> context
+        self._pending_logins: dict = {}          # project_name -> (context, page) during interactive_login
+
+    def _launch_kwargs(self, headless: bool) -> dict:
+        kwargs = {"headless": headless}
+        if config.CHROMIUM_PATH:
+            kwargs["executable_path"] = config.CHROMIUM_PATH
+        return kwargs
 
     async def start(self):
-        """Initialize Playwright and launch browser."""
+        """Initialize Playwright and launch the headless browser."""
         if self.playwright:
             try:
                 await self.playwright.stop()
             except Exception:
                 pass
-        self.contexts.clear()  # contexts from a previous (possibly crashed) browser are unusable
+        # Contexts/browsers from a previous (possibly crashed) browser are unusable
+        self.contexts.clear()
+        self.headed_contexts.clear()
+        self._pending_logins.clear()
+        self.headed_browser = None
         self.playwright = await async_playwright().start()
-        launch_kwargs = {"headless": config.HEADLESS}
-        if config.CHROMIUM_PATH:
-            launch_kwargs["executable_path"] = config.CHROMIUM_PATH
-        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+        self.browser = await self.playwright.chromium.launch(**self._launch_kwargs(config.HEADLESS))
         if not config.HEADLESS and config.STARTUP_PAUSE > 0:
             await asyncio.sleep(config.STARTUP_PAUSE)
 
+    async def get_browser(self, headed: bool = False) -> Browser:
+        """Return the headless browser, or a lazily-launched visible one.
+
+        Playwright's headless flag is fixed at launch, so a visible browser is a
+        separate instance launched on demand. Requires a display (DISPLAY)."""
+        if not headed:
+            return self.browser
+        if self.headed_browser is None or not self.headed_browser.is_connected():
+            try:
+                self.headed_browser = await self.playwright.chromium.launch(**self._launch_kwargs(False))
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not open a visible browser ({e}). A display is required — set DISPLAY "
+                    f"or run on a machine with a screen."
+                ) from e
+        return self.headed_browser
+
     async def stop(self):
-        """Close browser and cleanup."""
-        for ctx in self.contexts.values():
-            await ctx.close()
+        """Close browsers and cleanup."""
+        for ctx in list(self.contexts.values()) + list(self.headed_contexts.values()):
+            try:
+                await ctx.close()
+            except Exception:
+                pass
         self.contexts.clear()
-        if self.browser:
-            await self.browser.close()
+        self.headed_contexts.clear()
+        for browser in (self.browser, self.headed_browser):
+            if browser:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
         if self.playwright:
             await self.playwright.stop()
 
-    async def get_context(self, project_name: str = "default") -> BrowserContext:
-        """Get or create a browser context for a project."""
-        if project_name not in self.contexts:
-            self.contexts[project_name] = await self.browser.new_context(
-                viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
-                ignore_https_errors=True,
-            )
-        return self.contexts[project_name]
+    async def _new_context(self, browser: Browser, project_name) -> BrowserContext:
+        """Create a context, seeded with a project's saved login session if any."""
+        kwargs = {
+            "viewport": {"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+            "ignore_https_errors": True,
+        }
+        if project_name:
+            import runtime  # deferred: runtime imports tester at module load
+            state = runtime.project_manager.load_session_state(project_name)
+            if state:
+                kwargs["storage_state"] = state
+        return await browser.new_context(**kwargs)
+
+    async def get_context(self, project_name: str = "default", headed: bool = False) -> BrowserContext:
+        """Get or create a browser context for a project (headless or visible)."""
+        contexts = self.headed_contexts if headed else self.contexts
+        if project_name not in contexts:
+            browser = await self.get_browser(headed)
+            contexts[project_name] = await self._new_context(browser, project_name)
+        return contexts[project_name]
 
     async def close_context(self, project_name: str):
-        """Close a project's browser context."""
-        if project_name in self.contexts:
-            await self.contexts[project_name].close()
-            del self.contexts[project_name]
+        """Close a project's browser context (both headless and visible)."""
+        for contexts in (self.contexts, self.headed_contexts):
+            if project_name in contexts:
+                try:
+                    await contexts[project_name].close()
+                except Exception:
+                    pass
+                del contexts[project_name]
 
-    async def new_ephemeral_context(self) -> BrowserContext:
+    async def new_ephemeral_context(self, headed: bool = False) -> BrowserContext:
         """Isolated context for a project-less call — the caller must close it.
 
         Project-less tools must not share one persistent context: an external
         link check visiting linkedin.com would leave cookies that a later,
         unrelated session sees (issue #8)."""
-        return await self.browser.new_context(
+        browser = await self.get_browser(headed)
+        return await browser.new_context(
             viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
             ignore_https_errors=True,
         )
+
+    async def launch_interactive_login(self, project_name: str, url: str):
+        """Open a visible browser at a login page for the user to log in by hand.
+        Held open until capture_login() saves the resulting session."""
+        # Fresh visible context (seeded with any existing session, e.g. for re-auth)
+        if project_name in self.headed_contexts:
+            await self.close_context(project_name)
+        context = await self.get_context(project_name, headed=True)
+        page = await context.new_page()
+        page.set_default_timeout(config.TIMEOUT)
+        await page.goto(url, wait_until="domcontentloaded")
+        self._pending_logins[project_name] = (context, page)
+
+    async def capture_login(self, project_name: str) -> dict:
+        """Capture storage_state from an in-progress interactive login, then close
+        the visible window. Raises KeyError if no login is in progress."""
+        context, page = self._pending_logins.pop(project_name)
+        state = await context.storage_state()
+        try:
+            await page.close()
+        finally:
+            await self.close_context(project_name)
+        return state
 
     async def open_page(self, project_name, url: str):
         """Open a navigated page for a one-shot call. Returns (page, cleanup).

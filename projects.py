@@ -144,6 +144,53 @@ class ProjectManager:
             json.dump(data, f, indent=2)
         os.replace(tmp, config.PROJECTS_FILE)
 
+    # --- interactive-login sessions (storage_state per project) --------------
+    # A saved storage_state (cookies + localStorage) captured from a manual
+    # login. Works for flows that can't be automated — 2FA, SSO, CAPTCHA — and
+    # is a bearer credential, so it lives in its own owner-only file, not in
+    # projects.json.
+
+    def _session_path(self, name: str) -> str:
+        return os.path.join(config.SESSIONS_DIR, f"{name}.json")
+
+    def set_session_state(self, name: str, state: dict) -> bool:
+        """Persist a captured storage_state and mark the project session-authed."""
+        project = self.get(name)
+        if not project:
+            return False
+        os.makedirs(config.SESSIONS_DIR, exist_ok=True)
+        path = self._session_path(name)
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+        project.auth = ProjectAuth(method="session")
+        project.is_logged_in = True
+        self._save()
+        return True
+
+    def load_session_state(self, name: str):
+        """Return the saved storage_state dict for a project, or None."""
+        if not name:
+            return None
+        path = self._session_path(name)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def clear_session_state(self, name: str):
+        path = self._session_path(name)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     def reset_login_flags(self, save: bool = True):
         """Clear is_logged_in on all projects (login state died with the browser)."""
         changed = False
@@ -193,6 +240,7 @@ class ProjectManager:
             return False
         custom_dir = project.screenshot_dir
         del self.projects[name]
+        self.clear_session_state(name)
         self._save()
         # Clean up project screenshots (default dir + custom screenshot_dir if set)
         import shutil

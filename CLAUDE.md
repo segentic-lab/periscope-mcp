@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
-- `tool_schemas.py` - All 63 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 65 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -56,6 +56,8 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 
 - `create_project(name, base_url, max_pages?, max_depth?, screenshot_dir?)` / `list_projects()` / `get_project(name)` / `delete_project(name)`
 - `set_form_login(project, login_url, username, password, selectors?)` / `set_basic_auth(project, username, password)` / `set_cookies(project, cookies[])` — configure auth, then `login_project(project)` to execute
+- `interactive_login(project, login_url?)` → user logs in by hand in a **visible** window (for 2FA/SSO/CAPTCHA) → `save_login(project)` captures the session (storage_state → `data/sessions/{project}.json`, 0o600); project then runs authenticated + headless. Needs a display on the server.
+- `open_session(url, project?, headed?)` — `headed=true` opens a real visible window (needs a display)
 - `test_url(url, project?, checks?[])` — Screenshot + checks for one URL
 - `crawl_project(project, max_pages?, max_depth?)` — BFS page discovery
 - `test_project(project, checks?[])` — Crawl + test all pages, saves JSON report

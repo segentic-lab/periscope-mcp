@@ -18,18 +18,23 @@ async def handle_open_session(args: dict) -> dict:
         t = await get_tester()
         project = args.get("project")
         project_name = project or "default"
+        headed = args.get("headed", False)
         proj_obj = project_manager.get(project) if project else None
         proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
 
         # With a project: share its (authenticated) context. Without: a private
         # context per session, so unrelated targets never see each other's
         # cookies (issue #8). Closed together with the session.
+        # headed=true opens a real visible window (needs a display).
         own_context = None
-        if project:
-            context = await t.get_context(project)
-        else:
-            own_context = await t.new_ephemeral_context()
-            context = own_context
+        try:
+            if project:
+                context = await t.get_context(project, headed=headed)
+            else:
+                own_context = await t.new_ephemeral_context(headed=headed)
+                context = own_context
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
         try:
             session = await session_manager.create_session(
                 context, args["url"], project_name, screenshot_dir=proj_screenshot_dir)
@@ -48,6 +53,8 @@ async def handle_open_session(args: dict) -> dict:
             "title": await session.page.title(),
             "screenshot_path": screenshot_path,
         }
+        if headed:
+            result["headed"] = True
         if session.wait_downgraded:
             result["wait_downgraded"] = ("networkidle never settled (busy widget like Turnstile/"
                                          "websockets) — navigation completed with 'load' instead")

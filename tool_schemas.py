@@ -107,6 +107,27 @@ TOOLS: list[Tool] = [
                 "required": ["project"]
             }
         ),
+        Tool(
+            name="interactive_login",
+            description="Open a VISIBLE browser window for a human to log in by hand — the way to authenticate flows that can't be automated (2FA/MFA, SSO/OAuth redirects, CAPTCHA, magic links, device confirmation). After you finish logging in, call save_login to capture the session; future headless sessions on the project reuse it. Requires a display on the server (DISPLAY set).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string", "description": "Project name (must exist)"},
+                    "login_url": {"type": "string", "description": "URL to open (optional; defaults to the project's configured login URL or base_url)"}
+                },
+                "required": ["project"]
+            }
+        ),
+        Tool(
+            name="save_login",
+            description="Capture the authenticated session (cookies + localStorage) from an in-progress interactive_login, save it to the project, and close the visible window. The project then opens authenticated sessions headlessly. Re-run interactive_login when the session expires.",
+            inputSchema={
+                "type": "object",
+                "properties": {"project": {"type": "string", "description": "Project name with an interactive_login in progress"}},
+                "required": ["project"]
+            }
+        ),
 
         # Testing
         Tool(
@@ -200,7 +221,8 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to open"},
-                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."}
+                    "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
+                    "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."}
                 },
                 "required": ["url"]
             }

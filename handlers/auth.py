@@ -111,6 +111,64 @@ async def handle_login_project(args: dict) -> dict:
         return result
 
 
+@tool("interactive_login")
+async def handle_interactive_login(args: dict) -> dict:
+        project = project_manager.get(args["project"])
+        if not project:
+            return {"success": False, "error": f"Project '{args['project']}' not found"}
+
+        # Where to land: explicit login_url, else the form-login URL, else base_url
+        url = args.get("login_url")
+        if not url and project.auth and project.auth.method == "form" and project.auth.form_login:
+            url = project.auth.form_login.login_url
+        url = url or project.base_url
+
+        t = await get_tester()
+        try:
+            await t.launch_interactive_login(project.name, url)
+        except RuntimeError as e:
+            return {"success": False, "error": str(e)}
+        return {
+            "success": True,
+            "project": project.name,
+            "login_url": url,
+            "message": f"A visible browser opened at {url}. Complete the login by hand "
+                       f"(password, 2FA, SSO, CAPTCHA — whatever the site needs), then call "
+                       f"save_login('{project.name}') to save the session. Future sessions on "
+                       f"this project run headlessly with the saved login.",
+        }
+
+
+@tool("save_login")
+async def handle_save_login(args: dict) -> dict:
+        project = project_manager.get(args["project"])
+        if not project:
+            return {"success": False, "error": f"Project '{args['project']}' not found"}
+
+        t = await get_tester()
+        try:
+            state = await t.capture_login(project.name)
+        except KeyError:
+            return {
+                "success": False,
+                "error": f"No interactive login in progress for '{project.name}'. "
+                         f"Call interactive_login('{project.name}') first.",
+            }
+        project_manager.set_session_state(project.name, state)
+        # Re-seed any cached contexts so subsequent sessions pick up the login
+        await t.close_context(project.name)
+
+        return {
+            "success": True,
+            "project": project.name,
+            "cookies_saved": len(state.get("cookies", [])),
+            "origins_saved": len(state.get("origins", [])),
+            "message": f"Saved login session for '{project.name}'. Open sessions or run "
+                       f"test_project on it and they'll be authenticated headlessly. Re-run "
+                       f"interactive_login when the session expires.",
+        }
+
+
 @tool("copy_auth")
 async def handle_copy_auth(args: dict) -> dict:
         source = project_manager.get(args["from_project"])

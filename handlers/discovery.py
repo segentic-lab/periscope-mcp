@@ -52,6 +52,8 @@ async def handle_describe_tools(args: dict) -> dict:
                     "set_basic_auth": {"params": "project, username, password", "note": "For HTTP Basic Auth"},
                     "set_cookies": {"params": "project, cookies[]", "note": "Bypass login with session cookies"},
                     "login_project": {"params": "project", "note": "Execute login using configured credentials"},
+                    "interactive_login": {"params": "project, login_url?", "note": "Open a VISIBLE window to log in by hand (2FA/SSO/CAPTCHA); then save_login. Needs a display."},
+                    "save_login": {"params": "project", "note": "Capture the manual-login session into the project; future sessions run authenticated + headless"},
                     "copy_auth": {"params": "from_project, to_project", "note": "Copy auth config between projects on same domain"},
                 },
             },
@@ -77,7 +79,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "name": "Session Management",
                 "description": "Persistent browser sessions that survive across tool calls. Required for interactive testing.",
                 "tools": {
-                    "open_session": {"params": "url, project?", "note": "Create session — returns session_id + screenshot"},
+                    "open_session": {"params": "url, project?, headed?", "note": "Create session — returns session_id + screenshot. headed=true opens a visible window (needs a display)."},
                     "close_session": {"params": "session_id", "note": "Close session and free resources"},
                     "list_sessions": {"params": "(none)", "note": "All active sessions with idle times"},
                     "set_viewport": {"params": "session_id, width?, height?, device?", "note": "Switch viewport. Presets: mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg"},

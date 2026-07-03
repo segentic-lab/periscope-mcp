@@ -22,6 +22,10 @@ class AuthHandler:
             return await self._basic_auth(context, project.auth.basic_auth, project.base_url)
         elif project.auth.method == "cookies":
             return await self._cookie_auth(context, project.auth.cookie_auth)
+        elif project.auth.method == "session":
+            # Saved interactive-login session — the storage_state is seeded into
+            # the context by get_context(), so there's nothing to execute here.
+            return {"success": True, "message": "Loaded saved login session (from interactive_login)"}
         else:
             return {"success": False, "error": f"Unknown auth method: {project.auth.method}"}
 

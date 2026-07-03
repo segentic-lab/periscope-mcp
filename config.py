@@ -31,6 +31,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("PERISCOPE_DATA_DIR") or os.path.join(BASE_DIR, "data")
 SCREENSHOT_DIR = os.path.join(DATA_DIR, "screenshots")
 REPORTS_DIR = os.path.join(DATA_DIR, "reports")
+SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")  # saved storage_state per project (login sessions)
 PROJECTS_FILE = os.path.join(DATA_DIR, "projects.json")
 
 # Ensure directories exist

@@ -1,5 +1,79 @@
-"""Auth config honesty + copy_auth state transfer (issues #6, #7) and
-auth-expiry detection (issue #11)."""
+"""Auth config honesty + copy_auth state transfer (issues #6, #7),
+auth-expiry detection (issue #11), and interactive-login sessions."""
+import os
+
+import pytest
+
+
+def test_saved_session_authenticates_headless(run, handlers, good_site):
+    # Option B core value: a saved storage_state seeds a fresh project's
+    # HEADLESS sessions as authenticated — no display needed to verify this.
+    import runtime
+    src, dst = "sessrc", "sesdst"
+    try:
+        run(handlers["create_project"]({"name": src, "base_url": f"{good_site}/app"}))
+        run(handlers["create_project"]({"name": dst, "base_url": f"{good_site}/app"}))
+        # authenticate src via the form-login fixture
+        run(handlers["set_form_login"]({
+            "project": src, "login_url": f"{good_site}/login.html",
+            "username": "u", "password": "pw",
+        }))
+        assert run(handlers["login_project"]({"project": src}))["success"]
+        # capture the authenticated storage_state and save it onto dst
+        state = run(runtime.tester.contexts[src].storage_state())
+        assert runtime.project_manager.set_session_state(dst, state)
+        assert runtime.project_manager.get(dst).auth.method == "session"
+
+        # dst now opens authenticated headless sessions with no login step
+        s = run(handlers["open_session"]({"url": f"{good_site}/app", "project": dst}))
+        assert "/app" in s["url"] and "login" not in s["url"], s
+        assert s["title"] == "Protected App Area Page"
+        cookies = run(handlers["get_cookies"]({"session_id": s["session_id"]}))
+        assert any(c["name"] == "sid" for c in cookies["cookies"])
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+        # login_project on a session-method project is a no-op success
+        assert run(handlers["login_project"]({"project": dst}))["success"]
+    finally:
+        run(handlers["delete_project"]({"name": src}))
+        run(handlers["delete_project"]({"name": dst}))
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="headed browser needs a display")
+def test_interactive_login_visible_then_headless_reuse(run, handlers, good_site):
+    # Full option-B path incl. the VISIBLE window (runs only where DISPLAY is set)
+    import runtime
+    p = "interactiveproj"
+    try:
+        run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/app"}))
+        r = run(handlers["interactive_login"]({"project": p, "login_url": f"{good_site}/login.html"}))
+        assert r["success"], r
+        # stand in for the human logging in, on the visible page
+        _, page = runtime.tester._pending_logins[p]
+        run(page.fill("input[name=username]", "u"))
+        run(page.fill("input[name=password]", "pw"))
+        run(page.click("button[type=submit]"))
+        run(page.wait_for_load_state("load"))
+
+        r = run(handlers["save_login"]({"project": p}))
+        assert r["success"] and r["cookies_saved"] >= 1, r
+        # visible window/context is gone after capture
+        assert p not in runtime.tester._pending_logins
+
+        s = run(handlers["open_session"]({"url": f"{good_site}/app", "project": p}))
+        assert "/app" in s["url"] and "login" not in s["url"], s
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+    finally:
+        run(handlers["delete_project"]({"name": p}))
+
+
+def test_save_login_without_pending_errors(run, handlers, good_site):
+    p = "nopending"
+    try:
+        run(handlers["create_project"]({"name": p, "base_url": good_site}))
+        r = run(handlers["save_login"]({"project": p}))
+        assert r["success"] is False and "interactive_login" in r["error"]
+    finally:
+        run(handlers["delete_project"]({"name": p}))
 
 
 def test_auth_expiry_detected_not_silently_passed(run, handlers, good_site):

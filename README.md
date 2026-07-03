@@ -1,7 +1,7 @@
 # periscope-mcp
 
 A website testing MCP server **built for AI agents** — not a thin wrapper around
-browser APIs. Its 63 Playwright-powered tools are shaped around how agents
+browser APIs. Its 65 Playwright-powered tools are shaped around how agents
 actually work:
 
 - **Hard results, not screenshot-squinting** — `assert_condition` returns
@@ -60,14 +60,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 63 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 65 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 63 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 65 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -217,10 +217,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 63 tools
+agent's system prompt (or custom instructions) so it drives the 65 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (63 tools)
+## MCP Tools Reference (65 tools)
 
 ### Project Management (4 tools)
 
@@ -231,7 +231,7 @@ effectively instead of discovering the conventions by trial and error.
 | `get_project` | Get project details | `name` |
 | `delete_project` | Delete project + data | `name` |
 
-### Authentication (5 tools)
+### Authentication (7 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -239,7 +239,16 @@ effectively instead of discovering the conventions by trial and error.
 | `set_basic_auth` | Configure HTTP Basic Auth | `project`, `username`, `password` |
 | `set_cookies` | Inject session cookies | `project`, `cookies` (array) |
 | `login_project` | Execute login using configured auth | `project` |
-| `copy_auth` | Copy auth config + session cookies between projects | `from_project`, `to_project` |
+| `interactive_login` | Open a **visible** window to log in by hand (2FA/SSO/CAPTCHA), then `save_login` | `project` |
+| `save_login` | Capture the manual-login session; the project then runs authenticated + headless | `project` |
+| `copy_auth` | Copy auth config + session state between projects | `from_project`, `to_project` |
+
+For logins that can't be automated — 2FA/MFA, SSO/OAuth redirects, CAPTCHA, magic
+links — use `interactive_login` (opens a real browser window; requires a display
+on the server), complete the login yourself, then `save_login`. It captures the
+authenticated session (cookies + localStorage) into the project, and every
+future headless session reuses it. Re-run when the session expires (Periscope
+flags that automatically — see the auth-expiry detection in `test_project`).
 
 ### Static Testing (3 tools)
 
@@ -263,7 +272,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `open_session` | Open persistent browser session | `url` |
+| `open_session` | Open persistent browser session (`headed=true` for a visible window) | `url` |
 | `close_session` | Close session and free resources | `session_id` |
 | `list_sessions` | List all active sessions | _(none)_ |
 | `set_viewport` | Switch viewport size (8 device presets or custom w/h) | `session_id` |

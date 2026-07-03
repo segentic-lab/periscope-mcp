@@ -3,7 +3,7 @@
 
 # Website Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 63 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 65 Playwright/Chrome tools
 for testing websites. Call `describe_tools(category?)` anytime for the full
 catalog with parameters and workflows.
 
@@ -49,6 +49,13 @@ and re-login automatically (see `auth_check` in the response), pages that land
 on the login page come back as `status: "auth_lost"` with an error issue (never
 plain success), and `open_session` warns when it lands on the login page. On
 any of those signals, run `login_project` again.
+
+**Logins you can't automate** (2FA/MFA, SSO/OAuth redirects, CAPTCHA, magic
+links): call `interactive_login(project)` — it opens a **visible** browser
+window (requires a display on the server); the user logs in by hand, then you
+call `save_login(project)` to capture the session. The project then opens
+authenticated sessions **headlessly** with the saved login. To simply watch or
+hand-drive any session, use `open_session(url, headed=true)`.
 
 **Multi-step flows:** batch steps into one `interact_and_test` call instead of
 many single calls — it supports 25 actions (click, fill, select, wait_for,
