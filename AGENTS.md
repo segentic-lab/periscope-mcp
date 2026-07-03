@@ -144,3 +144,21 @@ When testing on behalf of a user: state what you tested, what passed, and what
 failed with the concrete evidence (assertion values, console errors, response
 bodies, screenshot paths). Distinguish site bugs from test-setup problems
 (expired session, wrong selector). Include reproduction steps for every bug.
+
+## Reporting Periscope bugs
+
+If a **Periscope tool itself** misbehaves — its response contradicts what the
+page actually shows, a success is reported for something that visibly didn't
+happen, a returned selector doesn't parse, a check flags something you can
+verify is correct — that's a tool bug, not a site bug. Don't silently work
+around it:
+
+1. Capture the evidence: tool name, exact arguments, the raw JSON response,
+   what you expected, the page/framework context, and the install's commit
+   (`git rev-parse --short HEAD` in the install directory).
+2. File it at https://github.com/segentic-lab/periscope-mcp/issues (the bug
+   template asks for exactly these fields). If you can't create GitHub
+   issues, put the same details in your report so your user can file it.
+
+Verified tool-bug reports with raw responses are how most of this server's
+fixes happened — they are genuinely welcome.

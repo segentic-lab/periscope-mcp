@@ -83,6 +83,18 @@ def test_keyboard_navigation_identity_cycle(run, handlers, good_site):
     assert r["issues"] == []
 
 
+def test_lazy_images_not_flagged_but_broken_ones_are(run, handlers, good_site):
+    # Issue #12: below-the-fold loading="lazy" images have naturalWidth 0
+    # because they never started loading — that's not broken. Genuinely
+    # missing lazy images must still be caught (network verification).
+    r = run(handlers["test_url"]({"url": f"{good_site}/lazy.html", "checks": ["visual"]}))
+    broken = [i for i in r["issues"] if "broken images" in i["message"]]
+    assert len(broken) == 1, _messages(r["issues"])
+    details = " ".join(broken[0]["details"])
+    assert "missing.gif" in details and "404" in details, details
+    assert "pixel.gif" not in details, details
+
+
 def test_color_contrast_style_dedupe_reaches_deep_content(run, handlers, good_site):
     # Issue #4 (reopened): 60 hidden spans AND 60 visible same-styled spans
     # precede a low-contrast table header. Style-dedupe must let the budget

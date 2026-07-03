@@ -167,14 +167,19 @@ async def check_accessibility(page: Page) -> list[dict]:
             "message": f"{empty_links} links without accessible text"
         })
 
-    # Check for form inputs without labels
+    # Check for form inputs without labels. Inputs that assistive tech never
+    # exposes are exempt: hidden/submit/button/reset/image types, disabled
+    # inputs, the hidden attribute, and aria-hidden subtrees — honeypot
+    # fields (aria-hidden, tabindex=-1) are the classic false positive (#13).
     inputs_no_labels = await page.evaluate("""() => {
         const inputs = document.querySelectorAll('input, select, textarea');
         let count = 0;
         inputs.forEach(input => {
-            if (input.type === 'hidden' || input.type === 'submit' || input.type === 'button') {
+            if (['hidden', 'submit', 'button', 'reset', 'image'].includes(input.type)) {
                 return;
             }
+            if (input.disabled || input.hidden) return;
+            if (input.closest('[aria-hidden="true"]')) return;
             const id = input.id;
             const hasLabel = id && document.querySelector(`label[for="${id}"]`);
             const hasAriaLabel = (input.getAttribute('aria-label') || '').trim();

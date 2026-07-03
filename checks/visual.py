@@ -8,17 +8,40 @@ async def check_visual(page: Page) -> list[dict]:
     """
     issues = []
 
-    # Check for broken images
-    broken_images = await page.evaluate("""() => {
+    # Check for broken images. Definitively broken = load finished with no
+    # pixels (complete && naturalWidth === 0). Images that haven't STARTED
+    # loading (!complete — typically loading="lazy" below the fold) are NOT
+    # broken (issue #12); verify those over the network instead of flagging.
+    img_status = await page.evaluate("""() => {
         const imgs = document.querySelectorAll('img');
-        const broken = [];
+        const failed = [], pending = [];
         imgs.forEach(img => {
-            if (!img.complete || img.naturalWidth === 0) {
-                broken.push(img.src || img.outerHTML.substring(0, 100));
-            }
+            const src = img.currentSrc || img.src;
+            if (!src) return;  // no source at all — nothing to load
+            if (img.complete && img.naturalWidth === 0) failed.push(src);
+            else if (!img.complete) pending.push(src);
         });
-        return broken;
+        return { failed, pending };
     }""")
+    broken_images = list(img_status["failed"])
+    try:
+        ctx = page.context if hasattr(page, "context") else page.page.context
+    except Exception:
+        ctx = None
+    if ctx is not None:
+        for src in img_status["pending"][:10]:
+            if not src.startswith(("http://", "https://")):
+                continue
+            try:
+                resp = await ctx.request.head(src, timeout=5000)
+                status = resp.status
+                if status in (405, 501):  # server rejects HEAD
+                    resp = await ctx.request.get(src, timeout=5000)
+                    status = resp.status
+                if status >= 400:
+                    broken_images.append(f"{src} ({status})")
+            except Exception:
+                broken_images.append(f"{src} (unreachable)")
     if broken_images:
         issues.append({
             "type": "visual",

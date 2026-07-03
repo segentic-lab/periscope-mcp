@@ -74,10 +74,12 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return
         file_path = os.path.join(FIXTURES, path.lstrip("/"))
         if os.path.isfile(file_path):
+            import mimetypes
             with open(file_path, "rb") as f:
                 body = f.read()
+            ctype = mimetypes.guess_type(file_path)[0] or "text/html"
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", f"{ctype}; charset=utf-8" if ctype.startswith("text/") else ctype)
             self.end_headers()
             self.wfile.write(body)
             return
@@ -85,7 +87,14 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_HEAD(self):
-        self.send_response(200)
+        # Mirror GET's notion of existence — a blanket 200 would hide 404s
+        # from checks that verify resources via HEAD (e.g. lazy images).
+        path = self.path.split("?")[0]
+        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login"}
+        if path in known or os.path.isfile(os.path.join(FIXTURES, path.lstrip("/"))):
+            self.send_response(200)
+        else:
+            self.send_response(404)
         self.end_headers()
 
     def _text(self, body: str, content_type: str = "text/plain"):
