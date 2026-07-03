@@ -1,22 +1,8 @@
 FROM python:3.13-slim
 
-# Install system dependencies for Playwright/Chromium
+# curl + ca-certificates so playwright can install its own system deps below
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2t64 \
-    libxshmfence1 \
-    fonts-liberation \
+    curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -25,8 +11,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Chromium for Playwright
-RUN playwright install chromium
+# Install Chromium AND its system libraries. Let Playwright manage the full
+# dependency set — hand-listing apt packages silently misses libraries
+# (e.g. libXfixes) and the browser fails to launch at runtime.
+RUN playwright install --with-deps chromium
 
 # Copy application code
 COPY . .
