@@ -18,9 +18,12 @@ catalog with parameters and workflows.
 - **Isolation:** calls without a `project` run in private, isolated browser
   contexts — no cookies or login state are shared between them. Pass
   `project` when you *want* shared state (authenticated testing).
-- Sessions expire after 300s idle and there is a 20-session cap. Close sessions
-  with `close_session` when done. If a call returns "Session not found or
-  expired", reopen with `open_session` and continue — don't retry the dead id.
+- Sessions expire after 300s idle and there is a 20-session cap (both
+  env-overridable). Close sessions with `close_session` when done. A
+  "session not found" error names *why* it's gone — idle-expired, evicted at
+  the cap, or the browser crashed/restarted (that one also drops login state,
+  so re-run `login_project`). Reopen with `open_session` and continue; don't
+  retry the dead id.
 - Every tool returns JSON. Failures come back as `{"success": false, "error":
   ...}` — read the error, they are written to tell you the fix (wrong selector,
   expired session, missing argument).

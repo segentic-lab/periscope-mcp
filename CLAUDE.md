@@ -12,7 +12,7 @@ python server.py  # Runs as MCP stdio server (not a web server)
 First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS commands elsewhere).
 
 ## Key Files
-- `server.py` - MCP entry point: stdio wiring + dispatch (44 lines — start in handlers/ instead)
+- `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
 - `tool_schemas.py` - All 65 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
@@ -140,7 +140,7 @@ close_session(session_id)
 - `web_fetch(url, max_length?, raw_html?, verify_ssl?)` — Fetch URL and extract readable text content (or raw HTML). TLS verified by default; `verify_ssl=false` for self-signed dev servers.
 
 ### Utility Tools
-- `copy_auth(from_project, to_project)` — Copy auth config + session cookies between projects on same domain
+- `copy_auth(from_project, to_project)` — Copy auth config + live login session (cookies + localStorage via storage_state) between projects on same domain; reports `session_copied` honestly (false when only cookies could transfer)
 
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 20` — Max concurrent sessions (env-overridable: `MAX_SESSIONS=50`); oldest session is evicted at the cap
@@ -166,10 +166,11 @@ Platform-side rendering (image caches, crop ratios, SERP appearance) can only be
 - Twitter Card Validator — https://cards-dev.twitter.com/validator (deprecated 2023; Twitter/X no longer provides a working validator)
 
 ## Known Limitations
-- Default drag (`drag_to`) is ignored by pointer-tracking DnD libs (`@hello-pangea/dnd` etc.) — the step succeeds but nothing moves. Retry the drag step with `method: "mouse"` (stepped manual drag), or use the library's keyboard mode (focus handle → Space → arrows → Space). Verify with `diff_page_state`/`assert_condition`.
+- Default drag (`drag_to`) is ignored by pointer-tracking DnD libs (`@hello-pangea/dnd` etc.) — the step succeeds but nothing moves. Retry the drag step with `method: "mouse"` (stepped manual drag), or use the library's keyboard mode (focus handle → Space → arrows → Space). Verify with `page_state` (snapshot then diff) / `assert_condition`.
 
 ## Data
-- Projects: `data/projects.json` (contains credentials - never commit)
+- Projects: `data/projects.json` (contains credentials - never commit; written atomically, 0o600)
+- Login sessions: `data/sessions/{project}.json` (storage_state from interactive_login - bearer credential, 0o600)
 - Screenshots: `data/screenshots/{project}/*.png`
 - Reports: `data/reports/{project}_{timestamp}.json`
 - Videos: `data/videos/{project}/*.webm`
