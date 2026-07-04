@@ -2,9 +2,10 @@
 
 [![periscope-mcp MCP server](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp/badges/score.svg)](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp)
 
-A **website and web-app testing** MCP server **built for AI agents** — not a
-thin wrapper around browser APIs. Static sites, SPAs, dashboards behind a login:
-its 66 Playwright-powered tools are shaped around how agents actually work:
+An MCP server that gives AI agents **66 Playwright tools to QA, test, and
+analyze web apps** — static sites, SPAs, and apps behind a login — returning
+hard verdicts, not screenshots to squint at. Not a thin wrapper around browser
+APIs; the tools are shaped around how agents actually work:
 
 - **Hard results, not screenshot-squinting** — `assert_condition` returns
   `passed: true/false` with the actual value; checks return structured issues.

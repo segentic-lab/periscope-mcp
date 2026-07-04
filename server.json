@@ -1,11 +1,11 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.segentic-lab/periscope-mcp",
-  "description": "Website & web-app testing for AI agents: 66 Playwright tools, auth + a11y/SEO/GEO/Lighthouse audits",
+  "description": "Web-app QA for AI agents: 66 Playwright tools — auth, E2E, a11y/SEO/GEO, Web Vitals + Lighthouse",
   "repository": {
     "url": "https://github.com/segentic-lab/periscope-mcp",
     "source": "github"
   },
-  "version": "0.9.2",
+  "version": "0.9.3",
   "websiteUrl": "https://github.com/segentic-lab/periscope-mcp"
 }
