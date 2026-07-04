@@ -5,7 +5,7 @@ TOOLS: list[Tool] = [
         # Project Management
         Tool(
             name="create_project",
-            description="Create a new website testing project. Each project represents a website to test.",
+            description="Create a persistent testing project: a named website/web-app target with its base URL and crawl limits, saved to disk and reused by crawl_project, test_project, and authenticated sessions. Returns the stored project config. Create this first, then attach auth (set_form_login / set_basic_auth / set_cookies) and run tests.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -20,12 +20,12 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="list_projects",
-            description="List all testing projects.",
+            description="List all saved testing projects with their base URL, crawl limits, and configured auth type. Returns an array of project configs (empty if none exist). Use it to discover the project names the other project/auth/testing tools expect.",
             inputSchema={"type": "object", "properties": {}}
         ),
         Tool(
             name="get_project",
-            description="Get details of a specific project.",
+            description="Get one project's saved configuration: base URL, max_pages/max_depth, screenshot directory, and which auth (form/basic/cookies) is set up. Returns {success, project}. Use it to confirm setup before crawling, testing, or logging in.",
             inputSchema={
                 "type": "object",
                 "properties": {"name": {"type": "string", "description": "Project name"}},
@@ -34,7 +34,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="delete_project",
-            description="Delete a project and its associated data.",
+            description="Permanently delete a project and its saved configuration and auth. Returns {success}. Irreversible; afterwards the name is free to reuse. Does not remove screenshots/reports already written to disk.",
             inputSchema={
                 "type": "object",
                 "properties": {"name": {"type": "string", "description": "Project name"}},
@@ -45,7 +45,7 @@ TOOLS: list[Tool] = [
         # Authentication
         Tool(
             name="set_form_login",
-            description="Configure form-based login for a project. Use this for sites with username/password forms.",
+            description="Configure username/password form login for a project (stored, not executed yet). For standard HTML login forms; field/submit selectors are auto-detected but can be overridden. Returns {success}. Call login_project afterwards to actually log in. For 2FA/SSO/CAPTCHA use interactive_login instead.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -62,7 +62,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="set_basic_auth",
-            description="Configure HTTP Basic Auth for a project.",
+            description="Configure HTTP Basic Auth credentials for a project — the browser sends them on every request in that project's context. Stored, not executed: call login_project to apply, then pass `project` to your sessions. Returns {success}. Use for browser Basic-Auth prompts, not HTML login forms (use set_form_login for those).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -75,7 +75,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="set_cookies",
-            description="Set session cookies for a project. Use this to bypass login with existing session.",
+            description="Seed a project with session cookies to skip an interactive login (e.g. cookies copied from a logged-in browser). Each cookie needs name+value+domain (path defaults to '/'). Stored, not executed: call login_project to inject them. Returns {success}.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -100,7 +100,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="login_project",
-            description="Execute login for a project using configured credentials. Must call set_form_login, set_basic_auth, or set_cookies first.",
+            description="Execute a project's configured login — submit the form, apply Basic Auth, or inject cookies — and persist the resulting authenticated session (storage_state) for reuse. Requires set_form_login / set_basic_auth / set_cookies first. Returns {success} with login details. Re-run it when auth expires mid-test.",
             inputSchema={
                 "type": "object",
                 "properties": {"project": {"type": "string", "description": "Project name"}},
@@ -132,7 +132,7 @@ TOOLS: list[Tool] = [
         # Testing
         Tool(
             name="test_url",
-            description="Test a single URL. Takes screenshot and runs checks for visual issues, accessibility, functionality, SEO, performance, and GEO (AI/agentic search readiness: robots.txt AI-crawler access, llms.txt, WebMCP, JSON-LD).",
+            description="Screenshot and audit a single URL in one shot (opens then closes a throwaway page). Runs the selected checks — visual, accessibility, functionality, seo, performance, geo — and returns {status, title, screenshot path, issues[]} where each issue has type/severity/message; never-idle pages come back flagged (wait_downgraded), not as errors. Pass `project` for authenticated pages. For multi-step flows or repeated checks on one page, use a session instead.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -149,7 +149,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="crawl_project",
-            description="Discover all pages in a project by crawling from the base URL.",
+            description="Discover a project's pages by breadth-first crawling internal links from its base URL, bounded by max_pages/max_depth (overridable per call). Returns the list of discovered URLs (also cached for test_project). Runs in the project's authenticated context. Discovery only — use test_project to crawl and audit together.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -162,7 +162,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="test_project",
-            description="Full project test: crawls all pages and runs all checks. Returns comprehensive report.",
+            description="Full-site audit: crawl every page (up to max_pages) and run the selected checks on each, saving a timestamped JSON report. Returns per-page issues plus site-wide findings (e.g. duplicate titles/descriptions) and an auth_check; pages that bounce to the login page come back as auth_lost, never as fake success. Reload the saved report with get_report.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -181,7 +181,7 @@ TOOLS: list[Tool] = [
         # Results
         Tool(
             name="get_screenshot",
-            description="Get the file path to a screenshot for a tested URL.",
+            description="Get the saved screenshot file path for a URL previously tested in a project. Returns {success, url, screenshot_path}. Locates the PNG on disk after test_url/test_project — it does not capture a new image (use screenshot_session for that).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -193,7 +193,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="list_reports",
-            description="List all test reports for a project.",
+            description="List saved test reports (the JSON files test_project writes), for one project or all projects. Returns each report's path and timestamp, newest first. Pass a path to get_report to read one.",
             inputSchema={
                 "type": "object",
                 "properties": {"project": {"type": "string", "description": "Project name (optional, lists all if not specified)"}}
@@ -201,7 +201,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_report",
-            description="Get the contents of a specific test report.",
+            description="Load a saved test report by file path and return its full contents — per-page issues, site-wide findings, and run metadata. Returns {success, report}. Get valid paths from list_reports.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -216,7 +216,7 @@ TOOLS: list[Tool] = [
         # Session Management
         Tool(
             name="open_session",
-            description="Open a persistent browser session for interactive testing. The session stays alive across tool calls so you can observe, click, fill forms, and decide next actions.",
+            description="Open a persistent browser session and return {session_id, url, title, screenshot}. The page stays alive across tool calls so you can explore, click, fill, debug, and accumulate console/network logs — the main workflow for anything multi-step. Pass `project` to share its authenticated context; headed=true opens a visible window. Sessions expire after idle timeout, so close_session when done.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -229,7 +229,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="close_session",
-            description="Close a persistent browser session and free its resources.",
+            description="Close a browser session and free its resources (page, context, captured logs). Returns {success}. Call it when finished; using a closed or expired id returns a 'session not found' error that explains why (idle-expired, evicted, or crashed).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -240,7 +240,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="list_sessions",
-            description="List all active browser sessions with their URLs and idle times.",
+            description="List active browser sessions with their session_id, current URL, and idle time. Returns an array (empty if none open). Use it to recover a session id or spot sessions nearing the idle-timeout or the concurrency cap.",
             inputSchema={"type": "object", "properties": {}}
         ),
 
@@ -361,7 +361,7 @@ TOOLS: list[Tool] = [
         # Phase 2: Medium Priority
         Tool(
             name="test_form_validation",
-            description="Analyze forms on a page: find all forms, check required fields, collect validation messages from :invalid fields and custom error elements.",
+            description="Audit a page's form validation: locate forms, list their required fields, and collect messages from :invalid fields and custom error elements. Returns the per-form field/validation details. Use to verify client-side validation behaves as intended. Works on a session or a URL.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -374,7 +374,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="compare_screenshots",
-            description="Compare two screenshots pixel-by-pixel. Returns difference percentage and a diff image highlighting changes.",
+            description="Pixel-diff two screenshot files. Returns the percentage of differing pixels and writes a diff image highlighting the changed regions (path in the result). Use for visual-regression checks — capture with test_url/screenshot_session, then compare. `threshold` sets per-channel color tolerance.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -387,7 +387,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="test_responsive",
-            description="Test a URL at multiple viewport sizes (mobile, tablet, desktop). Takes screenshots at each size and optionally runs checks.",
+            description="Load a URL at several viewport sizes (default mobile 375x812, tablet 768x1024, desktop 1920x1080) and screenshot each, optionally running checks per size. Returns each viewport's screenshot path and any issues. Catches layout breakage across breakpoints in one call. Pass custom viewports as [{name,width,height}].",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -417,7 +417,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="check_links",
-            description="Comprehensive link checker. Finds all links on a page and checks their status. Can check external links too.",
+            description="Crawl all links on a page and report each one's URL, status code, and OK/broken result — catching 404s and dead anchors. External links are skipped unless check_external=true. Returns the per-link results plus a broken-link summary. Works on a session or a URL.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -431,7 +431,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="measure_interaction",
-            description="Click an element and measure time until a condition is met (networkidle or a selector appears). Returns timing in ms.",
+            description="Click an element and measure how long until the result settles — a target selector appears, or the network goes idle if no selector is given. Returns the elapsed time in milliseconds. Use to quantify the perceived latency of a specific action (search, filter, load-more).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -446,7 +446,7 @@ TOOLS: list[Tool] = [
         # Phase 3: Nice-to-Have
         Tool(
             name="record_session",
-            description="Record a workflow as video. Executes steps while recording with Playwright's built-in video capture.",
+            description="Run a sequence of steps while recording a video of the browser (Playwright video capture). Returns the saved .webm file path. Steps use the same format as interact_and_test. Use it to produce a visual artifact or repro of a workflow; for assertions/checks use interact_and_test instead.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -490,7 +490,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="test_keyboard_navigation",
-            description="Tab through a page and track focus order. Checks for visible focus indicators and reports the tab sequence.",
+            description="Tab through a page from the top and record the focus order, flagging any stop with no visible focus indicator. Returns total_tab_stops, the focus_order sequence, and issues[]. Accessibility audit for keyboard operability. Works on a session or a URL.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -503,7 +503,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_console_errors",
-            description="Get all console errors and logs captured on a session since it was opened (or since last call to this tool). Useful for passive monitoring without running steps.",
+            description="Return browser console output (errors, warnings, logs) captured passively on a session since it opened or since the last read; clears the buffer by default. Returns the buffered entries. First stop when debugging a broken page — no steps required.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -515,7 +515,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="copy_auth",
-            description="Copy authentication config from one project to another. Useful when multiple projects share the same domain/credentials.",
+            description="Copy auth configuration and, when possible, the live login session (cookies + localStorage via storage_state) from one project to another on the same domain. Returns {success, session_copied}; session_copied is false when only the config/cookies could transfer. Use to reuse a login across related projects.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -527,7 +527,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="set_viewport",
-            description="Change the viewport size of a session page to test at different screen sizes. Use device presets or custom width/height. Takes a screenshot after resizing.",
+            description="Resize a session's viewport to a device preset or custom width/height, then screenshot. Returns the new size and screenshot. Persists for later actions in the session — use this to test responsive layouts inside an ongoing session (unlike test_responsive, which opens throwaway pages).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -551,7 +551,7 @@ TOOLS: list[Tool] = [
         # Workflow Speed Tools
         Tool(
             name="screenshot_session",
-            description="Take a screenshot of the current session page state. No actions performed — just captures what's on screen.",
+            description="Screenshot the session's current page as-is — no actions performed. Returns the image path (full-page by default; full_page=false captures just the viewport). Use to grab state at a point in a workflow; interactive tools already return screenshots, so don't call this after every step.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -563,7 +563,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="navigate_session",
-            description="Browser history navigation on a session: go back, go forward, or reload the page. Returns new URL/title + screenshot. Reload is useful for testing state persistence.",
+            description="Browser history/reload on a session: back, forward, or reload. Returns the new URL/title and a screenshot. Reload tests state persistence and caching; back/forward exercise SPA history.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -575,7 +575,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="run_checks_on_session",
-            description="Run visual/accessibility/functionality/seo/performance checks on an active session page. Unlike test_url, this doesn't open a new page — it checks the current state after interactions.",
+            description="Run the audit checks (visual/accessibility/functionality/seo/performance/geo) against a session's CURRENT page — after your interactions, without opening a new page (unlike test_url). Returns the same {issues[], per-check results} structure as test_url. Use to audit a state you reached by clicking/filling.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -591,7 +591,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="handle_dialog",
-            description="Set up handling for JavaScript dialogs (alert, confirm, prompt) on a session. Must be called BEFORE the action that triggers the dialog.",
+            description="Arm a one-shot handler for the NEXT JavaScript dialog (alert/confirm/prompt) on a session — accept or dismiss, with optional prompt text. Returns {success}. Must be called BEFORE the action that triggers the dialog, otherwise the dialog blocks the page and times out.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -604,7 +604,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="upload_file",
-            description="Set file(s) on a file input element. Works with <input type='file'> elements.",
+            description="Set file(s) on an <input type='file'> element by path, without the OS file picker. Returns {success}. Provide absolute paths that exist on the server. For a picker opened by a button, target the underlying file input's selector.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -621,7 +621,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="wait_for_network",
-            description="Wait for a specific network request to complete. Use URL pattern matching (substring) to wait for API calls instead of blind timeouts.",
+            description="Block until a network request whose URL contains the given substring completes (optionally filtered by HTTP method), up to timeout. Returns the matched request's URL/status/method, or times out. To catch a request fired by a click, run the click and this as consecutive steps in one interact_and_test call; after the fact, read get_response_body/get_network_log instead.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -637,7 +637,7 @@ TOOLS: list[Tool] = [
         # Advanced Testing Tools
         Tool(
             name="intercept_network",
-            description="Mock API responses on a session. Intercept requests matching a URL pattern and return custom responses. Use to test error states, empty states, loading states without needing the real backend. Call BEFORE the action that triggers the request.",
+            description="Mock matching API responses on a session — return a custom status/body/content-type for requests whose URL contains a substring. Returns {success}. Use it to force error, empty, or loading states without a real backend; call BEFORE the triggering action, and clear_intercepts to remove. once=true intercepts only the first match.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -654,7 +654,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="clear_intercepts",
-            description="Remove network mocks set by intercept_network. Clears all intercepts on the session, or only those matching a URL pattern.",
+            description="Remove network mocks created by intercept_network — all of them, or only those registered with a given URL pattern. Returns {success}. Use to restore real backend responses after testing mocked states.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -666,7 +666,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_local_storage",
-            description="Read localStorage or sessionStorage from a session page. Returns all entries or specific keys.",
+            description="Read a session page's localStorage (or sessionStorage) — all entries, or specific keys. Returns the key/value pairs as an object. Use to inspect client-side state (tokens, flags, cached data) when debugging.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -683,7 +683,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="set_local_storage",
-            description="Write to localStorage or sessionStorage on a session page.",
+            description="Write key/value entries to a session page's localStorage (or sessionStorage), optionally clearing existing entries first. Returns {success}. Use to seed client state (feature flags, tokens, cached data) to reproduce a specific app state; reload if the app reads storage only at load time.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -700,7 +700,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="select_iframe",
-            description="Switch into an iframe to interact with embedded content. Returns a new session scoped to the iframe. Use close_session on the returned session when done.",
+            description="Switch into an iframe and return a NEW session id scoped to that frame's content — use it like a normal session for elements inside the iframe, and keep the parent id for page-level actions. Close the returned session when done. Needed because cross-frame content isn't reachable through the parent session's selectors.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -712,7 +712,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_computed_style",
-            description="Get actual rendered CSS property values for elements matching a selector. Verify colors, fonts, spacing, display, opacity programmatically.",
+            description="Read the actual rendered CSS values (after stylesheets and inheritance) for the requested properties on matching elements. Returns per-element property→value maps. Use to verify colors, fonts, spacing, display, or opacity programmatically instead of eyeballing a screenshot.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -730,7 +730,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="emulate_network",
-            description="Throttle network speed on a session to simulate slow connections. Use to test loading spinners, offline fallbacks, timeout handling.",
+            description="Throttle a session's network to a preset — slow_3g, fast_3g, offline, or reset. Returns {success}. Persists across navigations until reset. Use to test loading spinners, skeleton states, offline fallbacks, and timeout handling.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -746,7 +746,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="test_dark_mode",
-            description="Toggle prefers-color-scheme between light and dark on a session. Takes a screenshot showing the result.",
+            description="Emulate prefers-color-scheme (dark or light) on a session and screenshot the result. Returns the screenshot. Use to verify a site's dark/light theming without touching OS settings; the emulation persists for later actions in the session.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -760,7 +760,7 @@ TOOLS: list[Tool] = [
         # AI Agent Speed Tools
         Tool(
             name="assert_condition",
-            description="Programmatic assertion — check a condition on the page and return pass/fail instantly without needing a screenshot. Supports: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals.",
+            description="Assert a condition on the current page and get a hard pass/fail plus the actual value — no screenshot to interpret. Supports text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals. Returns {passed, actual, expected}. The verification primitive — prefer it over screenshot-squinting.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -779,7 +779,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="find_element",
-            description="Smart element finder — search by text content, role, or partial match. Returns the best CSS selector to use. Saves the agent from guessing selectors.",
+            description="Find elements by text content, tag, ARIA role, and/or proximity to another element, ranked by match quality. Returns {found, elements} with the best CSS selector for each. Use it to get a reliable selector from what you can see (e.g. a button's text) instead of guessing.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -795,7 +795,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="auto_fill_form",
-            description="Auto-detect all form fields, infer their types (email, phone, name, address, etc.), fill with smart test data, and optionally submit. Replaces 5-10 tool calls with one.",
+            description="Detect a form's fields, infer each type (email/phone/name/address/date…), fill realistic test data, and optionally submit — one call replacing 5-10. Returns which fields were filled and with what. Use overrides={selector: value} for specific values and submit=true to submit.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -812,7 +812,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_network_log",
-            description="Get all network requests/responses captured during a session. See what API calls were made, status codes, methods, and response sizes. Optionally filter by URL pattern.",
+            description="Return the network requests captured on a session — each with URL, HTTP method, status, resource type, and size. Optionally filter by URL substring; clear=true empties the log after reading. Returns the request list. Use to see which API calls fired and their status when debugging.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -825,7 +825,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_cookies",
-            description="Read all cookies from a session. Essential for debugging auth issues.",
+            description="Read all cookies from a session's browser context (optionally filtered by domain). Returns {cookies, total} with each cookie's name/value/domain/path/flags. Essential for debugging auth/session issues — confirm the expected session cookie is present and scoped correctly.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -897,7 +897,7 @@ TOOLS: list[Tool] = [
         # New Tools — Friction Reducers
         Tool(
             name="scroll_into_view",
-            description="Scroll an element into the viewport without clicking it. Useful for lazy-loaded content or scrolling to a section.",
+            description="Scroll an element into the viewport without clicking it. Returns {success}. Use to trigger lazy-loaded content/images or to bring a section into view before screenshotting.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -909,7 +909,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="wait_for_gone",
-            description="Wait for an element to disappear (removed from DOM or hidden). Useful for waiting for modals/dialogs/spinners to close.",
+            description="Block until an element disappears — removed from the DOM or hidden — up to timeout. Returns {success} once it's gone, or times out. Use to wait for a modal/dialog to close or a loading spinner to vanish before the next step.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -922,7 +922,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_page_html",
-            description="Return raw outerHTML of matching elements, or full page HTML if no selector. Useful for inspecting component structure. Standard CSS selectors only — Playwright-specific pseudo-classes (:has-text, :visible) are not supported here.",
+            description="Return the raw outerHTML of matching elements, or the full page HTML if no selector, truncated to max_length. Returns the HTML string(s). Use to inspect component/markup structure — e.g. head meta tags for SEO, or a widget's DOM. Standard CSS selectors only.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -935,7 +935,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_table_data",
-            description="Parse an HTML table into structured JSON with headers mapped to cell values. Returns {headers, rows, total_rows}.",
+            description="Parse an HTML table into structured data, mapping header cells to each row's values. Returns {headers, rows, total_rows} where rows are header→value objects. Use instead of scraping table markup by hand when verifying tabular content.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -948,7 +948,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_toast_messages",
-            description="Capture visible toast/notification/alert messages on page. Checks common toast selectors ([role=alert], [role=status], [aria-live], .toast, .notification, Toastify, Sonner, Radix).",
+            description="Capture currently-visible toast/notification/alert text on a session — checks common patterns ([role=alert], [role=status], [aria-live], .toast, .notification, Toastify, Sonner, Radix) or your own selector. Returns the messages found. Set wait_ms to let a toast animate in first. Use to verify success/error notifications after an action.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -961,7 +961,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="select_option",
-            description="Select from native <select> or custom dropdown (Radix/shadcn combobox). Auto-detects type. For custom dropdowns: clicks to open, then finds option by text cascade.",
+            description="Select an option from a native <select> or a custom dropdown (Radix/shadcn combobox), auto-detecting which. Choose by value, label, or index. Returns {success} and the resulting selection. For custom dropdowns it opens the menu and clicks the matching option — use this rather than click+click.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -976,7 +976,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="get_response_body",
-            description="Get the actual API response body text for a request matching a URL pattern. Critical for diagnosing 400/500 errors. Response bodies are captured automatically for fetch/xhr/document requests.",
+            description="Return the captured response body text for a request whose URL contains a substring (optionally filtered by method). Returns the body (JSON/text). Bodies are captured automatically for fetch/xhr/document requests, making this the fastest way to diagnose a 400/500 — it reads already-captured traffic, no setup before the request.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -991,7 +991,7 @@ TOOLS: list[Tool] = [
         # Web Search & Fetch
         Tool(
             name="web_search",
-            description="Search DuckDuckGo and return titles, URLs, and snippets. Useful for looking up documentation, verifying external content, or researching during testing workflows.",
+            description="Search DuckDuckGo and return result titles, URLs, and snippets (up to max_results). Use to look up documentation, verify external facts, or research during a testing workflow.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1003,7 +1003,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="web_fetch",
-            description="Fetch a URL and extract readable text content. Use to read documentation pages, verify external link content, or inspect page text without a browser.",
+            description="Fetch a URL over HTTP (no browser) and return its readable text content, or raw HTML with raw_html=true, up to max_length. TLS is verified by default — set verify_ssl=false for self-signed dev certs. Use to read docs or verify external link content without opening a session.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1019,7 +1019,7 @@ TOOLS: list[Tool] = [
         # Discovery
         Tool(
             name="describe_tools",
-            description="Get a structured guide to all available tools — grouped by category, with workflow examples and tips. Call this first if you've never used this server before.",
+            description="Return a structured catalog of Periscope's tools grouped by category, with parameters, workflow examples, and tips — optionally filtered to one category. Returns the guide as structured JSON. Call this first if you're new to the server, to plan a testing workflow.",
             inputSchema={
                 "type": "object",
                 "properties": {
