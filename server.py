@@ -12,11 +12,12 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from _version import __version__
 from coercion import coerce_args
 from handlers import HANDLERS
 from tool_schemas import TOOLS
 
-server = Server("periscope")
+server = Server("periscope", version=__version__)
 
 
 @server.list_tools()
