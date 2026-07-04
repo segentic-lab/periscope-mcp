@@ -89,6 +89,28 @@ async def clear_interaction_log(page):
         pass
 
 
+async def _click_with_overlay_fallback(page: Page, selector: str, force: bool = False) -> str:
+    """Click, falling back to an element-level dispatch when a full-screen
+    overlay intercepts the pointer (Radix/shadcn portals — issue #15).
+
+    Playwright's pointer click hit-tests at coordinates, so a `fixed inset-0`
+    portal overlay swallows it (force=True doesn't help: it skips the check and
+    the overlay still receives the pointer). dispatch_event('click') fires the
+    event directly on the element, bypassing the hit-test entirely.
+
+    Returns the click method used: 'pointer' or 'js_dispatch'.
+    """
+    locator = page.locator(selector).first
+    try:
+        await locator.click(force=force, timeout=5000)
+        return "pointer"
+    except Exception as e:
+        if "intercepts pointer events" not in str(e):
+            raise
+        await locator.dispatch_event("click")
+        return "js_dispatch"
+
+
 async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     """Click an element and return post-click state.
 
@@ -100,7 +122,7 @@ async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     locator = page.locator(selector).first
     if not force:
         await locator.wait_for(state="visible", timeout=10000)
-    await locator.click(force=force)
+    method = await _click_with_overlay_fallback(page, selector, force)
     try:
         await page.wait_for_load_state("networkidle", timeout=5000)
     except Exception:
@@ -108,7 +130,11 @@ async def click_element(page: Page, selector: str, force: bool = False) -> dict:
     # SPA routers often push the new URL slightly after the network settles —
     # without this beat the reported URL/screenshot are pre-navigation (issue #9).
     await page.wait_for_timeout(250)
-    return {"url": page.url, "title": await page.title()}
+    result = {"url": page.url, "title": await page.title()}
+    if method != "pointer":
+        result["click_method"] = method
+        result["overlay_bypassed"] = True
+    return result
 
 
 _DATE_TYPES = {"date", "time", "datetime-local", "month", "week"}
@@ -245,28 +271,46 @@ async def fill_form(page: Page, fields: list[dict], submit_selector: str = None,
 
 
 async def select_option(
-    page: Page, selector: str, value: str = None, label: str = None, index: int = None
+    page: Page, selector: str, value: str = None, label: str = None, index: int = None,
+    element_index: int = 0,
 ) -> dict:
     """Select from native <select> or custom dropdown (Radix/shadcn combobox).
 
     Detection: checks el.tagName == 'SELECT' vs role='combobox' / aria-haspopup.
     Native: uses locator.select_option().
     Custom: clicks to open, then finds option via cascade of selectors.
+
+    Args:
+        element_index: which match of `selector` to target (0-based) — for pages
+            with multiple attribute-less <select> elements (issue #16).
     """
-    el_info = await page.evaluate("""(selector) => {
-        const el = document.querySelector(selector);
-        if (!el) return null;
-        return {
+    if ">>" in selector:
+        return {"success": False, "error":
+                "Playwright locator syntax ('>>') is not supported — use a plain CSS "
+                "selector plus element_index to target the Nth match "
+                "(e.g. selector='select', element_index=1 for the second <select>)."}
+
+    el_info = await page.evaluate("""(args) => {
+        const [selector, idx] = args;
+        const els = document.querySelectorAll(selector);
+        const el = els[idx];
+        if (!el) return { found: null, total: els.length };
+        return { found: {
             tagName: el.tagName.toLowerCase(),
             role: el.getAttribute('role'),
             ariaHasPopup: el.getAttribute('aria-haspopup'),
-        };
-    }""", selector)
+        }, total: els.length };
+    }""", [selector, element_index])
 
-    if not el_info:
+    if not el_info["found"]:
+        if el_info["total"]:
+            return {"success": False, "error":
+                    f"element_index {element_index} out of range: '{selector}' matches "
+                    f"{el_info['total']} element(s) (0-based)"}
         return {"success": False, "error": f"Element not found: {selector}"}
+    el_info = el_info["found"]
 
-    locator = page.locator(selector).first
+    locator = page.locator(selector).nth(element_index)
 
     # Native <select>
     if el_info["tagName"] == "select":
@@ -440,7 +484,10 @@ async def execute_steps(
                 locator = page.locator(step["selector"]).first
                 if not force:
                     await locator.wait_for(state="visible", timeout=10000)
-                await locator.click(force=force)
+                method = await _click_with_overlay_fallback(page, step["selector"], force)
+                if method != "pointer":
+                    step_result["click_method"] = method
+                    step_result["overlay_bypassed"] = True
                 try:
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
@@ -448,8 +495,10 @@ async def execute_steps(
                 step_result["url"] = page.url
 
             elif action == "force_click":
-                locator = page.locator(step["selector"]).first
-                await locator.click(force=True)
+                method = await _click_with_overlay_fallback(page, step["selector"], force=True)
+                if method != "pointer":
+                    step_result["click_method"] = method
+                    step_result["overlay_bypassed"] = True
                 try:
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
@@ -631,6 +680,7 @@ async def execute_steps(
                     value=step.get("value"),
                     label=step.get("label"),
                     index=step.get("index"),
+                    element_index=int(step.get("element_index") or 0),
                 )
                 step_result["select_result"] = result
 
@@ -639,15 +689,22 @@ async def execute_steps(
                 step_result["error"] = f"Unknown action: {action}"
 
         except Exception as e:
+            # A KeyError here is a missing step field (step["url_pattern"] etc.) —
+            # str(KeyError) is just "'url_pattern'", which is cryptic (issue #19).
+            if isinstance(e, KeyError) and e.args:
+                message = (f"missing required field '{e.args[0]}' for action '{action}' "
+                           f"(see the interact_and_test steps schema for per-action fields)")
+            else:
+                message = str(e)
             step_result["success"] = False
-            step_result["error"] = str(e)
+            step_result["error"] = message
             results.append(step_result)
             if not continue_on_error:
                 return {
                     "completed": i + 1,
                     "total_steps": len(steps),
                     "success": False,
-                    "error": f"Step {i} ({action}) failed: {e}",
+                    "error": f"Step {i} ({action}) failed: {message}",
                     "steps": results,
                     "screenshots": screenshots,
                 }
@@ -734,38 +791,73 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
 
 
 async def measure_interaction_timing(
-    page: Page, selector: str, wait_for: str = None
+    page: Page, selector: str, wait_for: str = None, wait_for_network: str = None,
 ) -> dict:
     """Click an element and measure time until condition is met.
 
     Args:
         page: Playwright page
         selector: Element to click
-        wait_for: Optional selector to wait for appearing, or None for networkidle
+        wait_for: Optional selector to wait for appearing
+        wait_for_network: Optional URL substring — measure until the matching
+            response completes. Use this for handlers that fire a request
+            asynchronously after the click: plain networkidle can settle on an
+            early idle window *before* the request even starts and report a
+            misleadingly tiny time (issue #17).
 
-    Returns timing info in ms.
+    Returns timing info in ms, plus the real INP of the click when measurable.
     """
     locator = page.locator(selector).first
     await locator.wait_for(state="visible", timeout=10000)
 
     start = time.time()
-    await locator.click()
+    start_epoch_ms = start * 1000
+    matched = {}
 
-    if wait_for:
+    if wait_for_network:
+        owner = _owner_page(page)
+        # Arm the waiter BEFORE clicking — a fast response would otherwise be missed.
+        async with owner.expect_response(
+            lambda r: wait_for_network in r.url, timeout=30000
+        ) as resp_info:
+            await locator.click()
+        response = await resp_info.value
+        matched = {"matched_url": response.url, "matched_status": response.status}
+        waited = f"network response matching '{wait_for_network}'"
+    elif wait_for:
+        await locator.click()
         target = page.locator(wait_for).first
         await target.wait_for(state="visible", timeout=30000)
+        waited = wait_for
     else:
+        await locator.click()
         try:
             await page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
+        waited = "networkidle"
 
     elapsed_ms = round((time.time() - start) * 1000)
 
-    return {
+    # Real INP of this click, from Event Timing entries recorded since start.
+    inp_ms = None
+    records = [r for r in await read_interaction_log(page)
+               if r.get("epoch_ms", 0) >= start_epoch_ms - 50]
+    if records:
+        inp_ms = round(max(r["dur"] for r in records))
+
+    result = {
         "clicked": selector,
-        "waited_for": wait_for or "networkidle",
+        "waited_for": waited,
         "elapsed_ms": elapsed_ms,
+        "measures": "click to " + (
+            "matching network response" if wait_for_network
+            else "selector visible" if wait_for
+            else "first network-idle window (may under-measure async handlers — "
+                 "pass wait_for_network to bind to a specific request)"),
+        "interaction_to_next_paint_ms": inp_ms,
         "url": page.url,
         "title": await page.title(),
     }
+    result.update(matched)
+    return result

@@ -75,6 +75,7 @@ async def handle_measure_interaction(args: dict) -> dict:
             session.page,
             args["selector"],
             wait_for=args.get("wait_for"),
+            wait_for_network=args.get("wait_for_network"),
         )
         session.url = result["url"]
         screenshot_path = await interactions.take_screenshot(

@@ -247,7 +247,7 @@ TOOLS: list[Tool] = [
         # Interactive Tools
         Tool(
             name="click_element",
-            description="Click an element in a session page. Returns a screenshot and the new URL/title after click. Use force=true to bypass actionability checks (useful when overlays intercept pointer events).",
+            description="Click an element in a session page. Returns a screenshot and the new URL/title after click. If a full-screen portal overlay (Radix/shadcn dialogs & menus) intercepts the pointer, automatically falls back to an element-level JS click and flags click_method='js_dispatch' — no workaround needed. Use force=true to bypass actionability checks for other cases (hidden/animating elements).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -316,9 +316,10 @@ TOOLS: list[Tool] = [
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
-                                "url_pattern": {"type": "string", "description": "URL substring to match (for wait_for_network)"},
+                                "url_pattern": {"type": "string", "description": "Required for wait_for_network: plain substring of the request URL (not a regex)"},
                                 "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
-                                "index": {"type": "integer", "description": "Option index (for select_option)"}
+                                "index": {"type": "integer", "description": "Option index (for select_option)"},
+                                "element_index": {"type": "integer", "description": "Which match of 'selector' to target, 0-based (for select_option; default: 0)"}
                             },
                             "required": ["action"]
                         }
@@ -431,13 +432,14 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="measure_interaction",
-            description="Click an element and measure how long until the result settles — a target selector appears, or the network goes idle if no selector is given. Returns the elapsed time in milliseconds. Use to quantify the perceived latency of a specific action (search, filter, load-more).",
+            description="Click an element and measure how long until the result settles. Returns elapsed_ms, a 'measures' note stating exactly what was timed, and the click's real interaction_to_next_paint_ms when measurable. Three modes: wait_for_network (URL substring) measures until that response completes — use this for buttons whose handler fires a request asynchronously, where plain network-idle settles early and under-measures; wait_for (selector) measures until it appears; default measures to the first network-idle window.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector of element to click"},
-                    "wait_for": {"type": "string", "description": "CSS selector to wait for (default: waits for networkidle)"}
+                    "wait_for": {"type": "string", "description": "CSS selector to wait for (optional)"},
+                    "wait_for_network": {"type": "string", "description": "URL substring — measure until the matching response completes (armed before the click, so fast responses aren't missed). Plain substring, not a regex. Prefer this for async submit/save buttons."}
                 },
                 "required": ["session_id", "selector"]
             }
@@ -476,9 +478,10 @@ TOOLS: list[Tool] = [
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
-                                "url_pattern": {"type": "string", "description": "URL pattern (for wait_for_network)"},
+                                "url_pattern": {"type": "string", "description": "Required for wait_for_network: plain substring of the request URL (not a regex)"},
                                 "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
-                                "index": {"type": "integer", "description": "Option index (for select_option)"}
+                                "index": {"type": "integer", "description": "Option index (for select_option)"},
+                                "element_index": {"type": "integer", "description": "Which match of 'selector' to target, 0-based (for select_option; default: 0)"}
                             },
                             "required": ["action"]
                         }
@@ -621,12 +624,12 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="wait_for_network",
-            description="Block until a network request whose URL contains the given substring completes (optionally filtered by HTTP method), up to timeout. Returns the matched request's URL/status/method, or times out. To catch a request fired by a click, run the click and this as consecutive steps in one interact_and_test call; after the fact, read get_response_body/get_network_log instead.",
+            description="Block until a network request whose URL contains the given substring completes (optionally filtered by HTTP method), up to timeout. url_pattern is required and is a plain substring match against the full URL including query string — not a regex or glob. Returns the matched request's URL/status/method, or times out. To catch a request fired by a click, run the click and this as consecutive steps in one interact_and_test call; after the fact, read get_response_body/get_network_log instead.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "url_pattern": {"type": "string", "description": "Substring to match in request URL (e.g. '/api/tasks', 'graphql')"},
+                    "url_pattern": {"type": "string", "description": "Required. Plain substring of the full request URL incl. query string (e.g. '/api/tasks', 'graphql') — not a regex; anchors ($) and wildcards (.*) never match."},
                     "method": {"type": "string", "description": "HTTP method filter (optional, e.g. 'POST', 'GET')"},
                     "timeout": {"type": "integer", "description": "Max wait time in ms (default: 30000)"}
                 },
@@ -642,7 +645,7 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "url_pattern": {"type": "string", "description": "URL substring to match (e.g. '/api/tasks', 'graphql')"},
+                    "url_pattern": {"type": "string", "description": "Plain substring of the full URL to match (e.g. '/api/tasks', 'graphql') — not a regex or glob."},
                     "status": {"type": "integer", "description": "HTTP status code to return (default: 200)"},
                     "body": {"type": "string", "description": "Response body (JSON string or plain text)"},
                     "content_type": {"type": "string", "description": "Content-Type header (default: 'application/json')"},
@@ -817,7 +820,7 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "url_filter": {"type": "string", "description": "URL substring filter (optional, e.g. '/api/')"},
+                    "url_filter": {"type": "string", "description": "Optional plain-substring filter against the full URL incl. query string (e.g. '/api/') — not a regex or glob."},
                     "clear": {"type": "boolean", "description": "Clear the log after reading (default: false)"}
                 },
                 "required": ["session_id"]
@@ -961,27 +964,28 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="select_option",
-            description="Select an option from a native <select> or a custom dropdown (Radix/shadcn combobox), auto-detecting which. Choose by value, label, or index. Returns {success} and the resulting selection. For custom dropdowns it opens the menu and clicks the matching option — use this rather than click+click.",
+            description="Select an option from a native <select> or a custom dropdown (Radix/shadcn combobox), auto-detecting which. Choose by value, label, or index. Returns {success} and the resulting selection. For custom dropdowns it opens the menu and clicks the matching option — use this rather than click+click. When a page has several attribute-less <select> elements, pass element_index to target the Nth match of the selector (Playwright '>>' syntax is not supported).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "selector": {"type": "string", "description": "CSS selector for the <select> or combobox trigger"},
+                    "selector": {"type": "string", "description": "CSS selector for the <select> or combobox trigger (plain CSS only — no Playwright '>>' syntax)"},
                     "value": {"type": "string", "description": "Option value to select"},
                     "label": {"type": "string", "description": "Option label text to select"},
-                    "index": {"type": "integer", "description": "Option index to select (0-based)"}
+                    "index": {"type": "integer", "description": "Option index to select (0-based)"},
+                    "element_index": {"type": "integer", "description": "Which match of 'selector' to target, 0-based (default: 0). Use for the 2nd/3rd attribute-less <select> on a page."}
                 },
                 "required": ["session_id", "selector"]
             }
         ),
         Tool(
             name="get_response_body",
-            description="Return the captured response body text for a request whose URL contains a substring (optionally filtered by method). Returns the body (JSON/text). Bodies are captured automatically for fetch/xhr/document requests, making this the fastest way to diagnose a 400/500 — it reads already-captured traffic, no setup before the request.",
+            description="Return the captured response body text for a request whose URL contains a substring (optionally filtered by method). Matching is a plain substring test against the full URL incl. query string — not a regex or glob. On a miss it lists the captured candidate URLs so you can adjust the pattern in one round-trip. Bodies are captured automatically for fetch/xhr/document requests, making this the fastest way to diagnose a 400/500 — no setup before the request.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "url_pattern": {"type": "string", "description": "URL substring to match (e.g. '/api/quotes', 'graphql')"},
+                    "url_pattern": {"type": "string", "description": "Plain substring of the full URL incl. query string (e.g. '/api/quotes', 'graphql') — not a regex; anchors ($) and wildcards (.*) never match."},
                     "method": {"type": "string", "description": "HTTP method filter (optional, e.g. 'POST', 'GET')"}
                 },
                 "required": ["session_id", "url_pattern"]

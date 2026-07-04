@@ -84,9 +84,9 @@ close_session(session_id)
 - `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
 ### Interactive Tools
-- `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. `force=true` bypasses overlay interception.
+- `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. Portal overlays (Radix/shadcn) that intercept the pointer trigger an automatic element-level JS-click fallback (flagged `click_method: "js_dispatch"`).
 - `fill_form(session_id, fields[], submit_selector?, force?)` — Fill fields, optionally submit; `force=true` bypasses actionability checks (overlays, dialogs behind inputs)
-- `select_option(session_id, selector, value?, label?, index?)` — Select from native `<select>` or custom dropdown (Radix/shadcn combobox). Auto-detects type.
+- `select_option(session_id, selector, value?, label?, index?, element_index?)` — Select from native `<select>` or custom dropdown (Radix/shadcn combobox). Auto-detects type. `element_index` targets the Nth match of the selector (attribute-less selects).
 - `interact_and_test(url|session_id, steps[], run_checks?[], capture_console?, ...)` — Multi-step workflow (`capture_console=true` returns console output from the steps) with 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
 - `get_page_elements(selector, url|session_id, max_results?, attributes?[], full_text?)` — List matching elements with attributes; `attributes[]` adds specific HTML attribute values (data-*, aria-*, style), `full_text=true` returns complete text content
 
@@ -95,7 +95,7 @@ close_session(session_id)
 - `compare_screenshots(screenshot1, screenshot2, threshold?)` — Pixel diff using Pillow
 - `test_responsive(url, viewports?[], run_checks?[])` — Test at mobile/tablet/desktop viewports
 - `check_links(url|session_id, check_external?, max_links?)` — Comprehensive link checker
-- `measure_interaction(session_id, selector, wait_for?)` — Measure click-to-result timing
+- `measure_interaction(session_id, selector, wait_for?, wait_for_network?)` — Measure click-to-result timing + the click's real INP. `wait_for_network` (URL substring) binds the measurement to that response — use it for async submit handlers where network-idle settles early.
 - `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
 - `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
 - `run_lighthouse(url, categories?[], device?, timeout?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, full report saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
@@ -134,7 +134,7 @@ close_session(session_id)
 - `page_state(session_id, action, name)` — Named checkpoints: `snapshot` saves URL + cookies + storage + DOM, `restore` returns to it, `diff` compares current DOM vs it
 - `get_cookies(session_id, domain_filter?)` — Read all cookies from session context
 - `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
-- `get_response_body(session_id, url_pattern, method?)` — Get actual API response body text. Critical for diagnosing 400/500 errors. Bodies captured automatically for fetch/xhr/document requests.
+- `get_response_body(session_id, url_pattern, method?)` — Get actual API response body text (`url_pattern` = plain substring of the full URL, not regex; a miss lists the captured URLs). Critical for diagnosing 400/500 errors. Bodies captured automatically for fetch/xhr/document requests.
 
 ### Web Tools
 - `web_search(query, max_results?)` — Search DuckDuckGo, returns titles + URLs + snippets

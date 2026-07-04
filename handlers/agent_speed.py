@@ -476,6 +476,10 @@ async def handle_get_network_log(args: dict) -> dict:
             ],
         }
 
+        if url_filter and not log and session.network_log:
+            result["note"] = ("url_filter is a plain substring of the full URL "
+                              "(incl. query string) — not a regex or glob.")
+
         if clear:
             session.network_log.clear()
             result["cleared"] = True
@@ -700,11 +704,26 @@ async def handle_get_response_body(args: dict) -> dict:
         ]
 
         if not matching:
+            # Echo the candidates so pattern debugging takes one round-trip, and
+            # spell out the matching semantics (issue #18: '$' anchors / '.*'
+            # regex patterns silently never match).
+            candidates, seen = [], set()
+            for entry in reversed(session.response_bodies):
+                u = entry["url"]
+                if u in seen:
+                    continue
+                seen.add(u)
+                candidates.append(u if len(u) <= 120 else "..." + u[-117:])
+                if len(candidates) >= 15:
+                    break
             return {
                 "success": False,
-                "error": f"No response bodies found matching '{url_pattern}'",
+                "error": f"No response bodies found matching '{url_pattern}'. Matching is a "
+                         "plain substring test against the full URL (including query string) — "
+                         "not a regex or glob, so anchors ($) and wildcards (.*) never match.",
                 "url_pattern": url_pattern,
                 "total_captured": len(session.response_bodies),
+                "captured_urls": candidates,
             }
 
         # Return the last matching entry

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Overlay and Select Fixture Page</title>
+</head>
+<body>
+  <h1>Overlay fixture</h1>
+  <p id="status">idle</p>
+
+  <!-- #15: button covered by a Radix-style full-screen portal overlay -->
+  <button id="covered-btn" onclick="document.getElementById('status').textContent='CLICKED'">
+    Confirm
+  </button>
+  <button id="plain-btn" onclick="document.getElementById('status').textContent='PLAIN'">
+    Plain
+  </button>
+  <div data-overlay data-aria-hidden="true"
+       style="position:fixed; inset:0; z-index:50;"></div>
+  <script>
+    // Keep #plain-btn reachable: the overlay covers everything, so lift the
+    // plain button above it — only #covered-btn stays intercepted.
+    document.getElementById('plain-btn').style.position = 'relative';
+    document.getElementById('plain-btn').style.zIndex = '60';
+  </script>
+
+  <!-- #16: three attribute-less selects (form-library style) -->
+  <form>
+    <select><option value="">--</option><option value="a1">Alpha1</option><option value="b1">Beta1</option></select>
+    <select><option value="">--</option><option value="a2">Alpha2</option><option value="b2">Beta2</option></select>
+    <select><option value="">--</option><option value="a3">Alpha3</option><option value="b3">Beta3</option></select>
+  </form>
+
+  <!-- #17: save button whose handler fires the request asynchronously -->
+  <button id="save" style="position:relative; z-index:60;">Save</button>
+  <script>
+    document.getElementById('save').addEventListener('click', () => {
+      // The fetch starts well after the click handler returns — an early
+      // network-idle window opens before the request registers.
+      setTimeout(() => fetch('/api/items?from=save'), 400);
+    });
+  </script>
+</body>
+</html>

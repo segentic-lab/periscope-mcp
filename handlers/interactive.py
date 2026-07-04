@@ -262,7 +262,12 @@ async def handle_upload_file(args: dict) -> dict:
 @tool("wait_for_network")
 async def handle_wait_for_network(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
-        url_pattern = args["url_pattern"]
+        url_pattern = args.get("url_pattern")
+        if not url_pattern:
+            return {"success": False, "error":
+                    "wait_for_network requires 'url_pattern' — a plain substring of the "
+                    "request URL to wait for (e.g. '/api/tasks'), not a regex. To wait for "
+                    "general quiet instead, use a 'wait' step or wait_for_gone on a spinner."}
         method_filter = args.get("method")
         timeout = args.get("timeout", 30000)
 
@@ -344,6 +349,7 @@ async def handle_select_option(args: dict) -> dict:
             value=args.get("value"),
             label=args.get("label"),
             index=args.get("index"),
+            element_index=int(args.get("element_index") or 0),
         )
         screenshot_path = await interactions.take_screenshot(
             session.page, session.project_name, "after_select_option", screenshot_dir=session.screenshot_dir)

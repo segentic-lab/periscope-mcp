@@ -131,9 +131,24 @@ anything?".
   `wait_for_network` call after the click may miss a fast response. For
   after-the-fact inspection, `get_response_body` reads already-captured
   traffic instead.
-- Overlays intercepting clicks/fills: retry with `force=true`
-  (`click_element`) or `fill_form` with `force=true` — but only after a normal attempt fails.
+- Portal overlays (Radix/shadcn dialogs & menus) that intercept clicks are
+  handled automatically: the click falls back to an element-level JS dispatch
+  and the result is flagged `click_method: "js_dispatch"` — no `evaluate_js`
+  workaround needed. For fills blocked by overlays, use `fill_form` with
+  `force=true` after a normal attempt fails.
 - Custom dropdowns (Radix/shadcn): use `select_option`, not `click` + `click`.
+- Several attribute-less `<select>` elements on one page: pass
+  `element_index` to `select_option` to target the Nth match of the selector
+  (0-based). Playwright `>>` locator syntax is not supported in selectors.
+- Every `url_pattern`/`url_filter` is a **plain substring** of the full URL
+  (including query string) — never a regex or glob: anchors (`$`) and
+  wildcards (`.*`) silently never match. On a miss, `get_response_body`
+  lists the captured URLs so you can correct the pattern in one step.
+- Timing a button whose handler fires the request asynchronously (submit →
+  `fetch` a tick later): pass `wait_for_network` (URL substring) to
+  `measure_interaction` — the default network-idle mode can settle on an
+  early idle window and report a misleadingly tiny time. The result also
+  carries the click's real `interaction_to_next_paint_ms`.
 - `select_iframe(session_id, selector)` returns a **new** session id scoped to
   the iframe; use it like a normal session, and keep using the parent id for
   page-level actions.

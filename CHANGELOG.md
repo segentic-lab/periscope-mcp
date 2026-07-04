@@ -6,6 +6,42 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.9.4] - 2026-07-05
+
+Second test-agent batch: five issues (#15-#19) filed by the AI agent driving
+Periscope against a real authenticated Next.js app — all fixed with
+regression tests (9 new e2e tests against a new overlay/select fixture).
+
+### Fixed
+- **#15 — Portal overlays no longer block clicks.** When a Radix/shadcn
+  full-screen portal overlay (`fixed inset-0`) intercepts the pointer,
+  `click_element` and `interact_and_test` click steps automatically fall back
+  to an element-level JS dispatch click and flag the result
+  (`click_method: "js_dispatch"`, `overlay_bypassed: true`). This was ~30% of
+  interactions on Radix apps needing an `evaluate_js` workaround.
+- **#17 — `measure_interaction` no longer under-measures async handlers.**
+  New `wait_for_network` (URL substring) binds the measurement to that
+  response's completion (armed before the click, so fast responses aren't
+  missed); the result now states exactly what was measured (`measures`) and
+  includes the click's real `interaction_to_next_paint_ms`.
+- **#19 — Missing step fields now fail with an actionable message.** A step
+  lacking a required field (e.g. `wait_for_network` without `url_pattern`)
+  reports `missing required field 'url_pattern' for action 'wait_for_network'`
+  instead of a bare KeyError; the standalone tool validates up front.
+
+### Added
+- **#16 — `element_index` on `select_option`** (tool + step): target the Nth
+  match of a selector for pages with multiple attribute-less `<select>`
+  elements; Playwright `>>` syntax is rejected with a pointer to
+  `element_index`, and out-of-range indexes report the match count.
+
+### Changed
+- **#18 — `url_pattern`/`url_filter` semantics documented everywhere**: plain
+  substring against the full URL incl. query string — never regex/glob. On a
+  miss, `get_response_body` now returns the captured candidate URLs
+  (`captured_urls`) and `get_network_log` adds a semantics note, so pattern
+  debugging takes one round-trip.
+
 ## [0.9.3] - 2026-07-04
 
 ### Changed
@@ -66,6 +102,7 @@ authenticated sessions, built-in debugging, and a full audit suite (accessibilit
 SEO, GEO/agentic-search readiness, Core Web Vitals, Lighthouse). See the
 [release notes](https://github.com/segentic-lab/periscope-mcp/releases/tag/v0.9.0).
 
+[0.9.4]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.0...v0.9.1
