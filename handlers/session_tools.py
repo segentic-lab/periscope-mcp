@@ -128,7 +128,19 @@ async def handle_set_viewport(args: dict) -> dict:
 async def handle_screenshot_session(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         full_page = args.get("full_page", True)
-        if full_page:
+        selector = args.get("selector")
+        if selector:
+            # Element clip: screenshot just the matching element (evidence citing)
+            base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
+            project_dir = os.path.join(base_dir, session.project_name)
+            os.makedirs(project_dir, exist_ok=True)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            screenshot_path = os.path.join(project_dir, f"element_{timestamp}.png")
+            locator = session.page.locator(selector).first
+            await locator.wait_for(state="visible", timeout=10000)
+            await locator.screenshot(path=screenshot_path)
+        elif full_page:
             screenshot_path = await interactions.take_screenshot(
                 session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir)
         else:
@@ -144,6 +156,80 @@ async def handle_screenshot_session(args: dict) -> dict:
             "screenshot_path": screenshot_path,
             "url": session.url,
             "title": await session.page.title(),
+        }
+
+
+@tool("select_page")
+async def handle_select_page(args: dict) -> dict:
+        """Adopt a popup / new tab opened by this session (window.open,
+        target=_blank, OAuth windows) as a NEW session you can drive with every
+        normal tool. Console/network capture has been running since the popup
+        opened, so nothing from its initial load is lost. With several popups
+        open, call without 'index' to list them, then pass the index."""
+        import time as _time
+        import uuid as _uuid
+        from sessions import PageSession
+
+        session = session_manager.get_session(args["session_id"])
+        if session.parent_session_id:
+            return {"success": False, "error":
+                    "select_page works on the root session — pass the parent session id "
+                    f"('{session.parent_session_id}'), not a derived one."}
+
+        live = [e for e in session.popups if not e["page"].is_closed()]
+        if not live:
+            return {"success": False, "error":
+                    "No open popups/new tabs for this session. Popups are captured "
+                    "automatically when the page opens one (window.open, target=_blank); "
+                    "trigger the opener first, then call select_page."}
+
+        index = args.get("index")
+        if index is None and len(live) > 1:
+            return {"success": True, "action_needed": "pick_index",
+                    "pages": [{"index": i, "url": e["page"].url,
+                               "already_adopted": bool(e.get("adopted_session_id"))}
+                              for i, e in enumerate(live)],
+                    "note": "Several popups are open — call again with 'index'."}
+        entry = live[int(index or 0)] if int(index or 0) < len(live) else None
+        if entry is None:
+            return {"success": False, "error":
+                    f"index {index} out of range — {len(live)} open popup(s) (0-based)."}
+
+        if entry.get("adopted_session_id") and entry["adopted_session_id"] in session_manager.sessions:
+            popup_session_id = entry["adopted_session_id"]  # idempotent re-select
+        else:
+            page = entry["page"]
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=10000)
+            except Exception:
+                pass
+            popup_session_id = _uuid.uuid4().hex[:12]
+            now = _time.time()
+            cl, ce, nl, rb = entry["captures"]
+            popup_session = PageSession(
+                session_id=popup_session_id,
+                project_name=session.project_name,
+                page=page,
+                url=page.url,
+                created_at=now,
+                last_accessed=now,
+                console_log=cl, console_errors=ce,
+                network_log=nl, response_bodies=rb,
+                screenshot_dir=session.screenshot_dir,
+                parent_session_id=session.session_id,
+            )
+            session_manager.register_session(popup_session)
+            entry["adopted_session_id"] = popup_session_id
+
+        popup_page = entry["page"]
+        return {
+            "success": True,
+            "session_id": popup_session_id,
+            "url": popup_page.url,
+            "title": await popup_page.title(),
+            "parent_session_id": session.session_id,
+            "note": "Drive this like any session (click, assert, logs…); close_session "
+                    "when done. The parent session id keeps working for the original tab.",
         }
 
 

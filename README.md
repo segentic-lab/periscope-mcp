@@ -2,7 +2,7 @@
 
 [![periscope-mcp MCP server](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp/badges/score.svg)](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp)
 
-An MCP server that gives AI agents **67 Playwright tools to QA, test, and
+An MCP server that gives AI agents **73 Playwright tools to QA, test, and
 analyze web apps** — static sites, SPAs, and apps behind a login — returning
 hard verdicts, not screenshots to squint at. Not a thin wrapper around browser
 APIs; the tools are shaped around how agents actually work:
@@ -67,14 +67,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 67 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 73 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 67 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 73 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -225,10 +225,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 67 tools
+agent's system prompt (or custom instructions) so it drives the 73 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (67 tools)
+## MCP Tools Reference (73 tools)
 
 ### Project Management (4 tools)
 
@@ -274,7 +274,7 @@ flags that automatically — see the auth-expiry detection in `test_project`).
 | `list_reports` | List saved test reports | _(optional: `project`)_ |
 | `get_report` | Read a report file | `report_path` |
 
-### Session Management (4 tools)
+### Session Management (5 tools)
 
 Sessions keep browser pages alive across tool calls, enabling multi-step interactive workflows.
 
@@ -284,10 +284,11 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `close_session` | Close session and free resources | `session_id` |
 | `list_sessions` | List all active sessions | _(none)_ |
 | `set_viewport` | Switch viewport size (8 device presets or custom w/h) | `session_id` |
+| `select_page` | Adopt a popup/new tab (OAuth, target=_blank) as a new drivable session | `session_id` |
 
 `set_viewport` presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
-### Interactive Actions (6 tools)
+### Interactive Actions (7 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -296,17 +297,19 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `select_option` | Native `<select>` or custom dropdown (Radix/shadcn) — auto-detects | `session_id`, `selector` |
 | `interact_and_test` | Multi-step workflow with 25 actions (see below) | `steps` |
 | `get_page_elements` | List matching elements with attributes | `selector` |
+| `flow` | Save / run / list / delete named step sequences (reusable workflows) | _(varies by action)_ |
 | `scroll_into_view` | Scroll element into viewport without clicking | `session_id`, `selector` |
 
 **`interact_and_test` supports 25 step actions:**
 `click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
 
-### Analysis (9 tools)
+### Analysis (10 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `test_form_validation` | Analyze form validation messages | _(url or session_id)_ |
 | `compare_screenshots` | Pixel diff between two screenshots | `screenshot1`, `screenshot2` |
+| `visual_check` | Named visual-regression baselines: set once, check for a hard pass/fail | `session_id`, `name` |
 | `test_responsive` | Test at mobile/tablet/desktop viewports | `url` |
 | `check_links` | Comprehensive link checker (internal + external) | _(url or session_id)_ |
 | `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
@@ -328,7 +331,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `wait_for_gone` | Wait for element to disappear (modal close, spinner gone) | `session_id`, `selector` |
 | `get_page_html` | Raw outerHTML of elements, or full page HTML | `session_id` |
 
-### Advanced Testing (8 tools)
+### Advanced Testing (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -340,6 +343,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_computed_style` | Get actual rendered CSS values | `session_id`, `selector`, `properties` |
 | `emulate_network` | Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset` | `session_id`, `preset` |
 | `test_dark_mode` | Toggle `prefers-color-scheme` dark/light | `session_id`, `mode` |
+| `download_file` | Click a trigger and capture the downloaded file (path, sha256, text preview) | `session_id`, `selector` |
 
 ### Recording & Console (3 tools)
 
@@ -349,11 +353,13 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
 | `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
 
-### AI Agent Speed Tools (8 tools)
+### AI Agent Speed Tools (10 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `assert_condition` | Programmatic pass/fail: text_contains, element_exists, url_contains, etc. | `session_id`, `assertion` |
+| `assert_all` | Batch assertions — every verdict in one call, no early abort | `session_id`, `assertions` |
+| `get_page_map` | Semantic page map: roles, names, states + ready selectors in one call | `session_id` |
 | `find_element` | Smart finder by text, tag, role, or proximity to another element | `session_id` |
 | `auto_fill_form` | Auto-detect fields, infer types, fill with test data. One call = many fills. | `session_id` |
 | `get_network_log` | All captured network requests (URL, status, method, type) | `session_id` |

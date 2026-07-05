@@ -25,7 +25,52 @@ class PageSession:
     cdp_session: object = None  # cached CDP session for network emulation
     parent_session_id: str = None  # set on iframe sessions: the page session owning the frame
     own_context: object = None  # set on project-less sessions: their private context, closed with them
+    popups: list = field(default_factory=list)  # {"page", "captures", "adopted_session_id"?} per popup this page opened
     wait_downgraded: bool = False  # networkidle never settled; navigation used 'load' (issue #14)
+
+
+def attach_capture(page) -> tuple[list, list, list, list]:
+    """Attach console/network/response-body listeners to a page; returns the
+    four capped buffers. Shared by root sessions and adopted popups."""
+    console_log, console_errors, network_log, response_bodies = [], [], [], []
+
+    def on_console(msg):
+        if msg.type == "error":
+            _capped_append(console_errors, msg.text, config.MAX_CONSOLE_LOG)
+        else:
+            _capped_append(console_log, msg.text, config.MAX_CONSOLE_LOG)
+
+    async def on_response(response):
+        _capped_append(network_log, {
+            "url": response.url,
+            "status": response.status,
+            "method": response.request.method,
+            "resource_type": response.request.resource_type,
+            "timestamp": time.time(),
+        }, config.MAX_NETWORK_LOG)
+        # Capture response bodies for fetch/xhr/document requests
+        if response.request.resource_type in ("fetch", "xhr", "document"):
+            try:
+                body = await response.text()
+                if len(body) > config.MAX_RESPONSE_BODY_SIZE:
+                    body = body[:config.MAX_RESPONSE_BODY_SIZE] + "... [truncated]"
+                response_bodies.append({
+                    "url": response.url,
+                    "status": response.status,
+                    "method": response.request.method,
+                    "content_type": response.headers.get("content-type", ""),
+                    "body_text": body,
+                    "timestamp": time.time(),
+                })
+                if len(response_bodies) > config.MAX_RESPONSE_BODIES:
+                    response_bodies.pop(0)
+            except Exception:
+                pass
+
+    page.on("console", on_console)
+    page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
+    page.on("response", on_response)
+    return console_log, console_errors, network_log, response_bodies
 
 
 def real_page(page_or_frame) -> Page:
@@ -96,48 +141,12 @@ class SessionManager:
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
 
-        console_log = []
-        console_errors = []
-        network_log = []
-        response_bodies = []
+        console_log, console_errors, network_log, response_bodies = attach_capture(page)
 
-        def on_console(msg):
-            if msg.type == "error":
-                _capped_append(console_errors, msg.text, config.MAX_CONSOLE_LOG)
-            else:
-                _capped_append(console_log, msg.text, config.MAX_CONSOLE_LOG)
-
-        async def on_response(response):
-            _capped_append(network_log, {
-                "url": response.url,
-                "status": response.status,
-                "method": response.request.method,
-                "resource_type": response.request.resource_type,
-                "timestamp": time.time(),
-            }, config.MAX_NETWORK_LOG)
-            # Capture response bodies for fetch/xhr/document requests
-            if response.request.resource_type in ("fetch", "xhr", "document"):
-                try:
-                    body = await response.text()
-                    if len(body) > config.MAX_RESPONSE_BODY_SIZE:
-                        body = body[:config.MAX_RESPONSE_BODY_SIZE] + "... [truncated]"
-                    content_type = response.headers.get("content-type", "")
-                    response_bodies.append({
-                        "url": response.url,
-                        "status": response.status,
-                        "method": response.request.method,
-                        "content_type": content_type,
-                        "body_text": body,
-                        "timestamp": time.time(),
-                    })
-                    if len(response_bodies) > config.MAX_RESPONSE_BODIES:
-                        response_bodies.pop(0)
-                except Exception:
-                    pass
-
-        page.on("console", on_console)
-        page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
-        page.on("response", on_response)
+        # Popups (window.open / target=_blank / OAuth): capture at birth so the
+        # popup's own loading traffic is recorded; adopt later via select_page.
+        popups = []
+        page.on("popup", lambda p: popups.append({"page": p, "captures": attach_capture(p)}))
 
         # Capture real INP across the session's interactions (before page scripts)
         from interactions import INP_INIT_SCRIPT
@@ -164,6 +173,7 @@ class SessionManager:
             response_bodies=response_bodies,
             screenshot_dir=screenshot_dir,
             wait_downgraded=downgraded,
+            popups=popups,
         )
         self.sessions[session_id] = session
         return session

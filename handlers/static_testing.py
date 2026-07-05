@@ -216,6 +216,71 @@ async def handle_compare_screenshots(args: dict) -> dict:
         return result
 
 
+@tool("visual_check")
+async def handle_visual_check(args: dict) -> dict:
+        """Named visual-regression baselines. action='set' captures the current
+        session page (or element) as the baseline; action='check' captures it
+        again and compares — pass/fail against max_diff_percent. Baselines are
+        stored per project+name, so the agent never bookkeeps screenshot paths."""
+        import re as _re
+        from utils import compare_screenshots as do_compare
+
+        session = session_manager.get_session(args["session_id"])
+        action = args.get("action", "check")
+        name = args.get("name", "")
+        if not name or not _re.fullmatch(r"[A-Za-z0-9._-]{1,80}", name):
+            return {"success": False, "error":
+                    "visual_check requires 'name': 1-80 chars of letters, digits, . _ - "
+                    "(it identifies the baseline, e.g. 'dashboard-desktop')."}
+
+        baseline_dir = os.path.join(config.DATA_DIR, "baselines", session.project_name)
+        os.makedirs(baseline_dir, exist_ok=True)
+        baseline_path = os.path.join(baseline_dir, f"{name}.png")
+
+        async def capture(path):
+            selector = args.get("selector")
+            if selector:
+                locator = session.page.locator(selector).first
+                await locator.wait_for(state="visible", timeout=10000)
+                await locator.screenshot(path=path)
+            else:
+                await real_page(session.page).screenshot(
+                    path=path, full_page=args.get("full_page", True))
+
+        if action == "set":
+            replaced = os.path.exists(baseline_path)
+            await capture(baseline_path)
+            return {"success": True, "action": "set", "name": name,
+                    "baseline_path": baseline_path, "replaced": replaced}
+
+        if action == "check":
+            if not os.path.exists(baseline_path):
+                return {"success": False, "error":
+                        f"No baseline named '{name}' for project "
+                        f"'{session.project_name}' — capture one first with action='set'."}
+            current_path = baseline_path[:-4] + ".current.png"
+            await capture(current_path)
+            cmp = do_compare(baseline_path, current_path,
+                             threshold=args.get("threshold", 10))
+            if cmp.get("success") is False:
+                return cmp
+            max_diff = float(args.get("max_diff_percent") or 0.5)
+            diff_pct = cmp.get("diff_percentage", 100.0)
+            return {
+                "success": True, "action": "check", "name": name,
+                "passed": diff_pct <= max_diff,
+                "diff_percentage": diff_pct, "max_diff_percent": max_diff,
+                "baseline_path": baseline_path, "current_path": current_path,
+                "diff_image_path": cmp.get("diff_image_path"),
+                "note": None if diff_pct <= max_diff else
+                        "Inspect diff_image_path (changed pixels in red). If the change "
+                        "is intended, re-baseline with action='set'.",
+            }
+
+        return {"success": False,
+                "error": f"Unknown action '{action}' — use 'set' or 'check'."}
+
+
 @tool("test_responsive")
 async def handle_test_responsive(args: dict) -> dict:
         t = await get_tester()

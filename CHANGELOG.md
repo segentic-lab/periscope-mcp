@@ -6,6 +6,48 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.10.0] - 2026-07-06
+
+Capability release — six new tools + one new parameter, closing the gaps a
+tooling audit ranked by real agent friction. 73 tools now. Designed lean:
+every new tool reuses existing machinery (the step executor, the assertion
+evaluator, the screenshot compare, the overlay-fallback click).
+
+### Added
+- **`get_page_map`** — semantic page map in one call: every interactive
+  element + landmark/heading in document order, with ARIA role, accessible
+  name, live state, and a ready-to-use selector. Replaces multi-call
+  get_page_elements orientation; `unnamed` interactive elements are flagged
+  (an accessibility finding in itself). Compact by design: truthy-only state
+  fields, node cap with an explicit `truncated` flag.
+- **`select_page`** — adopt popups/new tabs (window.open, target=_blank,
+  OAuth/payment windows) as new drivable sessions. Popups are captured the
+  moment they open with console/network recording already attached, so their
+  initial load traffic is never lost. Unblocks a whole class of previously
+  untestable flows.
+- **`download_file`** — click a trigger and capture the downloaded file:
+  path, size, sha256, source URL, and a text preview for small text files.
+  Waiter armed before the click; the click handles portal overlays. When the
+  browser artifact comes back empty (a system-Chromium quirk), the file is
+  refetched over the session's cookies and flagged
+  `capture_method: "context_refetch"` — stated, never silent.
+- **`assert_all`** — batch assertions: every condition evaluated (no early
+  abort), per-item verdicts + overall `passed`/`failed_count` in one
+  round-trip. Same fields per item as assert_condition, same evaluator.
+- **`visual_check`** — named visual-regression baselines per project:
+  `set` captures the page or one element, `check` returns a hard pass/fail
+  against `max_diff_percent` plus a diff image. No screenshot-path
+  bookkeeping.
+- **`flow`** — save/run/list/delete named step sequences (interact_and_test's
+  exact format, same executor). Define login/smoke paths once, replay in any
+  session; verify with assert_all / visual_check after.
+- **`screenshot_session` gains `selector`** — clip the screenshot to one
+  element for evidence citing.
+
+### Fixed
+- e2e fixture server now sends Content-Length (downloads need it to
+  finalize).
+
 ## [0.9.6] - 2026-07-05
 
 Hardening of `periscope_system` from live-testing the self-update loop
@@ -147,6 +189,7 @@ authenticated sessions, built-in debugging, and a full audit suite (accessibilit
 SEO, GEO/agentic-search readiness, Core Web Vitals, Lighthouse). See the
 [release notes](https://github.com/segentic-lab/periscope-mcp/releases/tag/v0.9.0).
 
+[0.10.0]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.6...v0.10.0
 [0.9.6]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.3...v0.9.4

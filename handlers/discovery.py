@@ -21,16 +21,15 @@ async def handle_describe_tools(args: dict) -> dict:
         catalog = {
             "new": {
                 "name": "New Tools (Latest Release)",
-                "description": "8 new tools + 2 new interact_and_test actions added to reduce friction in interactive testing. Addresses: custom dropdowns, API response body inspection, overlay-blocked inputs, table parsing, toast capture, element waiting, HTML inspection, and scrolling.",
+                "description": "The 0.10 batch: semantic page map, batch assertions, popup/new-tab adoption, file downloads, visual-regression baselines, saved flows, and element-clip screenshots.",
                 "tools": {
-                    "fill_form (force)": {"params": "session_id, fields[], force=true", "note": "NEW — force=true fills inputs bypassing actionability checks. Use when overlays/dialogs block normal fill."},
-                    "select_option": {"params": "session_id, selector, value?, label?, index?", "note": "NEW — Native <select> or custom dropdown (Radix/shadcn combobox). Auto-detects type, clicks to open custom dropdowns."},
-                    "get_table_data": {"params": "session_id, selector?, max_rows?", "note": "NEW — Parse HTML table into structured JSON {headers, rows[]}. No more concatenated text."},
-                    "get_response_body": {"params": "session_id, url_pattern, method?", "note": "NEW — Get actual API response body text (url_pattern = plain substring, not regex; misses list captured URLs). Critical for diagnosing 400/500 errors."},
-                    "get_toast_messages": {"params": "session_id, wait_ms?, selector?", "note": "NEW — Capture visible toast/notification messages (role=alert, Toastify, Sonner, Radix, etc.)"},
-                    "wait_for_gone": {"params": "session_id, selector, timeout?", "note": "NEW — Wait for element to disappear (modal close, spinner gone). Returns elapsed_ms."},
-                    "get_page_html": {"params": "session_id, selector?, max_length?", "note": "NEW — Get raw outerHTML of elements or full page HTML for component inspection."},
-                    "scroll_into_view": {"params": "session_id, selector", "note": "NEW — Scroll element into viewport without clicking. Good for lazy-loaded content."},
+                    "get_page_map": {"params": "session_id, max_nodes?, include_hidden?", "note": "NEW — Orient in ONE call: interactive elements + landmarks with role, accessible name, state, ready-to-use selector. unnamed flags = a11y findings."},
+                    "assert_all": {"params": "session_id, assertions[]", "note": "NEW — Batch assertions, every verdict in one call (no early abort). Prefer over sequential assert_condition."},
+                    "select_page": {"params": "session_id, index?", "note": "NEW — Adopt a popup/new tab (OAuth, target=_blank) as a new drivable session; console/network captured from popup birth."},
+                    "download_file": {"params": "session_id, selector, timeout?", "note": "NEW — Click a trigger, capture the downloaded file: path, size, sha256, text preview. Honest capture_method flag."},
+                    "visual_check": {"params": "session_id, name, action(set|check), selector?", "note": "NEW — Named visual baselines: set once, check → hard pass/fail + diff image. Element-scoped baselines flake less."},
+                    "flow": {"params": "action(save|run|list|delete), name?, steps?, session_id?", "note": "NEW — Save named step sequences, replay in any session. Verify with assert_all after."},
+                    "screenshot_session (selector)": {"params": "session_id, selector", "note": "NEW — selector param clips the screenshot to one element (evidence citing)."},
                 },
             },
             "project": {
@@ -83,6 +82,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "close_session": {"params": "session_id", "note": "Close session and free resources"},
                     "list_sessions": {"params": "(none)", "note": "All active sessions with idle times"},
                     "set_viewport": {"params": "session_id, width?, height?, device?", "note": "Switch viewport. Presets: mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg"},
+                    "select_page": {"params": "session_id, index?", "note": "Adopt a popup/new tab as a new session (captured from birth)"},
                 },
             },
             "interactive": {
@@ -95,6 +95,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "select_option": {"params": "session_id, selector, value?, label?, index?, element_index?", "note": "Native <select> or custom dropdown (Radix/shadcn). element_index targets the Nth match of the selector (attribute-less selects)"},
                     "scroll_into_view": {"params": "session_id, selector", "note": "Scroll element into viewport without clicking"},
                     "get_page_elements": {"params": "selector, url|session_id, max_results?, attributes?[], full_text?", "note": "List elements with attributes; attributes[] adds data-*/aria-* values, full_text returns complete text"},
+                    "flow": {"params": "action, name?, steps?, session_id?", "note": "Save/run/list/delete named step sequences"},
                 },
             },
             "analysis": {
@@ -102,6 +103,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "description": "Deep checks on forms, links, responsiveness, screenshots, and timing.",
                 "tools": {
                     "test_form_validation": {"params": "url|session_id, form_selector?", "note": "Submit empty forms, collect validation messages"},
+                    "visual_check": {"params": "session_id, name, action(set|check), selector?", "note": "Named visual baselines with hard pass/fail"},
                     "compare_screenshots": {"params": "screenshot1, screenshot2, threshold?", "note": "Pixel diff — returns % changed + diff image"},
                     "test_responsive": {"params": "url, viewports?[], run_checks?[]", "note": "Test at mobile/tablet/desktop viewports"},
                     "run_lighthouse": {"params": "url, categories?[], device?, timeout?", "note": "Real Google Lighthouse audit: 0-100 scores + Core Web Vitals + failed audits. Needs Node.js."},
@@ -134,6 +136,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "clear_intercepts": {"params": "session_id, url_pattern?", "note": "Remove network mocks (all, or by pattern)"},
                     "get_local_storage": {"params": "session_id, storage?, keys?", "note": "Read localStorage or sessionStorage"},
                     "set_local_storage": {"params": "session_id, entries, storage?, clear_first?", "note": "Write to localStorage or sessionStorage"},
+                    "download_file": {"params": "session_id, selector, timeout?", "note": "Click trigger, capture downloaded file (path, sha256, preview)"},
                     "select_iframe": {"params": "session_id, selector", "note": "Enter iframe — returns new session_id"},
                                         "get_computed_style": {"params": "session_id, selector, properties[]", "note": "Get rendered CSS values"},
                     "emulate_network": {"params": "session_id, preset", "note": "Throttle: slow_3g, fast_3g, offline, reset"},
@@ -154,6 +157,8 @@ async def handle_describe_tools(args: dict) -> dict:
                 "name": "AI Agent Speed Tools",
                 "description": "Assertions, smart finders, auto-fill, network log, snapshots, cookies, contrast checks. Designed to replace multiple tool calls with one.",
                 "tools": {
+                    "assert_all": {"params": "session_id, assertions[]", "note": "Batch assertions: every verdict in one call"},
+                    "get_page_map": {"params": "session_id, max_nodes?", "note": "Semantic page map: roles, names, states + ready selectors"},
                     "assert_condition": {"params": "session_id, assertion, selector?, expected?, attribute?", "note": "Instant pass/fail: text_contains, text_equals, element_exists, element_visible, element_count, url_contains, title_contains, attribute_equals"},
                     "find_element": {"params": "session_id, text?, tag?, role?, near?, max_results?", "note": "Smart finder — search by text, tag, role, or proximity"},
                     "auto_fill_form": {"params": "session_id, form_selector?, overrides?, submit?", "note": "Auto-detect fields, infer types, fill with test data. Date/time inputs filled with React-compatible events."},

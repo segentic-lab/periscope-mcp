@@ -3,7 +3,7 @@
 
 # Website & Web-App Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 67 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 73 Playwright/Chrome tools
 for testing websites and web apps (static sites, SPAs, and apps behind a login).
 Call `describe_tools(category?)` anytime for the full catalog with parameters
 and workflows.
@@ -31,10 +31,13 @@ and workflows.
 
 ## Standard workflows
 
-**Explore then act.** Before clicking or filling anything:
-`get_page_elements(session_id, "button")` to list what's there, or
-`find_element(session_id, text="Submit")` to get the best selector for
-something you know by its text. Never guess selectors.
+**Explore then act.** Orient with ONE call: `get_page_map(session_id)` —
+every interactive element and landmark with its role, accessible name, state,
+and a ready-to-use selector, in document order (interactive elements with no
+accessible name come back flagged `unnamed`: an accessibility finding).
+For targeted lookups, `get_page_elements(session_id, "button")` lists matches
+for a selector and `find_element(session_id, text="Submit")` finds the best
+selector by text. Never guess selectors.
 
 **Static audit of a site:**
 `create_project(name, base_url)` → `test_project(project)` (crawls and runs
@@ -73,10 +76,34 @@ realistic test data, and fills everything in one call (use `overrides` for
 specific values, `submit=true` to submit). `test_form_validation` audits
 validation behavior.
 
-**Verification:** prefer `assert_condition` (text_contains, element_exists,
-element_visible, element_count, url_contains, title_contains,
-attribute_equals…) over screenshot-squinting — it returns a hard
-`passed: true/false` plus the actual value.
+**Verification:** prefer assertions over screenshot-squinting — hard
+`passed: true/false` plus the actual value. With 2+ expectations, batch them
+in one `assert_all(session_id, assertions=[...])` call (every assertion is
+evaluated — the response is the complete verdict picture); for a single check
+use `assert_condition` (text_contains, element_exists, element_visible,
+element_count, url_contains, title_contains, attribute_equals…).
+For visual regressions, `visual_check(session_id, name, action="set")`
+baselines the page or one element, and later `action="check"` returns a hard
+pass/fail with a diff image — prefer element-scoped baselines (selector=…),
+full pages flake more.
+
+**Reusable workflows:** `flow(action="save", name, steps=[...])` stores a step
+sequence (same format as interact_and_test); `flow(action="run", name,
+session_id)` replays it in any session. Define login/smoke paths once, then
+run + `assert_all` each session instead of re-scripting.
+
+**Popups and new tabs** (OAuth windows, target=_blank, window.open): the
+session captures them the moment they open — console/network recording starts
+at birth. `select_page(session_id)` adopts the popup as a NEW session id you
+drive with every normal tool; the parent id keeps working for the original
+tab. With several popups open, call it without `index` to list them.
+
+**File downloads** (exports: CSV, PDF, invoices): `download_file(session_id,
+selector)` clicks the trigger and captures the file — path, size, sha256, and
+a text preview for small text files. The waiter is armed before the click and
+the click handles portal overlays. If the response says
+`capture_method: "context_refetch"`, the browser artifact was empty and the
+file was refetched over the session's cookies — same URL, stated honestly.
 
 ## Debugging a broken page
 

@@ -14,14 +14,12 @@ from sessions import real_page
 from .registry import tool
 
 
-@tool("assert_condition")
-async def handle_assert_condition(args: dict) -> dict:
-        session = session_manager.get_session(args["session_id"])
-        assertion = args["assertion"]
+async def _evaluate_assertion(page, args: dict) -> dict:
+        """One assertion -> verdict dict. Shared by assert_condition and assert_all."""
+        assertion = args.get("assertion", "")
         selector = args.get("selector", "body")
         expected = args.get("expected", "")
         attribute = args.get("attribute", "")
-        page = session.page
 
         passed = False
         actual = None
@@ -96,6 +94,178 @@ async def handle_assert_condition(args: dict) -> dict:
             "expected": expected,
             "actual": actual if not isinstance(actual, str) or len(str(actual)) < 200 else str(actual)[:200] + "...",
             "passed": passed,
+        }
+
+
+@tool("assert_condition")
+async def handle_assert_condition(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        return await _evaluate_assertion(session.page, args)
+
+
+@tool("assert_all")
+async def handle_assert_all(args: dict) -> dict:
+        """Batch assertions: every one is evaluated (no early abort), so the
+        response is the complete verdict picture in one round-trip."""
+        session = session_manager.get_session(args["session_id"])
+        assertions = args.get("assertions") or []
+        if not isinstance(assertions, list) or not assertions:
+            return {"success": False, "error":
+                    "assert_all requires 'assertions': a non-empty array of objects, "
+                    "each with the same fields as assert_condition "
+                    "(assertion, selector?, expected?, attribute?)."}
+        results = []
+        for a in assertions:
+            try:
+                results.append(await _evaluate_assertion(session.page, a))
+            except Exception as e:  # bad selector etc. — mark item, keep going
+                results.append({"assertion": a.get("assertion"), "selector": a.get("selector"),
+                                "passed": False, "error": str(e)})
+        failed = [r for r in results if not r.get("passed")]
+        return {
+            "passed": not failed,
+            "total": len(results),
+            "failed_count": len(failed),
+            "results": results,
+        }
+
+
+@tool("get_page_map")
+async def handle_get_page_map(args: dict) -> dict:
+        """Semantic page map: interactive elements + landmarks/headings from the
+        DOM in document order — role, accessible name, live state, and a
+        ready-to-use selector per node. One call answers 'what can I do here?'.
+        Output is deliberately compact: only truthy state fields, capped nodes."""
+        session = session_manager.get_session(args["session_id"])
+        max_nodes = int(args.get("max_nodes") or 150)
+        include_hidden = bool(args.get("include_hidden"))
+
+        data = await session.page.evaluate("""(args) => {
+            const [maxNodes, includeHidden] = args;
+            const implicitRole = (el) => {
+                const t = el.tagName.toLowerCase();
+                if (t === 'a' && el.hasAttribute('href')) return 'link';
+                if (t === 'button') return 'button';
+                if (t === 'nav') return 'navigation';
+                if (t === 'main') return 'main';
+                if (t === 'header') return 'banner';
+                if (t === 'footer') return 'contentinfo';
+                if (t === 'aside') return 'complementary';
+                if (t === 'form') return 'form';
+                if (t === 'dialog') return 'dialog';
+                if (t === 'summary') return 'button';
+                if (t === 'select') return el.multiple ? 'listbox' : 'combobox';
+                if (t === 'textarea') return 'textbox';
+                if (/^h[1-6]$/.test(t)) return 'heading';
+                if (t === 'input') {
+                    const it = (el.getAttribute('type') || 'text').toLowerCase();
+                    if (['button', 'submit', 'reset', 'image'].includes(it)) return 'button';
+                    if (it === 'checkbox') return 'checkbox';
+                    if (it === 'radio') return 'radio';
+                    if (it === 'range') return 'slider';
+                    if (it === 'search') return 'searchbox';
+                    return 'textbox';
+                }
+                return null;
+            };
+            const cssSafe = (c) => /^-?[A-Za-z_][A-Za-z0-9_-]*$/.test(c);
+            const nthPath = (el) => {
+                const parts = [];
+                let cur = el;
+                while (cur && cur !== document.documentElement && parts.length < 5) {
+                    const parent = cur.parentElement;
+                    if (!parent) break;
+                    const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
+                    parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
+                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent === document.body) { parts.unshift('body'); break; }
+                    cur = parent;
+                }
+                return parts.join(' > ');
+            };
+            const buildSelector = (el) => {
+                let s = el.tagName.toLowerCase();
+                if (el.id) s = '#' + CSS.escape(el.id);
+                else if (el.getAttribute('data-testid')) s = '[data-testid=' + JSON.stringify(el.getAttribute('data-testid')) + ']';
+                else if (el.name) s = el.tagName.toLowerCase() + '[name=' + JSON.stringify(el.name) + ']';
+                else if (el.className && typeof el.className === 'string' && el.className.trim()) {
+                    const cls = el.className.trim().split(/\\s+/).filter(cssSafe).slice(0, 3);
+                    if (cls.length) s = el.tagName.toLowerCase() + '.' + cls.join('.');
+                }
+                let ok = false;
+                try { ok = document.querySelector(s) === el; } catch { ok = false; }
+                return ok ? s : nthPath(el);
+            };
+            const accName = (el) => {
+                const al = el.getAttribute('aria-label');
+                if (al) return al.trim();
+                const lb = el.getAttribute('aria-labelledby');
+                if (lb) {
+                    const t = lb.split(/\\s+/).map(id => {
+                        const r = document.getElementById(id);
+                        return r ? (r.textContent || '').trim() : '';
+                    }).filter(Boolean).join(' ');
+                    if (t) return t;
+                }
+                if (el.labels && el.labels.length) {
+                    const t = (el.labels[0].textContent || '').trim();
+                    if (t) return t;
+                }
+                const alt = el.getAttribute('alt'); if (alt) return alt.trim();
+                const ti = el.getAttribute('title'); if (ti) return ti.trim();
+                return (el.textContent || '').trim().replace(/\\s+/g, ' ').substring(0, 60);
+            };
+
+            const INTERACTIVE = new Set(['link','button','checkbox','radio','combobox','listbox',
+                'textbox','searchbox','slider','spinbutton','switch','tab','menuitem','option']);
+            const els = document.querySelectorAll(
+                'a[href],button,input,select,textarea,summary,[role],[tabindex],' +
+                '[contenteditable="true"],h1,h2,h3,h4,h5,h6,nav,main,header,footer,aside,form,dialog');
+            const nodes = [];
+            let considered = 0;
+            for (const el of els) {
+                const roleAttr = el.getAttribute('role');
+                if (roleAttr === 'presentation' || roleAttr === 'none') continue;
+                const role = roleAttr || implicitRole(el) ||
+                    (el.hasAttribute('tabindex') || el.isContentEditable ? 'generic-interactive' : null);
+                if (!role) continue;
+                const rect = el.getBoundingClientRect();
+                const visible = rect.width > 0 && rect.height > 0 &&
+                    (!el.checkVisibility || el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+                if (!visible && !includeHidden) continue;
+                considered++;
+                if (nodes.length >= maxNodes) continue;  // keep counting for 'total'
+
+                const interactive = INTERACTIVE.has(role) || role === 'generic-interactive';
+                const name = accName(el);
+                const n = { role, name, selector: buildSelector(el) };
+                if (role === 'heading') n.level = parseInt((el.tagName[1] || el.getAttribute('aria-level') || 2), 10);
+                if (interactive) {
+                    if (!name) n.unnamed = true;      // an a11y finding in itself
+                    if (el.disabled || el.getAttribute('aria-disabled') === 'true') n.disabled = true;
+                    if (el.checked) n.checked = true;
+                    const exp = el.getAttribute('aria-expanded'); if (exp) n.expanded = exp === 'true';
+                    if (el.required) n.required = true;
+                    if (el.value && typeof el.value === 'string' && el.tagName !== 'BUTTON')
+                        n.value = String(el.value).substring(0, 40);
+                    const ph = el.getAttribute('placeholder'); if (ph) n.placeholder = ph.substring(0, 40);
+                    const href = el.getAttribute('href');
+                    if (href && href !== '#') n.href = href.substring(0, 120);
+                }
+                if (!visible) n.hidden = true;
+                nodes.push(n);
+            }
+            return { nodes, total: considered };
+        }""", [max_nodes, include_hidden])
+
+        return {
+            "url": real_page(session.page).url,
+            "title": await session.page.title(),
+            "total": data["total"],
+            "returned": len(data["nodes"]),
+            "truncated": data["total"] > len(data["nodes"]),
+            "unnamed_interactive": sum(1 for n in data["nodes"] if n.get("unnamed")),
+            "nodes": data["nodes"],
         }
 
 

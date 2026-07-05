@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Popup Child Fixture Page</title>
+</head>
+<body>
+  <h1 id="msg">CHILD READY</h1>
+  <script>
+    console.log('child-console-marker');
+    fetch('/api/items?from=child');
+  </script>
+</body>
+</html>

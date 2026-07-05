@@ -259,6 +259,81 @@ async def handle_upload_file(args: dict) -> dict:
         }
 
 
+@tool("flow")
+async def handle_flow(args: dict) -> dict:
+        """Named, saved step sequences — define a workflow once (login, checkout,
+        smoke path), re-run it any session. Deliberately minimal: verification
+        composes via assert_all / visual_check after the run, and the runner is
+        interact_and_test's own executor — same 25 actions, same semantics."""
+        import re as _re
+
+        action = args.get("action", "list")
+        flows_dir = os.path.join(config.DATA_DIR, "flows")
+        os.makedirs(flows_dir, exist_ok=True)
+
+        def flow_path(name):
+            if not name or not _re.fullmatch(r"[A-Za-z0-9._-]{1,80}", name):
+                return None
+            return os.path.join(flows_dir, f"{name}.json")
+
+        if action == "list":
+            flows = []
+            for f in sorted(os.listdir(flows_dir)):
+                if f.endswith(".json"):
+                    try:
+                        d = json.load(open(os.path.join(flows_dir, f)))
+                        flows.append({"name": f[:-5], "steps": len(d.get("steps", [])),
+                                      "description": d.get("description")})
+                    except Exception:
+                        flows.append({"name": f[:-5], "error": "unreadable"})
+            return {"success": True, "flows": flows, "count": len(flows)}
+
+        name = args.get("name", "")
+        path = flow_path(name)
+        if path is None:
+            return {"success": False, "error":
+                    "flow requires 'name': 1-80 chars of letters, digits, . _ - "
+                    "(e.g. 'login', 'checkout-smoke')."}
+
+        if action == "save":
+            steps = args.get("steps")
+            if not isinstance(steps, list) or not steps:
+                return {"success": False, "error":
+                        "flow save requires 'steps': a non-empty array in "
+                        "interact_and_test's step format."}
+            replaced = os.path.exists(path)
+            with open(path, "w") as f:
+                json.dump({"name": name, "steps": steps,
+                           "description": args.get("description")}, f, indent=2)
+            return {"success": True, "action": "save", "name": name,
+                    "steps": len(steps), "replaced": replaced}
+
+        if action == "delete":
+            if not os.path.exists(path):
+                return {"success": False, "error": f"No flow named '{name}'."}
+            os.remove(path)
+            return {"success": True, "action": "delete", "name": name}
+
+        if action == "run":
+            if not os.path.exists(path):
+                return {"success": False, "error":
+                        f"No flow named '{name}' — see action='list'."}
+            flow_def = json.load(open(path))
+            session = session_manager.get_session(args["session_id"])
+            result = await interactions.execute_steps(
+                session.page, flow_def["steps"],
+                project_name=session.project_name,
+                continue_on_error=bool(args.get("continue_on_error")),
+                screenshot_dir=session.screenshot_dir,
+                touch=lambda: session_manager.get_session(session.session_id),
+            )
+            session.url = real_page(session.page).url
+            return {"flow": name, **result}
+
+        return {"success": False,
+                "error": f"Unknown action '{action}' — use 'save', 'run', 'list', or 'delete'."}
+
+
 @tool("wait_for_network")
 async def handle_wait_for_network(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
-- `tool_schemas.py` - All 67 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 73 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery, system); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -79,6 +79,7 @@ close_session(session_id)
 
 ### Session Tools
 - `open_session(url, project?)` — Create persistent session, returns session_id + screenshot
+- `select_page(session_id, index?)` — Adopt a popup/new tab the session opened (OAuth, target=_blank) as a new drivable session; capture runs from popup birth
 - `close_session(session_id)` — Close session and free resources
 - `list_sessions()` — List all active sessions with URLs/idle times
 - `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
@@ -98,6 +99,8 @@ close_session(session_id)
 - `measure_interaction(session_id, selector, wait_for?, wait_for_network?)` — Measure click-to-result timing + the click's real INP. `wait_for_network` (URL substring) binds the measurement to that response — use it for async submit handlers where network-idle settles early.
 - `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
 - `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
+- `visual_check(session_id, name, action?, selector?, max_diff_percent?)` — Named visual-regression baselines: `set` captures, `check` compares → hard pass/fail + diff image; stored per project in data/baselines/
+- `download_file(session_id, selector, timeout?)` — Click a trigger and capture the downloaded file: path, size, sha256, text preview; falls back to context refetch (flagged `capture_method`) when the browser artifact is empty
 - `run_lighthouse(url, categories?[], device?, timeout?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, full report saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
 - `get_interaction_log(session_id, format?, clear?)` — Export the real **INP** time series (one record per interaction Periscope drove: input→next-paint latency, type, target, ts, url) as JSON (graphable) or CSV, with p50/p75/p90/p98/worst stats. INP is also surfaced inline: `interaction_to_next_paint_ms` on `interact_and_test` results and the `performance` check. Measured from actual Event Timing entries (Lighthouse can't do INP in lab mode — it falls back to TBT); null until interactions happen.
 
@@ -107,13 +110,14 @@ close_session(session_id)
 - `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
 
 ### Workflow Speed Tools
-- `screenshot_session(session_id, full_page?)` — Quick screenshot of current page state, no actions performed
+- `screenshot_session(session_id, full_page?, selector?)` — Quick screenshot of current page state (selector clips to one element), no actions performed
 - `run_checks_on_session(session_id, checks?[])` — Run checks on active session page (no new page opened)
 - `navigate_session(session_id, action)` — Browser history navigation + reload: `back`, `forward`, `reload`
 - `handle_dialog(session_id, action, prompt_text?)` — Accept/dismiss JS alert/confirm/prompt (call BEFORE triggering)
 - `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
 - `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
 - `wait_for_gone(session_id, selector, timeout?)` — Wait for element to disappear (modal close, spinner gone)
+- `flow(action, name?, steps?, session_id?)` — Save/run/list/delete named step sequences (interact_and_test format); persisted in data/flows/
 - `scroll_into_view(session_id, selector)` — Scroll element into viewport without clicking
 - `get_page_html(session_id, selector?, max_length?)` — Get raw outerHTML of elements or full page HTML
 
@@ -128,6 +132,8 @@ close_session(session_id)
 
 ### AI Agent Speed Tools
 - `assert_condition(session_id, assertion, selector?, expected?, attribute?)` — Programmatic pass/fail assertions: `text_contains`, `text_equals`, `element_exists`, `element_visible`, `element_count`, `url_contains`, `title_contains`, `attribute_equals`
+- `assert_all(session_id, assertions[])` — Batch assertions: every one evaluated (no early abort), per-item verdicts + overall `passed`/`failed_count`
+- `get_page_map(session_id, max_nodes?, include_hidden?)` — Semantic page map in one call: interactive elements + landmarks/headings with role, accessible name, state, and a ready selector; `unnamed` flags = a11y findings
 - `find_element(session_id, text?, tag?, role?, near?, max_results?)` — Smart element finder by text/role/proximity. Returns best CSS selectors.
 - `auto_fill_form(session_id, form_selector?, overrides?, submit?)` — Auto-detect fields, infer types (email/phone/name/etc.), fill with test data. One call replaces 5-10.
 - `get_network_log(session_id, url_filter?, clear?)` — All network requests captured during session (URL, status, method, type)

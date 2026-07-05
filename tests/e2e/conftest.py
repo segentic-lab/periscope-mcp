@@ -98,10 +98,14 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _text(self, body: str, content_type: str = "text/plain"):
+        data = body.encode()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
+        # Downloads need a correct Content-Length for Chromium to finalize the
+        # artifact (without it the download "completes" with a missing file).
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(body.encode())
+        self.wfile.write(data)
 
     def log_message(self, *args):
         pass

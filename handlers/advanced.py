@@ -209,6 +209,75 @@ async def handle_set_local_storage(args: dict) -> dict:
         }
 
 
+@tool("download_file")
+async def handle_download_file(args: dict) -> dict:
+        """Click a trigger and capture the file it downloads. The waiter is
+        armed BEFORE the click (expect_download), and the click reuses the
+        overlay-fallback path, so export buttons behind Radix menus work."""
+        session = session_manager.get_session(args["session_id"])
+        page = real_page(session.page)
+        selector = args["selector"]
+        timeout = int(args.get("timeout") or 30000)
+
+        try:
+            async with page.expect_download(timeout=timeout) as dl_info:
+                await interactions._click_with_overlay_fallback(session.page, selector)
+            download = await dl_info.value
+        except Exception as e:
+            return {"success": False,
+                    "error": f"No download started within {timeout}ms after clicking "
+                             f"'{selector}': {e}",
+                    "hint": "If the click opens a new tab that then downloads, adopt the "
+                            "tab with select_page first. If the file is served inline "
+                            "(opens in the browser), use get_response_body instead."}
+
+        downloads_dir = os.path.join(config.DATA_DIR, "downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        from datetime import datetime
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        suggested = download.suggested_filename or "download.bin"
+        save_path = os.path.join(downloads_dir, f"{stamp}_{suggested}")
+        await download.save_as(save_path)
+
+        import hashlib
+        data = open(save_path, "rb").read()
+        capture_method = "browser_download"
+        if not data:
+            # Some Chromium/Playwright combos (notably system Chromium builds)
+            # report the download complete but never materialize the artifact.
+            # Refetch through the context's request client — it shares the
+            # session's cookies, so auth-gated exports still resolve — and be
+            # explicit that the file came from a refetch of the same URL.
+            resp = await page.context.request.get(download.url)
+            if resp.ok:
+                data = await resp.body()
+                open(save_path, "wb").write(data)
+                capture_method = "context_refetch"
+        if not data:
+            return {"success": False,
+                    "error": f"Download of '{suggested}' completed but produced an empty "
+                             f"file, and refetching {download.url[:120]} also returned "
+                             "nothing. The export may be one-time/POST-generated — "
+                             "inspect it with get_response_body instead."}
+        result = {
+            "success": True,
+            "filename": suggested,
+            "path": save_path,
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "source_url": download.url[:200],
+            "capture_method": capture_method,
+        }
+        # Small text files: include a head preview so content can be asserted
+        # without another tool call.
+        if len(data) <= 200_000:
+            try:
+                result["text_head"] = data.decode("utf-8")[:500]
+            except UnicodeDecodeError:
+                pass
+        return result
+
+
 @tool("select_iframe")
 async def handle_select_iframe(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

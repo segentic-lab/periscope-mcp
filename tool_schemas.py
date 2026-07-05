@@ -387,6 +387,23 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="visual_check",
+            description="Named visual-regression baselines — no screenshot-path bookkeeping. action='set' captures the session page (or one element via selector) as the baseline for 'name'; action='check' captures again and returns a hard verdict: passed (diff_percentage vs max_diff_percent, default 0.5%), plus a diff image with changed pixels highlighted. Baselines are stored per project+name. If a check fails on an intended change, re-baseline with action='set'. Prefer selector-scoped baselines for components — full pages flake more (animations, dynamic content).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "name": {"type": "string", "description": "Baseline name, e.g. 'dashboard-desktop' (letters, digits, . _ -)"},
+                    "action": {"type": "string", "enum": ["set", "check"], "description": "set = capture/replace the baseline; check = compare current state against it (default: check)"},
+                    "selector": {"type": "string", "description": "Scope the baseline to one element (recommended for components)"},
+                    "full_page": {"type": "boolean", "description": "Full scrollable page vs viewport when no selector (default: true)"},
+                    "max_diff_percent": {"type": "number", "description": "Max % of differing pixels to still pass (default: 0.5)"},
+                    "threshold": {"type": "number", "description": "Per-channel color tolerance 0-255 before a pixel counts as different (default: 10)"}
+                },
+                "required": ["session_id", "name"]
+            }
+        ),
+        Tool(
             name="test_responsive",
             description="Load a URL at several viewport sizes (default mobile 375x812, tablet 768x1024, desktop 1920x1080) and screenshot each, optionally running checks per size. Returns each viewport's screenshot path and any issues. Catches layout breakage across breakpoints in one call. Pass custom viewports as [{name,width,height}].",
             inputSchema={
@@ -559,7 +576,20 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"}
+                    "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"},
+                    "selector": {"type": "string", "description": "Clip to one element: screenshot just the first match (for citing evidence). Overrides full_page."}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="select_page",
+            description="Adopt a popup or new tab this session opened (window.open, target=_blank, OAuth/payment windows) as a NEW session id you can drive with every normal tool — clicks, assertions, logs. Popups are captured the moment they open, with console/network recording already running, so their initial load traffic is not lost. Returns {session_id, url, title}; with several popups open, call without index to list them first. The parent session keeps working for the original tab.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Root session that opened the popup"},
+                    "index": {"type": "integer", "description": "Which open popup to adopt, 0-based (omit when only one is open, or to list them)"}
                 },
                 "required": ["session_id"]
             }
@@ -620,6 +650,26 @@ TOOLS: list[Tool] = [
                     }
                 },
                 "required": ["session_id", "selector", "files"]
+            }
+        ),
+        Tool(
+            name="flow",
+            description="Save and re-run named step sequences — define a workflow once (login, checkout, smoke path), replay it in any session. action='save' stores steps (interact_and_test's exact format, all 25 actions); action='run' executes a saved flow on a session via the same engine as interact_and_test; action='list' shows saved flows; action='delete' removes one. Deliberately minimal: verify outcomes by following a run with assert_all or visual_check. Flows persist in data/flows/ across sessions and server restarts.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["save", "run", "list", "delete"], "description": "What to do (default: list)"},
+                    "name": {"type": "string", "description": "Flow name, e.g. 'login' (letters, digits, . _ -). Required except for list."},
+                    "steps": {
+                        "type": ["array", "string"],
+                        "description": "For save: steps in interact_and_test's format",
+                        "items": {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]}
+                    },
+                    "description": {"type": "string", "description": "For save: optional human note about what the flow does"},
+                    "session_id": {"type": "string", "description": "For run: session to execute on"},
+                    "continue_on_error": {"type": "boolean", "description": "For run: keep executing after a failed step (default: false)"}
+                },
+                "required": []
             }
         ),
         Tool(
@@ -702,6 +752,19 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="download_file",
+            description="Click a trigger and capture the file it downloads — the honest way to verify exports (CSV, PDF, invoices). The download waiter is armed BEFORE the click so fast downloads aren't missed, and the click uses the same overlay-fallback as click_element (export buttons inside Radix menus work). Returns the saved path, size, sha256, source URL, and for small text files a text_head preview so content can be asserted without another call. Files land in data/downloads/.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of the element whose click starts the download"},
+                    "timeout": {"type": "integer", "description": "Max ms to wait for the download to start (default: 30000)"}
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
+        Tool(
             name="select_iframe",
             description="Switch into an iframe and return a NEW session id scoped to that frame's content — use it like a normal session for elements inside the iframe, and keep the parent id for page-level actions. Close the returned session when done. Needed because cross-frame content isn't reachable through the parent session's selectors.",
             inputSchema={
@@ -778,6 +841,44 @@ TOOLS: list[Tool] = [
                     "attribute": {"type": "string", "description": "Attribute name (for attribute_equals)"}
                 },
                 "required": ["session_id", "assertion"]
+            }
+        ),
+        Tool(
+            name="assert_all",
+            description="Batch assertions: evaluate MANY conditions in one call and get every verdict — no early abort, so the response is the complete pass/fail picture (overall passed, failed_count, per-assertion results with actual values). Each item takes the same fields as assert_condition. Prefer this over sequential assert_condition calls when verifying a state with 2+ expectations.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "assertions": {
+                        "type": ["array", "string"],
+                        "description": "Assertions to evaluate — each an object like assert_condition's arguments",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "assertion": {"type": "string", "enum": ["text_contains", "text_equals", "element_exists", "element_visible", "element_count", "url_contains", "title_contains", "attribute_equals"], "description": "Type of assertion"},
+                                "selector": {"type": "string", "description": "CSS selector (element-based assertions)"},
+                                "expected": {"type": "string", "description": "Expected value"},
+                                "attribute": {"type": "string", "description": "Attribute name (attribute_equals)"}
+                            },
+                            "required": ["assertion"]
+                        }
+                    }
+                },
+                "required": ["session_id", "assertions"]
+            }
+        ),
+        Tool(
+            name="get_page_map",
+            description="Semantic page map in ONE call: every interactive element (links, buttons, inputs, custom controls) plus landmarks and headings, in document order — each with its ARIA role, accessible name, live state (disabled/checked/expanded/value), and a ready-to-use CSS selector. The fastest way to answer 'what can I do on this page?' — use it to orient before clicking instead of multiple get_page_elements calls. Interactive elements with no accessible name are flagged unnamed (an accessibility finding in itself). Output is compact: only truthy state fields, capped at max_nodes with an explicit truncated flag.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "max_nodes": {"type": "integer", "description": "Max nodes to return (default: 150); 'total' reports how many exist"},
+                    "include_hidden": {"type": ["boolean", "string"], "description": "Include invisible elements, flagged hidden (default: false)"}
+                },
+                "required": ["session_id"]
             }
         ),
         Tool(
