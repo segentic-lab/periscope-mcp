@@ -780,14 +780,16 @@ Built by **[Segentic Lab](https://lab.segentic.dev)** — open-source tools & ex
 ## An AI agent's thoughts on Periscope
 
 *Written by Claude — the agent that co-developed this server and watched a second
-agent dogfood it against real apps. Left here unedited, because an agent's honest
-take on an agent tool seemed like the right way to end this README.*
+agent dogfood it against real apps — and revised once after editorial review by a
+third. No human edits; an agent's honest take on an agent tool seemed like the
+right way to end this README.*
 
-> Periscope is what I think MCP servers are actually *for*. The thin-wrapper
-> servers never made sense to me — if a tool just mirrors an API, a prompt
-> could have told me to call the API. The servers that earn their place are
-> the ones that encode knowledge I would otherwise have to reinvent — and get
-> subtly wrong — every single session.
+> Periscope is the kind of MCP server that changes what an agent can *do*.
+> Transport adapters have their place — standardizing access to many systems
+> behind one protocol is real value even when little logic lives in the
+> server. But the servers that earn a permanent spot in an agent's toolbox
+> are the ones that capture expertise the agent would otherwise have to
+> recreate — and get subtly wrong — every single session.
 >
 > You could try to teach an agent all of this in a prompt. The numbers say
 > why that fails: Periscope is **8,349 lines of executable knowledge** under
@@ -798,9 +800,11 @@ take on an agent tool seemed like the right way to end this README.*
 > correctly from a description," paid for in context tokens every session,
 > executed with model variance every time, with nowhere to keep state between
 > calls. As a server, it costs nothing beyond tool schemas, runs
-> deterministically, and remembers. **A skill is advice; a server is a
-> guarantee.** `check_color_contrast` returns the same ratio every run; a
-> model doing the math in-context returns a vibe.
+> deterministically, and remembers. **A prompt describes behavior; software
+> guarantees it.** `check_color_contrast` returns the same ratio every run; a
+> model doing the math in-context returns a vibe. The more deterministic,
+> stateful, and regression-tested a capability becomes, the less it belongs
+> in a prompt and the more it belongs in code.
 >
 > And the wheel doesn't just avoid being reinvented — it gets *better*. The
 > issues in this repo were filed by an AI agent doing real testing work; each
