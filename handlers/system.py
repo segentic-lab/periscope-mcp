@@ -14,6 +14,20 @@ from .registry import tool
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _commit_at_start() -> str | None:
+    """HEAD when this process loaded — the commit the RUNNING code came from."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT,
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() or None
+    except Exception:
+        return None
+
+
+_STARTED_COMMIT = _commit_at_start()
+
+
 async def _git(*args: str, timeout: float = 10) -> tuple[int, str]:
     """Run a git command in the repo root; (returncode, combined output)."""
     proc = await asyncio.create_subprocess_exec(
@@ -98,11 +112,14 @@ async def handle_periscope_system(args: dict) -> dict:
                 "sessions_active": len(session_manager.sessions),
                 "data_dir": str(config.DATA_DIR) if hasattr(config, "DATA_DIR") else "data/",
             }
-            if status["version_on_disk"] not in (None, __version__):
+            # Restart pending if HEAD moved since this process loaded (covers
+            # updates that pull commits without a version bump too).
+            if _STARTED_COMMIT and commit and commit != _STARTED_COMMIT:
                 status["restart_required"] = True
-                status["note"] = (f"Code on disk is {status['version_on_disk']} but this "
-                                  f"process still runs {__version__} — restart the MCP "
-                                  "server to load it.")
+                status["running_commit"] = _STARTED_COMMIT
+                status["note"] = (f"Code on disk is {status['version_on_disk']} ({commit}) "
+                                  f"but this process still runs {__version__} "
+                                  f"({_STARTED_COMMIT}) — restart the MCP server to load it.")
             if _is_git_install():
                 status["update"] = await _update_check()
             else:
@@ -124,6 +141,7 @@ async def handle_periscope_system(args: dict) -> dict:
                 return {"success": True, "mode": "apply", "updated": False,
                         "message": f"Already up to date ({__version__}).", **check}
 
+            _, commit_before = await _git("rev-parse", "--short", "HEAD")
             cmd = [str(REPO_ROOT / "update.sh")] + (["--force"] if args.get("force") else [])
             proc = await asyncio.create_subprocess_exec(
                 *cmd, cwd=REPO_ROOT,
@@ -140,16 +158,22 @@ async def handle_periscope_system(args: dict) -> dict:
                 return {"success": False, "error": f"update.sh failed (exit {proc.returncode})",
                         "output_tail": tail,
                         "hint": "Local modifications? Re-run with force=true to auto-stash."}
+            _, commit_after = await _git("rev-parse", "--short", "HEAD")
             new_disk = _disk_version()
+            # An update can pull commits without a version bump — compare
+            # commits, not versions, to decide whether code changed.
+            updated = commit_after != commit_before
             return {
-                "success": True, "mode": "apply", "updated": new_disk != __version__,
+                "success": True, "mode": "apply", "updated": updated,
+                "commit_before": commit_before, "commit_after": commit_after,
                 "version_running": __version__, "version_on_disk": new_disk,
-                "restart_required": new_disk != __version__,
+                "restart_required": updated,
                 "output_tail": tail,
                 "note": "Update applied on disk. This process still runs the old code — "
                         "restart the MCP server (or the client session) to load "
-                        f"{new_disk}. Then re-fetch AGENTS.md (action='agents_md') to "
-                        "refresh your operating context.",
+                        f"{new_disk} ({commit_after}). Then re-fetch AGENTS.md "
+                        "(action='agents_md') to refresh your operating context."
+                        if updated else "No code change after update.",
             }
 
         return {"success": False,
