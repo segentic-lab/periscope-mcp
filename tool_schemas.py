@@ -1020,6 +1020,22 @@ TOOLS: list[Tool] = [
             }
         ),
 
+        # System
+        Tool(
+            name="periscope_system",
+            description="Install status, self-update, and the current agent guide — Periscope's self-maintenance tool. action='status' (read-only): running version vs on-disk version, git commit, install type, capabilities (Node/Lighthouse, display for headed, Chromium), active session count, and whether an update is available. action='agents_md' (read-only): returns the CURRENT AGENTS.md so you can refresh a stale pasted copy of your operating guide. action='update': dry-run by default (commits behind + incoming changes); apply=true runs the updater (git pull + deps, data/ untouched) — new code loads only after the MCP server restarts, and the response says so explicitly. Managed installs (Docker, no .git) refuse update with guidance.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["status", "update", "agents_md"],
+                               "description": "status = install/version/capabilities report (default); update = check or apply an update; agents_md = fetch the current agent guide"},
+                    "apply": {"type": ["boolean", "string"], "description": "For action='update': actually run the update instead of the dry-run check (default: false)"},
+                    "force": {"type": ["boolean", "string"], "description": "For action='update' with apply=true: auto-stash local modifications first (update.sh --force)"}
+                },
+                "required": []
+            }
+        ),
+
         # Discovery
         Tool(
             name="describe_tools",
@@ -1029,7 +1045,7 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "enum": ["all", "new", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed", "web"],
+                        "enum": ["all", "new", "project", "auth", "static_testing", "results", "sessions", "interactive", "analysis", "workflow", "advanced", "recording", "agent_speed", "web", "system"],
                         "description": "Filter by category (default: 'all')"
                     }
                 },

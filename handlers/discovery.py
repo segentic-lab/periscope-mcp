@@ -172,6 +172,13 @@ async def handle_describe_tools(args: dict) -> dict:
                     "web_fetch": {"params": "url, max_length?, raw_html?, verify_ssl?", "note": "Fetch URL and extract readable text content"},
                 },
             },
+            "system": {
+                "name": "System & Self-Maintenance",
+                "description": "Install status, self-update, and the current agent guide.",
+                "tools": {
+                    "periscope_system": {"params": "action (status|update|agents_md), apply?, force?", "note": "status = version/commit/capabilities/update-check; agents_md = fetch the CURRENT agent guide to refresh a stale pasted copy; update = dry-run by default, apply=true runs git pull + deps (restart required to load new code)"},
+                },
+            },
         }
 
         # Filter by category

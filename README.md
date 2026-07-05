@@ -2,7 +2,7 @@
 
 [![periscope-mcp MCP server](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp/badges/score.svg)](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp)
 
-An MCP server that gives AI agents **66 Playwright tools to QA, test, and
+An MCP server that gives AI agents **67 Playwright tools to QA, test, and
 analyze web apps** — static sites, SPAs, and apps behind a login — returning
 hard verdicts, not screenshots to squint at. Not a thin wrapper around browser
 APIs; the tools are shaped around how agents actually work:
@@ -67,14 +67,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 66 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 67 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 66 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 67 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -88,7 +88,8 @@ periscope-mcp/
 │   ├── advanced.py        # network mocking, storage, iframes, emulation, recording
 │   ├── agent_speed.py     # assertions, smart find, auto-fill, snapshots
 │   ├── web.py             # web_search, web_fetch
-│   └── discovery.py       # describe_tools catalog
+│   ├── discovery.py       # describe_tools catalog
+│   └── system.py          # periscope_system: status, self-update, agents_md
 ├── tester.py              # Playwright browser control + test orchestration
 ├── crawler.py             # Page discovery (BFS crawl, same-domain only)
 ├── projects.py            # Project CRUD + auth config storage
@@ -224,10 +225,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 66 tools
+agent's system prompt (or custom instructions) so it drives the 67 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (66 tools)
+## MCP Tools Reference (67 tools)
 
 ### Project Management (4 tools)
 
@@ -361,13 +362,14 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_cookies` | Read all cookies from session | `session_id` |
 | `check_color_contrast` | WCAG AA/AAA contrast ratio checks on text elements | `session_id` |
 
-### Web & Discovery (3 tools)
+### Web, Discovery & System (4 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `web_search` | Search DuckDuckGo: titles + URLs + snippets | `query` |
 | `web_fetch` | Fetch URL, extract readable text (or raw HTML); TLS verified by default | `url` |
 | `describe_tools` | Structured catalog of all tools with workflows and tips | _(none)_ |
+| `periscope_system` | Install status + update check/apply + fetch current AGENTS.md | _(none)_ |
 
 ## Test Checks
 

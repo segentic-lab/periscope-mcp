@@ -1,0 +1,156 @@
+"""System tool: install status, self-update, and agent-context (AGENTS.md) access."""
+import asyncio
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import config
+from _version import __version__
+from runtime import session_manager
+
+from .registry import tool
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+async def _git(*args: str, timeout: float = 10) -> tuple[int, str]:
+    """Run a git command in the repo root; (returncode, combined output)."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args, cwd=REPO_ROOT,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return 124, f"git {' '.join(args)} timed out after {timeout}s"
+    return proc.returncode, out.decode(errors="replace").strip()
+
+
+def _disk_version() -> str | None:
+    """Version currently in _version.py ON DISK — differs from the running
+    __version__ after a self-update until the server is restarted."""
+    try:
+        text = (REPO_ROOT / "_version.py").read_text()
+        for line in text.splitlines():
+            if line.startswith("__version__"):
+                return line.split("=")[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return None
+
+
+def _is_git_install() -> bool:
+    return (REPO_ROOT / ".git").exists()
+
+
+async def _update_check() -> dict:
+    """Fetch origin and report how far behind we are. Read-only, best-effort."""
+    code, out = await _git("fetch", "--quiet", "origin", timeout=15)
+    if code != 0:
+        return {"checked": False, "error": f"git fetch failed (offline?): {out}"}
+    code, count = await _git("rev-list", "--count", "HEAD..origin/main")
+    if code != 0:
+        return {"checked": False, "error": count}
+    behind = int(count)
+    result = {"checked": True, "update_available": behind > 0, "commits_behind": behind}
+    if behind:
+        _, log = await _git("log", "--oneline", "--no-decorate", "-15", "HEAD..origin/main")
+        result["incoming_commits"] = log.splitlines()
+    return result
+
+
+@tool("periscope_system")
+async def handle_periscope_system(args: dict) -> dict:
+        action = args.get("action", "status")
+
+        if action == "agents_md":
+            path = REPO_ROOT / "AGENTS.md"
+            if not path.exists():
+                return {"success": False, "error": f"AGENTS.md not found at {path}"}
+            _, commit = await _git("rev-parse", "--short", "HEAD")
+            return {
+                "success": True,
+                "content": path.read_text(),
+                "commit": commit or None,
+                "note": "This is the CURRENT agent guide for this install. If your system "
+                        "prompt contains an older pasted copy, prefer this content — it "
+                        "matches the code you are actually calling.",
+            }
+
+        if action == "status":
+            _, commit = await _git("rev-parse", "--short", "HEAD")
+            status = {
+                "success": True,
+                "version_running": __version__,
+                "version_on_disk": _disk_version(),
+                "commit": commit or None,
+                "install_type": "git" if _is_git_install() else "managed",
+                "python": sys.version.split()[0],
+                "capabilities": {
+                    "node_for_lighthouse": bool(shutil.which("node") or shutil.which("npx")
+                                                or (Path.home() / ".nvm").exists()),
+                    "display_for_headed": bool(os.environ.get("DISPLAY")
+                                               or os.environ.get("WAYLAND_DISPLAY")),
+                    "chromium": config.CHROMIUM_PATH or "playwright-bundled",
+                },
+                "sessions_active": len(session_manager.sessions),
+                "data_dir": str(config.DATA_DIR) if hasattr(config, "DATA_DIR") else "data/",
+            }
+            if status["version_on_disk"] not in (None, __version__):
+                status["restart_required"] = True
+                status["note"] = (f"Code on disk is {status['version_on_disk']} but this "
+                                  f"process still runs {__version__} — restart the MCP "
+                                  "server to load it.")
+            if _is_git_install():
+                status["update"] = await _update_check()
+            else:
+                status["update"] = {"checked": False,
+                                    "error": "managed install (no .git) — update via image rebuild"}
+            return status
+
+        if action == "update":
+            if not _is_git_install():
+                return {"success": False, "error":
+                        "This is a managed install (no .git directory) — e.g. a Docker "
+                        "image. Update by rebuilding the image, not in place."}
+            check = await _update_check()
+            if not args.get("apply"):
+                return {"success": True, "mode": "dry_run", **check,
+                        "note": "Pass apply=true to run the update (git pull + deps). "
+                                "The new code loads only after the MCP server restarts."}
+            if check.get("checked") and not check.get("update_available"):
+                return {"success": True, "mode": "apply", "updated": False,
+                        "message": f"Already up to date ({__version__}).", **check}
+
+            cmd = [str(REPO_ROOT / "update.sh")] + (["--force"] if args.get("force") else [])
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=REPO_ROOT,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
+            except asyncio.TimeoutError:
+                proc.kill()
+                return {"success": False, "error": "update.sh timed out after 600s"}
+            output = out.decode(errors="replace")
+            tail = "\n".join(output.splitlines()[-25:])
+            if proc.returncode != 0:
+                return {"success": False, "error": f"update.sh failed (exit {proc.returncode})",
+                        "output_tail": tail,
+                        "hint": "Local modifications? Re-run with force=true to auto-stash."}
+            new_disk = _disk_version()
+            return {
+                "success": True, "mode": "apply", "updated": new_disk != __version__,
+                "version_running": __version__, "version_on_disk": new_disk,
+                "restart_required": new_disk != __version__,
+                "output_tail": tail,
+                "note": "Update applied on disk. This process still runs the old code — "
+                        "restart the MCP server (or the client session) to load "
+                        f"{new_disk}. Then re-fetch AGENTS.md (action='agents_md') to "
+                        "refresh your operating context.",
+            }
+
+        return {"success": False,
+                "error": f"Unknown action '{action}' — use 'status', 'update', or 'agents_md'."}

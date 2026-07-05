@@ -13,8 +13,8 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
-- `tool_schemas.py` - All 66 MCP `Tool(...)` schema definitions
-- `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery); `registry.py` holds the `@tool(name)` decorator
+- `tool_schemas.py` - All 67 MCP `Tool(...)` schema definitions
+- `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery, system); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
 - `tester.py` - Core Playwright logic (browser, screenshots, test orchestration, responsive testing)
@@ -141,6 +141,7 @@ close_session(session_id)
 - `web_fetch(url, max_length?, raw_html?, verify_ssl?)` — Fetch URL and extract readable text content (or raw HTML). TLS verified by default; `verify_ssl=false` for self-signed dev servers.
 
 ### Utility Tools
+- `periscope_system(action, apply?, force?)` — `status` = version/commit/capabilities/update-check; `agents_md` = current AGENTS.md content (refresh a stale pasted copy); `update` = dry-run by default, `apply=true` runs update.sh (restart required to load new code; managed/Docker installs refuse with guidance)
 - `copy_auth(from_project, to_project)` — Copy auth config + live login session (cookies + localStorage via storage_state) between projects on same domain; reports `session_copied` honestly (false when only cookies could transfer)
 
 ### Session Config (`config.py`)

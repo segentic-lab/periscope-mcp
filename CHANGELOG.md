@@ -6,6 +6,27 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.9.5] - 2026-07-05
+
+### Added
+- **`periscope_system` — self-maintenance tool** (67th tool, new "system"
+  category). One tool, three actions:
+  - `status` (read-only): running vs on-disk version, git commit, install type
+    (git / managed), capabilities (Node for Lighthouse, display for headed
+    sessions, Chromium), active session count, and an update-availability
+    check — everything a bug report or a "what am I running?" needs, with no
+    shell access to the install required.
+  - `agents_md` (read-only): returns the **current** AGENTS.md so an agent can
+    refresh a stale pasted copy of its operating guide after an update.
+  - `update`: dry-run by default (commits behind + incoming changes);
+    `apply=true` wraps `update.sh` (git pull + deps, `data/` untouched).
+    Honest about process semantics: new code loads only after the MCP server
+    restarts (`restart_required`), and managed/Docker installs refuse in-place
+    update with rebuild guidance.
+- AGENTS.md gains a "Keeping Periscope and this guide current" section; the
+  bug-report flow now gets version+commit from `periscope_system` instead of
+  requiring shell access.
+
 ## [0.9.4] - 2026-07-05
 
 Second test-agent batch: five issues (#15-#19) filed by the AI agent driving
@@ -102,6 +123,7 @@ authenticated sessions, built-in debugging, and a full audit suite (accessibilit
 SEO, GEO/agentic-search readiness, Core Web Vitals, Lighthouse). See the
 [release notes](https://github.com/segentic-lab/periscope-mcp/releases/tag/v0.9.0).
 
+[0.9.5]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.1...v0.9.2

@@ -3,7 +3,7 @@
 
 # Website & Web-App Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 66 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 67 Playwright/Chrome tools
 for testing websites and web apps (static sites, SPAs, and apps behind a login).
 Call `describe_tools(category?)` anytime for the full catalog with parameters
 and workflows.
@@ -179,6 +179,23 @@ failed with the concrete evidence (assertion values, console errors, response
 bodies, screenshot paths). Distinguish site bugs from test-setup problems
 (expired session, wrong selector). Include reproduction steps for every bug.
 
+## Keeping Periscope and this guide current
+
+`periscope_system` is the self-maintenance tool:
+
+- `action="status"` (read-only) — running version, on-disk version, git commit,
+  install type, capabilities (Node/Lighthouse, display for headed sessions,
+  Chromium), active session count, and whether an update is available.
+- `action="agents_md"` (read-only) — returns the CURRENT version of this guide
+  from the install. If this pasted copy might be stale (a status check shows a
+  newer version than you expected), fetch it and prefer its instructions.
+- `action="update"` — dry-run by default (commits behind + incoming changes);
+  `apply=true` runs the updater (git pull + dependencies; the user's data/ is
+  untouched). **New code loads only after the MCP server restarts** — the
+  response says so; tell your user to restart the server/session, and re-fetch
+  `agents_md` afterwards so your context matches the new code. Only apply an
+  update when your user asked for it or approved it.
+
 ## Reporting Periscope bugs
 
 If a **Periscope tool itself** misbehaves — its response contradicts what the
@@ -188,8 +205,8 @@ verify is correct — that's a tool bug, not a site bug. Don't silently work
 around it:
 
 1. Capture the evidence: tool name, exact arguments, the raw JSON response,
-   what you expected, the page/framework context, and the install's commit
-   (`git rev-parse --short HEAD` in the install directory).
+   what you expected, the page/framework context, and the install's version +
+   commit (`periscope_system(action="status")` returns both — no shell needed).
 2. File it at https://github.com/segentic-lab/periscope-mcp/issues (the bug
    template asks for exactly these fields). If you can't create GitHub
    issues, put the same details in your report so your user can file it.
