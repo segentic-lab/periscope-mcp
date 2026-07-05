@@ -132,6 +132,26 @@ async def handle_periscope_system(args: dict) -> dict:
                 return {"success": False, "error":
                         "This is a managed install (no .git directory) — e.g. a Docker "
                         "image. Update by rebuilding the image, not in place."}
+
+            # Local modifications to tracked files: never proceed silently.
+            # Without force we stop and NAME the files; with force they are
+            # stashed (recoverable), and the response says exactly that.
+            _, dirty = await _git("status", "--porcelain", "--untracked-files=no")
+            # _git() strips output, so the XY status column may lose its leading
+            # space — split off the status token instead of slicing by position.
+            dirty_files = [line.strip().split(None, 1)[1]
+                           for line in dirty.splitlines() if len(line.strip().split(None, 1)) == 2]
+            if dirty_files and args.get("apply") and not args.get("force"):
+                return {"success": False,
+                        "error": "Local modifications to tracked files would block the "
+                                 "update: " + ", ".join(dirty_files),
+                        "modified_files": dirty_files,
+                        "options": [
+                            "Ask your user: commit the changes themselves, or",
+                            "re-run with force=true — changes are stashed (git stash), "
+                            "NOT deleted, and the response tells you how to recover them.",
+                        ]}
+
             check = await _update_check()
             if not args.get("apply"):
                 return {"success": True, "mode": "dry_run", **check,
@@ -163,12 +183,22 @@ async def handle_periscope_system(args: dict) -> dict:
             # An update can pull commits without a version bump — compare
             # commits, not versions, to decide whether code changed.
             updated = commit_after != commit_before
-            return {
+            result = {
                 "success": True, "mode": "apply", "updated": updated,
                 "commit_before": commit_before, "commit_after": commit_after,
                 "version_running": __version__, "version_on_disk": new_disk,
                 "restart_required": updated,
                 "output_tail": tail,
+            }
+            if dirty_files:  # force path — say exactly where the changes went
+                result["stashed_files"] = dirty_files
+                result["stash_recovery"] = (
+                    "Local modifications were stashed as 'update.sh auto-stash' — "
+                    "recover with `git stash pop` in the install directory (may need "
+                    "manual conflict resolution against the updated code). Tell your "
+                    "user their local changes were stashed, not lost.")
+            return {
+                **result,
                 "note": "Update applied on disk. This process still runs the old code — "
                         "restart the MCP server (or the client session) to load "
                         f"{new_disk} ({commit_after}). Then re-fetch AGENTS.md "

@@ -47,3 +47,26 @@ def test_unknown_action_is_actionable():
     r = run(HANDLERS["periscope_system"]({"action": "restart"}))
     assert not r["success"]
     assert "status" in r["error"] and "agents_md" in r["error"]
+
+
+def test_update_apply_refuses_dirty_tree_and_names_files(tmp_path, monkeypatch):
+    """Issue-class: never force away local modifications silently."""
+    import subprocess
+    from pathlib import Path
+    import handlers.system as system
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    g = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(g[:3] + ["init", "-q"], check=True)
+    (repo / "tracked.py").write_text("original\n")
+    subprocess.run(g + ["add", "tracked.py"], check=True)
+    subprocess.run(g + ["commit", "-qm", "init"], check=True)
+    (repo / "tracked.py").write_text("locally modified\n")  # dirty
+
+    monkeypatch.setattr(system, "REPO_ROOT", Path(repo))
+    r = run(system.handle_periscope_system({"action": "update", "apply": True}))
+    assert not r["success"]
+    assert r["modified_files"] == ["tracked.py"], r
+    assert "force=true" in " ".join(r["options"])
+    assert "stashed" in " ".join(r["options"])  # says changes would be stashed, not lost

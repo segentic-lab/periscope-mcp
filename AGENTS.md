@@ -195,6 +195,11 @@ bodies, screenshot paths). Distinguish site bugs from test-setup problems
   response says so; tell your user to restart the server/session, and re-fetch
   `agents_md` afterwards so your context matches the new code. Only apply an
   update when your user asked for it or approved it.
+- **Local modifications** to tracked files block the update, and the error
+  names the files. `force=true` proceeds by **stashing** them (`git stash` —
+  recoverable, never deleted); the response then lists `stashed_files` and the
+  recovery command. Always relay that to your user — never force away changes
+  silently, and prefer asking the user to commit their changes instead.
 
 ## Reporting Periscope bugs
 
