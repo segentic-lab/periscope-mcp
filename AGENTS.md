@@ -93,8 +93,9 @@ session_id)` replays it in any session. Define login/smoke paths once, then
 run + `assert_all` each session instead of re-scripting.
 
 **Popups and new tabs** (OAuth windows, target=_blank, window.open): the
-session captures them the moment they open — console/network recording starts
-at birth. `select_page(session_id)` adopts the popup as a NEW session id you
+session captures them as soon as the driver sees them open — console/network
+recording attaches at the popup event (requests in the popup's very first
+milliseconds can precede that; re-trigger or reload if you need one). `select_page(session_id)` adopts the popup as a NEW session id you
 drive with every normal tool; the parent id keeps working for the original
 tab. With several popups open, call it without `index` to list them.
 

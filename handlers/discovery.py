@@ -25,7 +25,7 @@ async def handle_describe_tools(args: dict) -> dict:
                 "tools": {
                     "get_page_map": {"params": "session_id, max_nodes?, include_hidden?", "note": "NEW — Orient in ONE call: interactive elements + landmarks with role, accessible name, state, ready-to-use selector. unnamed flags = a11y findings."},
                     "assert_all": {"params": "session_id, assertions[]", "note": "NEW — Batch assertions, every verdict in one call (no early abort). Prefer over sequential assert_condition."},
-                    "select_page": {"params": "session_id, index?", "note": "NEW — Adopt a popup/new tab (OAuth, target=_blank) as a new drivable session; console/network captured from popup birth."},
+                    "select_page": {"params": "session_id, index?", "note": "NEW — Adopt a popup/new tab (OAuth, target=_blank) as a new drivable session; console/network capture attaches at the popup event."},
                     "download_file": {"params": "session_id, selector, timeout?", "note": "NEW — Click a trigger, capture the downloaded file: path, size, sha256, text preview. Honest capture_method flag."},
                     "visual_check": {"params": "session_id, name, action(set|check), selector?", "note": "NEW — Named visual baselines: set once, check → hard pass/fail + diff image. Element-scoped baselines flake less."},
                     "flow": {"params": "action(save|run|list|delete), name?, steps?, session_id?", "note": "NEW — Save named step sequences, replay in any session. Verify with assert_all after."},

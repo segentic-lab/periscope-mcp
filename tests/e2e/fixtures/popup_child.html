@@ -8,7 +8,10 @@
   <h1 id="msg">CHILD READY</h1>
   <script>
     console.log('child-console-marker');
-    fetch('/api/items?from=child');
+    // Real apps fetch after parse/mount; an inline-instant fetch can complete
+    // before the automation driver even receives the popup event (CI showed
+    // this) — no driver can capture earlier than that event.
+    setTimeout(() => fetch('/api/items?from=child'), 150);
   </script>
 </body>
 </html>

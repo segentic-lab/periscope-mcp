@@ -116,7 +116,11 @@ def test_select_page_adopts_popup_with_capture_from_birth(run, handlers, popup_s
         "selector": "#msg", "expected": "CHILD READY"}))
     assert a["passed"], a
 
-    # capture-at-birth: the fetch the child fired ON LOAD is already recorded
+    # capture-from-open: the fetch the child fired shortly after load was
+    # recorded by listeners attached at the popup event
+    run(handlers["interact_and_test"]({
+        "session_id": child, "screenshot_after": False,
+        "steps": [{"action": "wait", "timeout": 600}]}))
     body = run(handlers["get_response_body"]({
         "session_id": child, "url_pattern": "from=child"}))
     assert body["success"], body

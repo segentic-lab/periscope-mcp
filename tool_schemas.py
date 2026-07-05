@@ -600,7 +600,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="select_page",
-            description="Adopt a popup or new tab this session opened (window.open, target=_blank, OAuth/payment windows) as a NEW session id you can drive with every normal tool — clicks, assertions, logs. Popups are captured the moment they open, with console/network recording already running, so their initial load traffic is not lost. Returns {session_id, url, title}; with several popups open, call without index to list them first. The parent session keeps working for the original tab.",
+            description="Adopt a popup or new tab this session opened (window.open, target=_blank, OAuth/payment windows) as a NEW session id you can drive with every normal tool — clicks, assertions, logs. Console/network recording attaches the instant the driver sees the popup open, so early traffic is captured (requests firing in the popup's first milliseconds can precede any driver's visibility — a browser-automation limit, not a periscope one). Returns {session_id, url, title}; with several popups open, call without index to list them first. The parent session keeps working for the original tab.",
             inputSchema={
                 "type": "object",
                 "properties": {
