@@ -6,6 +6,30 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.9.6] - 2026-07-05
+
+Hardening of `periscope_system` from live-testing the self-update loop
+(isolated clone, real `update.sh` runs — not mocks).
+
+### Fixed
+- **Commit-based change detection.** `updated`/`restart_required` now compare
+  HEAD before/after the pull (`commit_before`/`commit_after` in the response)
+  instead of version strings — an update that pulls commits without a version
+  bump was misreported as `updated: false`. `status` likewise detects a
+  pending restart by comparing the current HEAD to the commit captured when
+  the process loaded.
+- Dirty-file parsing: the porcelain status column was sliced off after output
+  stripping, mangling reported filenames.
+
+### Changed
+- **Transparent handling of local modifications.** `update` with `apply=true`
+  on a dirty tree now stops *before* the updater and names the modified files
+  (`modified_files`), with both options spelled out. With `force=true`,
+  changes are stashed by `update.sh` (recoverable — never deleted) and the
+  response now says exactly that: `stashed_files[]` plus the recovery command,
+  with an instruction to relay it to the user. AGENTS.md documents the policy:
+  never force away changes silently.
+
 ## [0.9.5] - 2026-07-05
 
 ### Added
@@ -123,6 +147,7 @@ authenticated sessions, built-in debugging, and a full audit suite (accessibilit
 SEO, GEO/agentic-search readiness, Core Web Vitals, Lighthouse). See the
 [release notes](https://github.com/segentic-lab/periscope-mcp/releases/tag/v0.9.0).
 
+[0.9.6]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.2...v0.9.3
