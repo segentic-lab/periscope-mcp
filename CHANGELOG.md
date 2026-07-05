@@ -6,6 +6,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.10.1] - 2026-07-05
+
+Third test-agent batch: issue #20, filed while observing authenticated flows
+on a real Next.js app.
+
+### Fixed
+- **#20 — Headed sessions now inherit project auth.** `login_project`
+  authenticates the *running* context without writing the persisted session
+  file, so a headed context created later started with zero cookies and
+  bounced to the login page. Contexts now seed from the sibling mode's live
+  `storage_state` (headless↔headed, symmetric), falling back to the persisted
+  file — headed and headless sessions are interchangeable for a logged-in
+  project.
+- **#20 note — re-running `login_project` when already authenticated** used to
+  time out hunting for a password field the redirect had skipped past; it now
+  returns `already_authenticated: true` with the redirect target.
+- e2e login fixture now mirrors real apps (authenticated visitors are
+  redirected away from the login page).
+
 ## [0.10.0] - 2026-07-06
 
 Capability release — seven new tools + one new parameter, closing the gaps a
@@ -197,6 +216,7 @@ authenticated sessions, built-in debugging, and a full audit suite (accessibilit
 SEO, GEO/agentic-search readiness, Core Web Vitals, Lighthouse). See the
 [release notes](https://github.com/segentic-lab/periscope-mcp/releases/tag/v0.9.0).
 
+[0.10.1]: https://github.com/segentic-lab/periscope-mcp/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.6...v0.10.0
 [0.9.6]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/segentic-lab/periscope-mcp/compare/v0.9.4...v0.9.5

@@ -38,6 +38,18 @@ class AuthHandler:
             login_url = page.url
             debug = {"login_url": login_url}
 
+            # Already authenticated: sites redirect a logged-in visitor away
+            # from the login page — there is no password field to fill, so
+            # don't time out hunting for one (issue #20 note).
+            from tester import redirected_to_login
+            if not redirected_to_login(page.url, form.login_url):
+                return {
+                    "success": True,
+                    "message": "Already authenticated — the login page redirected to "
+                               f"{page.url}. Existing session kept; no login performed.",
+                    "already_authenticated": True,
+                }
+
             # Try each username selector individually
             username_field = None
             for selector in form.username_selector.split(", "):

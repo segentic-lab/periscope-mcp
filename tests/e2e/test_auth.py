@@ -184,3 +184,49 @@ def test_cookie_auth_flow_and_copy_auth_state_transfer(run, handlers, good_site)
     finally:
         run(handlers["delete_project"]({"name": src}))
         run(handlers["delete_project"]({"name": dst}))
+
+
+def test_login_project_rerun_reports_already_authenticated(run, handlers, good_site):
+    # Issue #20 note: re-running login_project after success used to time out
+    # hunting for a password field the redirect already skipped past.
+    p = "reauthproj"
+    try:
+        run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/app"}))
+        run(handlers["set_form_login"]({
+            "project": p, "login_url": f"{good_site}/login.html",
+            "username": "u", "password": "pw",
+        }))
+        assert run(handlers["login_project"]({"project": p}))["success"]
+        again = run(handlers["login_project"]({"project": p}))
+        assert again["success"], again
+        assert again.get("already_authenticated") is True, again
+        assert "Already authenticated" in again["message"]
+    finally:
+        run(handlers["delete_project"]({"name": p}))
+
+
+@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="headed browser needs a display")
+def test_headed_session_inherits_project_auth(run, handlers, good_site):
+    # Issue #20: a headed session must carry the same auth as the headless
+    # context login_project authenticated — live cookies, not just the
+    # persisted session file (which form login never writes).
+    p = "headedauth"
+    try:
+        run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/app"}))
+        run(handlers["set_form_login"]({
+            "project": p, "login_url": f"{good_site}/login.html",
+            "username": "u", "password": "pw",
+        }))
+        assert run(handlers["login_project"]({"project": p}))["success"]
+
+        s = run(handlers["open_session"]({
+            "url": f"{good_site}/app", "project": p, "headed": True}))
+        assert s["success"], s
+        assert "/app" in s["url"] and "login" not in s["url"], s
+        cookies = run(handlers["get_cookies"]({"session_id": s["session_id"]}))
+        assert any(c["name"] == "sid" for c in cookies["cookies"]), cookies
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+    finally:
+        import runtime
+        run(runtime.tester.close_context(p))
+        run(handlers["delete_project"]({"name": p}))

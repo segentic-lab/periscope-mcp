@@ -88,13 +88,21 @@ class WebsiteTester:
         if self.playwright:
             await self.playwright.stop()
 
-    async def _new_context(self, browser: Browser, project_name) -> BrowserContext:
-        """Create a context, seeded with a project's saved login session if any."""
+    async def _new_context(self, browser: Browser, project_name, seed_state=None) -> BrowserContext:
+        """Create a context, seeded with a project's login session if any.
+
+        seed_state (live storage_state from a sibling context) wins over the
+        persisted sessions/<project>.json file — login_project authenticates
+        the RUNNING context without writing that file, so a context created
+        later in the other mode must inherit the live cookies (issue #20).
+        """
         kwargs = {
             "viewport": {"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
             "ignore_https_errors": True,
         }
-        if project_name:
+        if seed_state:
+            kwargs["storage_state"] = seed_state
+        elif project_name:
             import runtime  # deferred: runtime imports tester at module load
             state = runtime.project_manager.load_session_state(project_name)
             if state:
@@ -106,7 +114,17 @@ class WebsiteTester:
         contexts = self.headed_contexts if headed else self.contexts
         if project_name not in contexts:
             browser = await self.get_browser(headed)
-            contexts[project_name] = await self._new_context(browser, project_name)
+            # The same project's context in the OTHER mode holds the freshest
+            # auth (cookies live there after login_project) — carry it over so
+            # headed and headless sessions are interchangeable (issue #20).
+            sibling = (self.contexts if headed else self.headed_contexts).get(project_name)
+            seed_state = None
+            if sibling:
+                try:
+                    seed_state = await sibling.storage_state()
+                except Exception:
+                    pass
+            contexts[project_name] = await self._new_context(browser, project_name, seed_state=seed_state)
         return contexts[project_name]
 
     async def close_context(self, project_name: str):

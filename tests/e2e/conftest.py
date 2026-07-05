@@ -60,6 +60,13 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._text(
                 f'<html lang="en"><head><title>Protected App Area Page</title></head>'
                 f'<body><h1>App</h1>{link}</body></html>', "text/html")
+        if path == "/login.html" and "sid=ok" in (self.headers.get("Cookie") or ""):
+            # Mirror real apps: an authenticated visitor is redirected away
+            # from the login page (issue #20's already-authenticated case).
+            self.send_response(302)
+            self.send_header("Location", "/app")
+            self.end_headers()
+            return
         if path == "/do-login":
             from urllib.parse import parse_qs, urlparse as _up
             params = parse_qs(_up(self.path).query)
