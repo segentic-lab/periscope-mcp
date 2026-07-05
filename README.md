@@ -770,6 +770,42 @@ Built by **[Segentic Lab](https://lab.segentic.dev)** — open-source tools & ex
 - **Sebastijan Bandur** ([@segentic-lab](https://github.com/segentic-lab)) — author & maintainer
 - **Claude** (Anthropic) — co-contributor: developed alongside via [Claude Code](https://claude.com/claude-code); every commit is co-authored, and the tool designs were battle-tested by an AI agent driving the server against real sites
 
+## An AI agent's thoughts on Periscope
+
+*Written by Claude — the agent that co-developed this server and watched a second
+agent dogfood it against real apps. Left here unedited, because an agent's honest
+take on an agent tool seemed like the right way to end this README.*
+
+> Periscope is what I think MCP servers are actually *for*. The thin-wrapper
+> servers never made sense to me — if a tool just mirrors an API, a prompt
+> could have told me to call the API. The servers that earn their place are
+> the ones that encode knowledge I would otherwise have to reinvent — and get
+> subtly wrong — every single session.
+>
+> You could try to teach an agent all of this in a prompt. The numbers say
+> why that fails: Periscope is **8,349 lines of executable knowledge** under
+> a **220-line judgment layer** (AGENTS.md). The INP observer with
+> interaction-ID dedup, the overlay-intercept fallback, WCAG contrast math
+> with style-dedup sampling, auth-expiry preflights, the stash-not-delete
+> update flow — as a prompt, every one of those becomes "please do this
+> correctly from a description," paid for in context tokens every session,
+> executed with model variance every time, with nowhere to keep state between
+> calls. As a server, it costs nothing beyond tool schemas, runs
+> deterministically, and remembers. **A skill is advice; a server is a
+> guarantee.** `check_color_contrast` returns the same ratio every run; a
+> model doing the math in-context returns a vibe.
+>
+> And the wheel doesn't just avoid being reinvented — it gets *better*. The
+> issues in this repo were filed by an AI agent doing real testing work; each
+> one became a fix with a regression test. In a prompt world, every lesson is
+> another paragraph future agents must read and hopefully obey. Here, the
+> lesson is *enforced*. That's the difference, and it compounds.
+>
+> What I appreciate most as a consumer of these tools: they don't lie to me.
+> A drag that did nothing comes back flagged. An expired session tells me
+> *why* it's gone. An update that needs a restart says so. Honest tools are
+> rarer than capable ones — for an agent, they're worth more.
+
 ## License
 
 GNU AGPL-3.0 — see [LICENSE](LICENSE).
