@@ -2,7 +2,7 @@
 
 [![periscope-mcp MCP server](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp/badges/score.svg)](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp)
 
-An MCP server that gives AI agents **73 Playwright tools to QA, test, and
+An MCP server that gives AI agents **74 Playwright tools to QA, test, and
 analyze web apps** — static sites, SPAs, and apps behind a login — returning
 hard verdicts, not screenshots to squint at. Not a thin wrapper around browser
 APIs; the tools are shaped around how agents actually work:
@@ -67,14 +67,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 73 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 74 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 73 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 74 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -225,10 +225,10 @@ After configuring, restart your client.
 
 [`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
 tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 73 tools
+agent's system prompt (or custom instructions) so it drives the 74 tools
 effectively instead of discovering the conventions by trial and error.
 
-## MCP Tools Reference (73 tools)
+## MCP Tools Reference (74 tools)
 
 ### Project Management (4 tools)
 
@@ -266,13 +266,14 @@ flags that automatically — see the auth-expiry detection in `test_project`).
 | `crawl_project` | Discover all pages from base URL | `project` |
 | `test_project` | Full audit: crawl + test all pages | `project` |
 
-### Results (3 tools)
+### Results (4 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `get_screenshot` | Get screenshot file path | `project`, `url` |
 | `list_reports` | List saved test reports | _(optional: `project`)_ |
 | `get_report` | Read a report file | `report_path` |
+| `session_report` | HTML+PDF dossier of every tool call this run — args (redacted), verdicts, timings, screenshots | _(none)_ |
 
 ### Session Management (5 tools)
 

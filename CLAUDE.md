@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
-- `tool_schemas.py` - All 73 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 74 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery, system); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -62,6 +62,7 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 - `crawl_project(project, max_pages?, max_depth?)` — BFS page discovery
 - `test_project(project, checks?[])` — Crawl + test all pages, saves JSON report
 - `get_screenshot(project, url)` / `list_reports(project?)` / `get_report(report_path)`
+- `session_report(title?, notes?, pdf?, clear?)` — HTML+PDF dossier of EVERY tool call this server run (args secrets-redacted, verdicts, timings, screenshot thumbnails); journal captured automatically at dispatch; `notes` = agent's findings narrative
 - `describe_tools(category?)` — Structured tool catalog with workflows and tips
 
 ## Interactive Testing (Session-Based)

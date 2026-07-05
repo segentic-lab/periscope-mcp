@@ -27,6 +27,9 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    import time as _time
+    import journal
+    start = _time.time()
     try:
         coerce_args(arguments)
         handler = HANDLERS.get(name)
@@ -34,10 +37,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = {"success": False, "error": f"Unknown tool: {name}"}
         else:
             result = await handler(arguments)
+        journal.record(name, arguments, result, round((_time.time() - start) * 1000))
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
     except Exception as e:
         # str(KeyError) wraps the message in repr quotes — unwrap via args.
         message = e.args[0] if isinstance(e, KeyError) and e.args else str(e)
+        journal.record(name, arguments, None, round((_time.time() - start) * 1000), error=message)
         return [TextContent(type="text", text=json.dumps({"success": False, "error": message}))]
 
 

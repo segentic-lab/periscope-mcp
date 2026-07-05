@@ -8,8 +8,8 @@ initialize handshake.
 
 ## [0.10.0] - 2026-07-06
 
-Capability release — six new tools + one new parameter, closing the gaps a
-tooling audit ranked by real agent friction. 73 tools now. Designed lean:
+Capability release — seven new tools + one new parameter, closing the gaps a
+tooling audit ranked by real agent friction. 74 tools now. Designed lean:
 every new tool reuses existing machinery (the step executor, the assertion
 evaluator, the screenshot compare, the overlay-fallback click).
 
@@ -43,6 +43,14 @@ evaluator, the screenshot compare, the overlay-fallback click).
   session; verify with assert_all / visual_check after.
 - **`screenshot_session` gains `selector`** — clip the screenshot to one
   element for evidence citing.
+- **`session_report`** — a self-contained HTML + PDF dossier of the whole
+  server run for the *user*: every tool call in chronological order with
+  arguments (secrets redacted at the journal layer — passwords, tokens,
+  cookie values), pass/fail verdicts, timings, error messages, and embedded
+  screenshot thumbnails; the agent's findings go in `notes` and open the
+  report. Calls are journaled automatically at the dispatch chokepoint
+  (failed calls included; journaling can never break a tool call), and the
+  PDF renders through Periscope's own Chromium.
 
 ### Fixed
 - e2e fixture server now sends Content-Length (downloads need it to

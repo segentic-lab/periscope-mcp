@@ -3,7 +3,7 @@
 
 # Website & Web-App Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 73 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 74 Playwright/Chrome tools
 for testing websites and web apps (static sites, SPAs, and apps behind a login).
 Call `describe_tools(category?)` anytime for the full catalog with parameters
 and workflows.
@@ -205,6 +205,12 @@ When testing on behalf of a user: state what you tested, what passed, and what
 failed with the concrete evidence (assertion values, console errors, response
 bodies, screenshot paths). Distinguish site bugs from test-setup problems
 (expired session, wrong selector). Include reproduction steps for every bug.
+
+At the end of a testing run, generate `session_report(notes=...)` — a
+self-contained HTML + PDF dossier of every tool call you made (arguments with
+secrets redacted, verdicts, timings, screenshots) so your user can review the
+whole session. Put your findings summary in `notes`; it opens the report.
+Everything is journaled automatically — failed calls included.
 
 ## Keeping Periscope and this guide current
 

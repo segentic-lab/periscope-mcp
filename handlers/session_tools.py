@@ -178,6 +178,14 @@ async def handle_select_page(args: dict) -> dict:
 
         live = [e for e in session.popups if not e["page"].is_closed()]
         if not live:
+            # The popup event can land a beat after the triggering click
+            # returns — poll briefly before declaring there is none.
+            for _ in range(10):
+                await asyncio.sleep(0.2)
+                live = [e for e in session.popups if not e["page"].is_closed()]
+                if live:
+                    break
+        if not live:
             return {"success": False, "error":
                     "No open popups/new tabs for this session. Popups are captured "
                     "automatically when the page opens one (window.open, target=_blank); "

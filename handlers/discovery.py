@@ -30,6 +30,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "visual_check": {"params": "session_id, name, action(set|check), selector?", "note": "NEW — Named visual baselines: set once, check → hard pass/fail + diff image. Element-scoped baselines flake less."},
                     "flow": {"params": "action(save|run|list|delete), name?, steps?, session_id?", "note": "NEW — Save named step sequences, replay in any session. Verify with assert_all after."},
                     "screenshot_session (selector)": {"params": "session_id, selector", "note": "NEW — selector param clips the screenshot to one element (evidence citing)."},
+                    "session_report": {"params": "title?, notes?, pdf?, clear?", "note": "NEW — HTML+PDF dossier of the whole run for your user: every call, verdicts, timings, screenshots."},
                 },
             },
             "project": {
@@ -72,6 +73,7 @@ async def handle_describe_tools(args: dict) -> dict:
                     "get_screenshot": {"params": "project, url", "note": "Get screenshot path for a tested URL"},
                     "list_reports": {"params": "project?", "note": "List all test reports"},
                     "get_report": {"params": "report_path", "note": "Read a specific report"},
+                    "session_report": {"params": "title?, notes?, pdf?, clear?", "note": "HTML+PDF dossier of every tool call this run (redacted args, verdicts, screenshots). notes = your findings summary."},
                 },
             },
             "sessions": {

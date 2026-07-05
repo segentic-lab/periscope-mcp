@@ -211,6 +211,22 @@ TOOLS: list[Tool] = [
             }
         ),
 
+        Tool(
+            name="session_report",
+            description="Generate a human-readable dossier of EVERYTHING done this server run — every tool call in chronological order with arguments (secrets redacted), pass/fail verdicts, timings, error messages, and embedded screenshot thumbnails — as a self-contained HTML file plus a PDF. Made for handing to your user to review the whole session; add your findings via 'notes' so the report opens with your summary. The journal records automatically from server start; clear=true resets it after reporting (e.g. between test rounds).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Report title (default: 'Periscope session report')"},
+                    "notes": {"type": "string", "description": "Your summary/findings narrative — rendered as an 'Agent notes' panel at the top"},
+                    "include_screenshots": {"type": ["boolean", "string"], "description": "Embed screenshot thumbnails (default: true; originals are always linked)"},
+                    "pdf": {"type": ["boolean", "string"], "description": "Also render a PDF via headless Chromium (default: true)"},
+                    "clear": {"type": "boolean", "description": "Reset the journal after generating (default: false)"}
+                },
+                "required": []
+            }
+        ),
+
         # ==================== Interactive Testing ====================
 
         # Session Management
