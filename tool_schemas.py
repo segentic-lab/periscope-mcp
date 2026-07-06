@@ -1,6 +1,21 @@
 """MCP tool definitions (schemas only — handlers live in handlers/)."""
 from mcp.types import Tool
 
+# Shared post-action observation knob (issue #21). Merged into every action tool
+# so the caller chooses what comes back — instead of a forced screenshot.
+OBSERVE_PROP = {
+    "observe": {
+        "type": "string",
+        "enum": ["screenshot", "none", "map", "checks"],
+        "default": "screenshot",
+        "description": "What to return about the resulting page. 'screenshot' (default): "
+                       "full-page image. 'none': structured result only, no image — cheapest, "
+                       "use through setup steps of a flow. 'map': semantic page map "
+                       "(get_page_map — token-light, best for 'what can I do next?'). "
+                       "'checks': run_checks_on_session output (a11y/seo/perf/etc.).",
+    },
+}
+
 TOOLS: list[Tool] = [
         # Project Management
         Tool(
@@ -269,7 +284,8 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector of element to click"},
-                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."}
+                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."},
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id", "selector"]
             }
@@ -294,7 +310,8 @@ TOOLS: list[Tool] = [
                         }
                     },
                     "submit_selector": {"type": "string", "description": "CSS selector for submit button (optional)"},
-                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks — fill even when overlays/dialogs block the inputs (default: false)"}
+                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks — fill even when overlays/dialogs block the inputs (default: false)"},
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id", "fields"]
             }
@@ -578,7 +595,8 @@ TOOLS: list[Tool] = [
                             "laptop", "desktop", "desktop_lg"
                         ],
                         "description": "Device preset: mobile_sm (320x568 iPhone SE), mobile (375x812 iPhone 12), mobile_lg (428x926 iPhone 14 Pro Max), tablet (768x1024 iPad), tablet_lg (1024x1366 iPad Pro), laptop (1366x768), desktop (1920x1080), desktop_lg (2560x1440)"
-                    }
+                    },
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id"]
             }
@@ -617,7 +635,8 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "action": {"type": "string", "enum": ["back", "forward", "reload"], "description": "History action to perform"}
+                    "action": {"type": "string", "enum": ["back", "forward", "reload"], "description": "History action to perform"},
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id", "action"]
             }
@@ -1022,7 +1041,8 @@ TOOLS: list[Tool] = [
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "selector": {"type": "string", "description": "CSS selector of element to scroll to"}
+                    "selector": {"type": "string", "description": "CSS selector of element to scroll to"},
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id", "selector"]
             }
@@ -1090,7 +1110,8 @@ TOOLS: list[Tool] = [
                     "value": {"type": "string", "description": "Option value to select"},
                     "label": {"type": "string", "description": "Option label text to select"},
                     "index": {"type": "integer", "description": "Option index to select (0-based)"},
-                    "element_index": {"type": "integer", "description": "Which match of 'selector' to target, 0-based (default: 0). Use for the 2nd/3rd attribute-less <select> on a page."}
+                    "element_index": {"type": "integer", "description": "Which match of 'selector' to target, 0-based (default: 0). Use for the 2nd/3rd attribute-less <select> on a page."},
+                    **OBSERVE_PROP,
                 },
                 "required": ["session_id", "selector"]
             }

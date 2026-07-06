@@ -137,6 +137,11 @@ async def handle_get_page_map(args: dict) -> dict:
         ready-to-use selector per node. One call answers 'what can I do here?'.
         Output is deliberately compact: only truthy state fields, capped nodes."""
         session = session_manager.get_session(args["session_id"])
+        return await build_page_map(session, args)
+
+
+async def build_page_map(session, args: dict) -> dict:
+        """Core of get_page_map, callable by the observe='map' path too."""
         max_nodes = int(args.get("max_nodes") or 150)
         include_hidden = bool(args.get("include_hidden"))
 
