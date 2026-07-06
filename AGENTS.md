@@ -222,7 +222,12 @@ Everything is journaled automatically — failed calls included.
   Chromium), active session count, and whether an update is available.
 - `action="agents_md"` (read-only) — returns the CURRENT version of this guide
   from the install. If this pasted copy might be stale (a status check shows a
-  newer version than you expected), fetch it and prefer its instructions.
+  newer version than you expected), fetch it and prefer its instructions —
+  and if you can edit your own persistent config (CLAUDE.md, instructions
+  file), replace the pasted copy so future sessions start current.
+- At the start of a long testing engagement, one `status` call is worth it:
+  it gives you the exact version+commit for your report and tells you if an
+  update exists.
 - `action="update"` — dry-run by default (commits behind + incoming changes);
   `apply=true` runs the updater (git pull + dependencies; the user's data/ is
   untouched). **New code loads only after the MCP server restarts** — the

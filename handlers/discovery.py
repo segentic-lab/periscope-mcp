@@ -252,6 +252,7 @@ async def handle_describe_tools(args: dict) -> dict:
         }
 
         result["tips"] = [
+            "First time on this install, or a long-running one? periscope_system(action='status') reports the version you're driving and whether an update exists (apply only with user approval); action='agents_md' returns the CURRENT operating guide if your pasted copy may be stale.",
             "Tools accepting 'url|session_id': pass session_id to reuse an open page, or url for ephemeral (one-shot) testing.",
             "Use find_element before click_element to discover the right selector.",
             "Use auto_fill_form instead of multiple fill_form calls — it infers field types.",
