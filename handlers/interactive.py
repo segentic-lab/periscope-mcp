@@ -20,10 +20,7 @@ async def handle_click_element(args: dict) -> dict:
             session.page, args["selector"], force=args.get("force", False)
         )
         session.url = result["url"]
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_click", screenshot_dir=session.screenshot_dir)
-        result["screenshot_path"] = screenshot_path
-        return result
+        return await interactions.attach_observation(session, result, args, "after_click")
 
 
 @tool("fill_form")
@@ -37,10 +34,7 @@ async def handle_fill_form(args: dict) -> dict:
         )
         if result.get("submitted"):
             session.url = result.get("url", session.url)
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_fill", screenshot_dir=session.screenshot_dir)
-        result["screenshot_path"] = screenshot_path
-        return result
+        return await interactions.attach_observation(session, result, args, "after_fill")
 
 
 @tool("interact_and_test")
@@ -382,13 +376,8 @@ async def handle_scroll_into_view(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         locator = session.page.locator(args["selector"]).first
         await locator.scroll_into_view_if_needed(timeout=10000)
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_scroll", screenshot_dir=session.screenshot_dir)
-        return {
-            "success": True,
-            "selector": args["selector"],
-            "screenshot_path": screenshot_path,
-        }
+        result = {"success": True, "selector": args["selector"]}
+        return await interactions.attach_observation(session, result, args, "after_scroll")
 
 
 @tool("wait_for_gone")
@@ -426,7 +415,4 @@ async def handle_select_option(args: dict) -> dict:
             index=args.get("index"),
             element_index=int(args.get("element_index") or 0),
         )
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, "after_select_option", screenshot_dir=session.screenshot_dir)
-        result["screenshot_path"] = screenshot_path
-        return result
+        return await interactions.attach_observation(session, result, args, "after_select_option")

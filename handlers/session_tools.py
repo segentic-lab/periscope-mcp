@@ -113,15 +113,14 @@ async def handle_set_viewport(args: dict) -> dict:
             height = args.get("height", config.VIEWPORT_HEIGHT)
 
         await real_page(session.page).set_viewport_size({"width": width, "height": height})
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, f"viewport_{width}x{height}", screenshot_dir=session.screenshot_dir)
-        return {
+        result = {
             "success": True,
             "viewport": {"width": width, "height": height},
             "device": device,
-            "screenshot_path": screenshot_path,
             "url": session.url,
         }
+        return await interactions.attach_observation(
+            session, result, args, f"viewport_{width}x{height}")
 
 
 @tool("screenshot_session")
@@ -255,12 +254,10 @@ async def handle_navigate_session(args: dict) -> dict:
         else:
             return {"success": False, "error": f"Unknown action '{action}'. Valid: back, forward, reload"}
         session.url = page.url
-        screenshot_path = await interactions.take_screenshot(
-            session.page, session.project_name, f"after_{action}", screenshot_dir=session.screenshot_dir)
-        return {
+        result = {
             "success": True,
             "action": action,
             "url": session.url,
             "title": await session.page.title(),
-            "screenshot_path": screenshot_path,
         }
+        return await interactions.attach_observation(session, result, args, f"after_{action}")

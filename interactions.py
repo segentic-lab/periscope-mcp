@@ -428,6 +428,34 @@ async def take_screenshot(page: Page, project_name: str, label: str = "", screen
     return filepath
 
 
+async def attach_observation(session, result: dict, args: dict, label: str) -> dict:
+    """Bundle the caller-chosen post-action observation into `result`.
+
+    observe: "screenshot" (default, == legacy behavior) | "none" | "map" | "checks"
+
+    Keeps the action surface opt-out: multi-step flows pass observe="none" through
+    setup steps (no image tokens, no round-trip), then "map"/"screenshot"/"checks"
+    on the step that matters. Default preserves the historical screenshot_path.
+    Imports the map/checks builders lazily to avoid a handlers<->interactions cycle.
+    """
+    observe = args.get("observe", "screenshot")
+    if observe == "none":
+        return result
+    if observe == "screenshot":
+        result["screenshot_path"] = await take_screenshot(
+            session.page, session.project_name, label, screenshot_dir=session.screenshot_dir)
+    elif observe == "map":
+        from handlers.agent_speed import build_page_map
+        result["page_map"] = await build_page_map(session, args)
+    elif observe == "checks":
+        from handlers.analysis import run_session_checks
+        result["checks"] = await run_session_checks(session, args.get("checks"))
+    else:
+        result["observe_warning"] = (
+            f"unknown observe={observe!r}; skipped (use none|screenshot|map|checks)")
+    return result
+
+
 async def execute_steps(
     page: Page,
     steps: list[dict],

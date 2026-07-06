@@ -150,6 +150,19 @@ anything?".
   exports every interaction's INP as a graphable time series + percentile
   stats — plot `inp_ms` over `t_ms`.
 
+## Choosing what an action returns (`observe`)
+
+- `click_element`, `fill_form`, `select_option`, `scroll_into_view`,
+  `navigate_session`, and `set_viewport` take an optional `observe`:
+  `screenshot` (default — a full-page image, the historical behavior),
+  `none` (structured result only, no image — cheapest), `map` (bundles the
+  `get_page_map` semantic map, token-light), or `checks` (bundles
+  `run_checks_on_session`).
+- Drive a multi-step flow with `observe="none"` through the setup steps, then
+  `observe="map"` (or `"screenshot"`) on the step whose result you actually
+  need — fewer tokens and no separate `get_page_map`/`screenshot_session`
+  round-trip. Omit `observe` entirely to keep the default screenshot.
+
 ## Ordering rules and pitfalls
 
 - `handle_dialog(session_id, action)` must be called **before** the action

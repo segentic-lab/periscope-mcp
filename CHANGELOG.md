@@ -6,6 +6,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [Unreleased]
+
+Cross-server lesson from the glovebox-mcp sibling (its `observe`/`settle_ms`
+pattern is "cleaner than periscope's separate screenshot-after"). Issue #21.
+
+### Added
+- **`observe` param on the action tools** (`click_element`, `fill_form`,
+  `select_option`, `scroll_into_view`, `navigate_session`, `set_viewport`).
+  The caller now chooses what comes back per call: `screenshot` (default,
+  unchanged), `none` (structured result only — no forced image), `map`
+  (bundles the `get_page_map` semantic map), or `checks` (bundles
+  `run_checks_on_session`). A multi-step flow can run `observe="none"` through
+  setup steps and `observe="map"` on the step that matters — fewer image
+  tokens, no extra round-trip. Default preserves the historical
+  `screenshot_path`, so nothing breaks.
+
 ## [0.10.1] - 2026-07-05
 
 Third test-agent batch: issue #20, filed while observing authenticated flows

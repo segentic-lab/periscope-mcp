@@ -113,13 +113,18 @@ async def handle_test_keyboard_navigation(args: dict) -> dict:
 
 @tool("run_checks_on_session")
 async def handle_run_checks_on_session(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        return await run_session_checks(session, args.get("checks"))
+
+
+async def run_session_checks(session, checks=None) -> dict:
+        """Core of run_checks_on_session, callable by the observe='checks' path too."""
         from checks.visual import check_visual
         from checks.accessibility import check_accessibility
         from checks.functionality import check_functionality, check_seo, get_performance_metrics
         from checks.geo import check_geo
 
-        session = session_manager.get_session(args["session_id"])
-        checks = args.get("checks", ["visual", "accessibility", "functionality", "seo", "performance", "geo"])
+        checks = checks or ["visual", "accessibility", "functionality", "seo", "performance", "geo"]
         page = session.page
 
         all_issues = []
