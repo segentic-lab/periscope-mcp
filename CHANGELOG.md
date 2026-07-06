@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
-## [Unreleased]
+## [0.10.2] - 2026-07-07
 
 Cross-server lesson from the glovebox-mcp sibling (its `observe`/`settle_ms`
 pattern is "cleaner than periscope's separate screenshot-after"). Issue #21.
