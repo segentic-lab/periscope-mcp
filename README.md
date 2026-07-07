@@ -374,7 +374,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `web_search` | Search DuckDuckGo: titles + URLs + snippets | `query` |
-| `web_fetch` | Fetch URL, extract readable text (or raw HTML); TLS verified by default | `url` |
+| `web_fetch` | Fetch URL → readable **Markdown** (or text/html); `render=true` runs JS in headless Chromium (+ `project` for behind-login), `contains` gates the fetch, `save` writes a clean `.md` artifact | `url` |
 | `describe_tools` | Structured catalog of all tools with workflows and tips | _(none)_ |
 | `periscope_system` | Install status + update check/apply + fetch current AGENTS.md | _(none)_ |
 

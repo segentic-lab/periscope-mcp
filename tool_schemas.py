@@ -1148,13 +1148,21 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="web_fetch",
-            description="Fetch a URL over HTTP (no browser) and return its readable text content, or raw HTML with raw_html=true, up to max_length. TLS is verified by default — set verify_ssl=false for self-signed dev certs. Use to read docs or verify external link content without opening a session.",
+            description="Fetch a URL and return clean, readable content — Markdown by default (structure preserved: headings, lists, links, code, tables), with page boilerplate (nav/footer/cookie bars) stripped via readability extraction. Far fewer tokens than a raw text dump. format='text' for plain text, 'html' for raw HTML (raw_html=true is an alias). Static HTTP fetch by default; render=true loads the page in headless Chromium so client-rendered/SPA content is captured (runs all JS, then extracts) — pass project to render a page behind that project's login (host fetch tools can't). contains=[words] only returns the content if the page contains the term(s) (contains_mode any|all), else omits it to save tokens. save=true (or save_path) writes the full content to disk and returns saved_path. TLS verified by default (verify_ssl=false for dev certs).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to fetch"},
-                    "max_length": {"type": "integer", "description": "Max content length in characters (default: 50000)", "default": 50000},
-                    "raw_html": {"type": "boolean", "description": "Return raw HTML instead of extracted text (default: false)", "default": False},
+                    "format": {"type": "string", "enum": ["markdown", "text", "html"], "description": "Output shape (default: markdown). markdown = readable structured Markdown; text = readable plain text; html = raw HTML."},
+                    "readable": {"type": ["boolean", "string"], "description": "Extract main content, dropping nav/footer/boilerplate (default: true). false = whole-page dump. Ignored for format=html."},
+                    "render": {"type": ["boolean", "string"], "description": "Load in headless Chromium and run JS before extracting (default: false). Use for client-rendered/SPA pages where a static fetch returns little. Slower than static."},
+                    "project": {"type": "string", "description": "With render=true, load the page in this project's authenticated context — read pages behind a login."},
+                    "contains": {"type": ["array", "string"], "description": "Only return content if the page contains these term(s) (case-insensitive). Otherwise content is omitted (matched=false) to save tokens.", "items": {"type": "string"}},
+                    "contains_mode": {"type": "string", "enum": ["any", "all"], "description": "Match if ANY term is present (default) or require ALL."},
+                    "save": {"type": ["boolean", "string"], "description": "Write the full (un-truncated) content to data/fetches/ and return saved_path (default: false)."},
+                    "save_path": {"type": "string", "description": "Explicit file path to save to (implies save=true)."},
+                    "max_length": {"type": "integer", "description": "Max returned content length in characters (default: 50000). Saved files are never truncated.", "default": 50000},
+                    "raw_html": {"type": "boolean", "description": "Alias for format='html' (default: false).", "default": False},
                     "verify_ssl": {"type": "boolean", "description": "Verify TLS certificates (default: true). Set false for self-signed certs on local/dev servers.", "default": True}
                 },
                 "required": ["url"]

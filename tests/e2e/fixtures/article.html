@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Understanding the Cascade</title></head>
+<body>
+  <nav id="sitenav">Home · Products · Pricing · Blog · Careers · Contact · Login · Sign up</nav>
+  <main>
+    <article>
+      <h1>Understanding the Cascade</h1>
+      <p>The CSS cascade is the algorithm that decides which declaration wins when
+         several rules target the same element. It weighs origin, specificity, and
+         source order, in that priority, to resolve conflicts deterministically.</p>
+      <h2>Specificity</h2>
+      <p>Specificity is a three-part score computed from the selectors in a rule.
+         Inline styles outrank IDs, IDs outrank classes and attributes, and those in
+         turn outrank type selectors. When two declarations tie, the later one wins.</p>
+      <p>For a deeper reference, see the
+         <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/Specificity">MDN specificity guide</a>,
+         which documents the exact weighting rules and worked examples.</p>
+      <h2>Example</h2>
+      <pre><code>a.button { color: blue; }
+#cta { color: red; }   /* wins: IDs outrank classes */</code></pre>
+      <ul>
+        <li>Origin and importance are considered first.</li>
+        <li>Then specificity of the matching selector.</li>
+        <li>Finally, document source order breaks remaining ties.</li>
+      </ul>
+    </article>
+  </main>
+  <footer id="sitefooter">© 2026 Example Corp · Terms · Privacy · Cookie preferences</footer>
+</body>
+</html>
