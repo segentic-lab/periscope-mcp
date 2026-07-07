@@ -6,6 +6,34 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [Unreleased]
+
+Dogfooding batch — issue #22, filed while comparing consecutive `test_project`
+runs of the same site.
+
+### Fixed
+- **#22 — Non-deterministic crawl order made re-tests incomparable.** With
+  `max_pages` smaller than the site, consecutive crawls picked a *different*
+  page subset each run (set-iteration order), so per-page findings silently
+  appeared/vanished between reports and a page that merely fell out of the
+  window looked "fixed." The crawl is now **deterministic**: links are sorted
+  before the cap, so the same site yields the same subset every time.
+
+### Added
+- **Sitemap-seeded crawl.** When `sitemap.xml` (or a `sitemap_index.xml` /
+  robots.txt `Sitemap:` line) exists, the page list is seeded from it (sorted),
+  matching what search engines index; falls back to link discovery for the rest.
+  `use_sitemap=false` forces a pure link-crawl. Results flag `crawl_sources`.
+- **Honest coverage reporting.** `crawl_project`/`test_project` now return
+  `discovered_total` and `pages_not_crawled[]`/`pages_not_tested[]` (≤100, else
+  a count + `truncated` flag) — a hit cap is never silent.
+- **`max_pages=0` = test the whole site** — explicit opt-in to an unbounded
+  crawl, stopping at a 2000-page safety ceiling (`config.MAX_PAGES_CEILING`,
+  env-overridable) and flagging `ceiling_hit` rather than truncating silently.
+- **Coverage delta.** `test_project` returns a `coverage` block
+  (`pages_added`/`pages_dropped`, `compared_to`) vs the project's previous
+  report, so a shifted crawl window is visible even when it does shift.
+
 ## [0.10.2] - 2026-07-07
 
 Cross-server lesson from the glovebox-mcp sibling (its `observe`/`settle_ms`

@@ -16,6 +16,12 @@ WAIT_UNTIL = os.environ.get("NAV_WAIT_UNTIL", "networkidle")
 # Crawler settings
 MAX_PAGES = 20
 MAX_DEPTH = 3
+# Safety ceiling for the opt-in unbounded crawl (max_pages=0 == "test all"):
+# query-string/calendar URLs can explode, so even "all" stops here and the
+# result is flagged (never a silent truncation). Env-overridable.
+MAX_PAGES_CEILING = int(os.environ.get("MAX_PAGES_CEILING", "2000"))
+# How many not-tested URLs to list inline before switching to a bare count.
+MAX_NOT_CRAWLED_LISTED = 100
 
 # Session settings
 MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "20"))  # max concurrent sessions
