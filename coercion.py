@@ -17,7 +17,7 @@ _BOOL_ARGS = {
     "force", "check_external", "clear", "clear_first", "once", "submit",
     "full_page", "screenshot_after", "continue_on_error", "raw_html", "verify_ssl",
     "capture_console", "full_text", "headed", "apply", "include_hidden", "pdf", "include_screenshots",
-    "use_sitemap", "raw", "readable", "render", "save",
+    "use_sitemap", "raw", "readable", "render", "save", "meta", "save_md",
 }
 
 

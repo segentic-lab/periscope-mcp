@@ -46,6 +46,11 @@ saves a JSON report) → `get_report(path)`. For one page: `test_url(url)`.
 The `geo` check covers AI/agentic-search readiness: robots.txt access for AI
 crawlers, llms.txt compliance, WebMCP form annotations, and JSON-LD presence.
 
+To capture a site (not just audit it): `crawl_project(project, meta=true)` adds
+each page's title + description, and `save_md=true` saves every crawled page as
+readable Markdown to `data/fetches/<project>/` — captured during the crawl on the
+loaded page, so behind-login and JS-rendered pages work.
+
 The crawl is **deterministic and sitemap-seeded**: it seeds from
 `sitemap.xml`/robots.txt when present and sorts links before applying the cap,
 so the *same* site gives the *same* page subset every run — before/after

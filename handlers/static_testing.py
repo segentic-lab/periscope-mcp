@@ -2,7 +2,9 @@
 import asyncio
 import json
 import os
+import re
 import time
+from urllib.parse import urlparse
 
 import config
 import interactions
@@ -13,6 +15,22 @@ from sessions import real_page
 from .registry import tool
 from nav import resilient_goto
 from tester import redirected_to_login
+
+
+def _as_bool(v) -> bool:
+    """Interpret a bool arg that an MCP client may have sent as a string."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes")
+    return bool(v)
+
+
+def _url_slug(url: str) -> str:
+    """Filesystem-safe filename stem for a page URL (used for saved .md files)."""
+    p = urlparse(url)
+    slug = (p.path or "").strip("/").replace("/", "_") or "index"
+    if p.query:
+        slug += "_" + re.sub(r"\W+", "-", p.query)[:40]
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", slug)[:120]
 
 
 def _coverage_fields(crawl: dict, tested: bool) -> dict:
@@ -130,12 +148,45 @@ async def handle_crawl_project(args: dict) -> dict:
         context = await t.get_context(project.name)
         crawler = Crawler()
 
+        # Optional per-page enrichment, captured DURING the crawl (authenticated,
+        # post-JS) — no second navigation. meta = title + description;
+        # save_md = save each page as readable markdown.
+        want_meta = _as_bool(args.get("meta"))
+        save_md = _as_bool(args.get("save_md")) or bool(args.get("save_dir"))
+        pages_meta = []
+        md_dir = None
+        if save_md:
+            md_dir = args.get("save_dir") or os.path.join(config.DATA_DIR, "fetches", project.name)
+            os.makedirs(md_dir, exist_ok=True)
+
+        on_page = None
+        if want_meta or save_md:
+            from handlers.web import extract_readable
+
+            async def on_page(url, page):
+                entry = {"url": url}
+                rp = real_page(page)
+                if want_meta:
+                    entry["title"] = await rp.title()
+                    entry["description"] = await rp.evaluate(
+                        "() => document.querySelector('meta[name=\"description\"]')?.content || "
+                        "document.querySelector('meta[property=\"og:description\"]')?.content || ''")
+                if save_md:
+                    content, _ = extract_readable(await rp.content(), rp.url, "markdown")
+                    slug = _url_slug(url) + ".md"
+                    fpath = os.path.join(md_dir, slug)
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    entry["saved_path"] = fpath
+                pages_meta.append(entry)
+
         crawl = await crawler.crawl(
             context=context,
             start_url=project.base_url,
             max_pages=args.get("max_pages", project.max_pages),
             max_depth=args.get("max_depth", project.max_depth),
             use_sitemap=args.get("use_sitemap", True),
+            on_page=on_page,
         )
 
         result = {
@@ -145,6 +196,11 @@ async def handle_crawl_project(args: dict) -> dict:
             "urls": crawl["crawled"],
             **_coverage_fields(crawl, tested=False),
         }
+        if pages_meta:
+            result["pages"] = pages_meta
+        if save_md:
+            result["saved_dir"] = md_dir
+            result["saved_count"] = sum(1 for p in pages_meta if p.get("saved_path"))
         if auth_check:
             result["auth_check"] = auth_check
         return result

@@ -37,6 +37,21 @@ def _tidy_markdown(md: str) -> str:
     return md.strip()
 
 
+def extract_readable(html: str, url: str, fmt: str = "markdown") -> tuple[str, str]:
+    """Readable extraction of `html` → (content, method) for fmt=markdown|text.
+    Falls back to a flat bs4 text dump so it is never empty. Shared by web_fetch
+    and crawl_project's save-markdown pass."""
+    from bs4 import BeautifulSoup
+    import trafilatura
+    out_fmt = "markdown" if fmt == "markdown" else "txt"
+    extracted = trafilatura.extract(
+        html, url=url, output_format=out_fmt, include_links=True,
+        include_tables=True, include_formatting=(fmt == "markdown"), favor_recall=True)
+    if extracted:
+        return (_tidy_markdown(extracted) if fmt == "markdown" else extracted.strip()), "trafilatura"
+    return _bs4_flat(BeautifulSoup(html, "html.parser")), "bs4-fallback"
+
+
 @tool("web_search")
 async def handle_web_search(args: dict) -> dict:
         from ddgs import DDGS
@@ -133,18 +148,7 @@ async def handle_web_fetch(args: dict) -> dict:
         if fmt == "html":
             content, extraction = html, "raw-html"
         elif readable:
-            import trafilatura
-            out_fmt = "markdown" if fmt == "markdown" else "txt"
-            extracted = trafilatura.extract(
-                html, url=final_url, output_format=out_fmt,
-                include_links=True, include_tables=True,
-                include_formatting=(fmt == "markdown"), favor_recall=True)
-            if extracted:
-                content = _tidy_markdown(extracted) if fmt == "markdown" else extracted.strip()
-                extraction = "trafilatura"
-            else:
-                # Never silently empty — fall back to the flat dump and say so.
-                content, extraction = _bs4_flat(soup), "bs4-fallback"
+            content, extraction = extract_readable(html, final_url, fmt)
         else:
             content, extraction = _bs4_flat(soup), "bs4-flat"
 
