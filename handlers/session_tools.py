@@ -128,6 +128,7 @@ async def handle_screenshot_session(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         full_page = args.get("full_page", True)
         selector = args.get("selector")
+        _meta = {}
         if selector:
             # Element clip: screenshot just the matching element (evidence citing)
             base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
@@ -141,7 +142,8 @@ async def handle_screenshot_session(args: dict) -> dict:
             await locator.screenshot(path=screenshot_path)
         elif full_page:
             screenshot_path = await interactions.take_screenshot(
-                session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir)
+                session.page, session.project_name, "session_state", screenshot_dir=session.screenshot_dir,
+                prepare=not args.get("raw", False), meta=_meta)
         else:
             base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
             project_dir = os.path.join(base_dir, session.project_name)
@@ -155,6 +157,7 @@ async def handle_screenshot_session(args: dict) -> dict:
             "screenshot_path": screenshot_path,
             "url": session.url,
             "title": await session.page.title(),
+            **({"capture_prep": _meta["capture_prep"]} if _meta.get("capture_prep") else {}),
         }
 
 

@@ -8,10 +8,21 @@ initialize handshake.
 
 ## [Unreleased]
 
-Dogfooding batch — issue #22, filed while comparing consecutive `test_project`
-runs of the same site.
+Dogfooding batch — issues #22 and #23, filed while auditing real Astro sites.
 
 ### Fixed
+- **#23 — Full-page screenshots misrendered sticky/reveal elements.** Playwright
+  stitches a full-page shot from viewport slices, which double-painted
+  `position: sticky`/`fixed` headers mid-image and captured scroll-reveal
+  sections at their pre-animation (`opacity:0`) state — whole bands looked blank,
+  and the artifacts flowed into `session_report` thumbnails. Full-page captures
+  are now **prepared**: sticky/fixed elements neutralized to `static`, animations
+  disabled, `prefers-reduced-motion: reduce` emulated, and the page scrolled to
+  fire IntersectionObserver reveals — then everything is restored exactly. The
+  applied steps are reported as `capture_prep`; `screenshot_session(raw=true)`
+  opts out. Covers `screenshot_session`, the `observe="screenshot"` action path,
+  `test_url`, `test_project`, and `test_responsive`. Viewport and element-clip
+  shots are untouched (they capture exactly what's on screen).
 - **#22 — Non-deterministic crawl order made re-tests incomparable.** With
   `max_pages` smaller than the site, consecutive crawls picked a *different*
   page subset each run (set-iteration order), so per-page findings silently

@@ -607,13 +607,14 @@ TOOLS: list[Tool] = [
         # Workflow Speed Tools
         Tool(
             name="screenshot_session",
-            description="Screenshot the session's current page as-is — no actions performed. Returns the image path (full-page by default; full_page=false captures just the viewport). Use to grab state at a point in a workflow; interactive tools already return screenshots, so don't call this after every step.",
+            description="Screenshot the session's current page as-is — no actions performed. Returns the image path (full-page by default; full_page=false captures just the viewport). Full-page captures are PREPARED for fidelity: sticky/fixed headers are neutralized (no mid-page duplication), animations disabled, reduced-motion emulated, and scroll-reveal sections forced visible — the applied steps are reported in capture_prep. Pass raw=true to capture the unprepared stitch. Use to grab state at a point in a workflow; interactive tools already return screenshots, so don't call this after every step.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"},
-                    "selector": {"type": "string", "description": "Clip to one element: screenshot just the first match (for citing evidence). Overrides full_page."}
+                    "selector": {"type": "string", "description": "Clip to one element: screenshot just the first match (for citing evidence). Overrides full_page."},
+                    "raw": {"type": ["boolean", "string"], "description": "Skip full-page capture preparation (sticky neutralization, reveal forcing) and capture the raw Playwright stitch (default: false). Only affects full-page captures."}
                 },
                 "required": ["session_id"]
             }

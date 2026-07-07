@@ -142,6 +142,14 @@ anything?".
 
 - `screenshot_session(session_id)` for current state; `set_viewport` with
   presets `mobile_sm|mobile|mobile_lg|tablet|tablet_lg|laptop|desktop|desktop_lg`.
+- **Full-page screenshots are prepared for fidelity** (sticky/fixed headers
+  neutralized so they don't duplicate mid-image, animations disabled,
+  reduced-motion emulated, scroll-reveal sections forced visible), then the page
+  is restored. The steps applied come back in `capture_prep` — trust the image.
+  Pass `raw=true` to `screenshot_session` for the unprepared Playwright stitch.
+  Preparation applies to full-page captures only (viewport and element-clip
+  shots are always as-is); `test_url`/`test_project`/`test_responsive` shots are
+  prepared too and report `capture_prep` per page.
 - `test_responsive(url)` tests mobile/tablet/desktop in one call.
 - `compare_screenshots(path1, path2)` returns a pixel-diff percentage and a
   highlighted diff image.

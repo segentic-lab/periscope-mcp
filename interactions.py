@@ -410,13 +410,119 @@ async def get_elements(
     return elements
 
 
-async def take_screenshot(page: Page, project_name: str, label: str = "", screenshot_dir: str = None) -> str:
-    """Take a screenshot and save it. Returns the file path.
+# Full-page capture preparation (issue #23). Playwright stitches a full-page
+# screenshot from viewport-height slices, which double-paints sticky/fixed
+# headers mid-image and captures scroll-triggered reveal sections at their
+# pre-animation (opacity:0 / translated) state — whole bands look blank. We
+# prepare the page for a faithful capture, then restore it exactly.
+_CAP_STYLE = ("*,*::before,*::after{animation:none!important;transition:none!important;"
+              "scroll-behavior:auto!important;animation-duration:0s!important}")
 
-    Accepts a Page or a Frame (iframe sessions) — Frames are screenshotted via their owning Page.
+_STICKY_APPLY_JS = """() => {
+    let n = 0;
+    for (const el of document.querySelectorAll('body *')) {
+        const pos = getComputedStyle(el).position;
+        if (pos === 'sticky' || pos === 'fixed') {
+            el.setAttribute('data-periscope-pos', el.style.position || '');
+            el.style.setProperty('position', 'static', 'important');
+            n++;
+        }
+    }
+    return n;
+}"""
+
+_STICKY_RESTORE_JS = """() => {
+    for (const el of document.querySelectorAll('[data-periscope-pos]')) {
+        const orig = el.getAttribute('data-periscope-pos');
+        el.style.removeProperty('position');
+        if (orig) el.style.position = orig;
+        el.removeAttribute('data-periscope-pos');
+    }
+}"""
+
+_STYLE_APPLY_JS = """(css) => {
+    let s = document.getElementById('periscope-cap-style');
+    if (!s) { s = document.createElement('style'); s.id = 'periscope-cap-style';
+              s.textContent = css; document.head.appendChild(s); }
+}"""
+
+_STYLE_REMOVE_JS = "() => { const s = document.getElementById('periscope-cap-style'); if (s) s.remove(); }"
+
+# Scroll through the whole page (then back to top) so IntersectionObserver-driven
+# reveals fire before capture. Bounded steps; short waits keep it quick.
+_REVEAL_SCROLL_JS = """async () => {
+    const h = document.body.scrollHeight;
+    const step = Math.max(200, window.innerHeight);
+    for (let y = 0; y <= h; y += step) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, 30)); }
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 30));
+}"""
+
+
+async def _apply_capture_prep(page: Page) -> list[str]:
+    """Prepare a page for a faithful full-page screenshot. Returns the list of
+    preparations actually applied (for honest `capture_prep` reporting)."""
+    prep = []
+    try:
+        await page.emulate_media(reduced_motion="reduce")
+        prep.append("reduced_motion")
+    except Exception:
+        pass
+    try:
+        await page.evaluate(_STYLE_APPLY_JS, _CAP_STYLE)
+        prep.append("animations_disabled")
+    except Exception:
+        pass
+    try:
+        if await page.evaluate(_STICKY_APPLY_JS):
+            prep.append("sticky_neutralized")
+    except Exception:
+        pass
+    try:
+        await page.evaluate(_REVEAL_SCROLL_JS)
+        prep.append("reveals_forced")
+    except Exception:
+        pass
+    return prep
+
+
+async def _restore_capture_prep(page: Page) -> None:
+    """Undo _apply_capture_prep — restore positions, styles, and media emulation."""
+    for js in (_STICKY_RESTORE_JS, _STYLE_REMOVE_JS):
+        try:
+            await page.evaluate(js)
+        except Exception:
+            pass
+    try:
+        await page.emulate_media(reduced_motion="no-preference")
+    except Exception:
+        pass
+
+
+async def capture_full_page(page, path: str, prepare: bool = True) -> list[str]:
+    """Full-page screenshot to `path`. With prepare=True (default), neutralizes
+    sticky/fixed elements + disables animations + emulates reduced motion +
+    scrolls to fire reveals, then restores the page. Returns capture_prep list.
+    Accepts a Page or Frame (frames capture via their owning Page)."""
+    owner = _owner_page(page)
+    prep = await _apply_capture_prep(owner) if prepare else []
+    try:
+        await owner.screenshot(path=path, full_page=True)
+    finally:
+        if prepare:
+            await _restore_capture_prep(owner)
+    return prep
+
+
+async def take_screenshot(page: Page, project_name: str, label: str = "", screenshot_dir: str = None,
+                          prepare: bool = True, meta: dict = None) -> str:
+    """Take a full-page screenshot and save it. Returns the file path.
+
+    prepare=True (default) prepares the page for a faithful capture (see
+    capture_full_page); pass prepare=False for a raw stitch. When `meta` is
+    given, the applied preparations are recorded as meta['capture_prep'].
+    Accepts a Page or a Frame (iframe sessions) — Frames capture via their owning Page.
     """
-    if not hasattr(page, "screenshot"):
-        page = page.page  # Frame -> owning Page
     base_dir = screenshot_dir if screenshot_dir else config.SCREENSHOT_DIR
     project_dir = os.path.join(base_dir, project_name)
     os.makedirs(project_dir, exist_ok=True)
@@ -424,7 +530,9 @@ async def take_screenshot(page: Page, project_name: str, label: str = "", screen
     suffix = f"_{label}" if label else ""
     filename = f"interactive_{timestamp}{suffix}.png"
     filepath = os.path.join(project_dir, filename)
-    await page.screenshot(path=filepath, full_page=True)
+    prep = await capture_full_page(page, filepath, prepare=prepare)
+    if meta is not None:
+        meta["capture_prep"] = prep
     return filepath
 
 
@@ -443,7 +551,8 @@ async def attach_observation(session, result: dict, args: dict, label: str) -> d
         return result
     if observe == "screenshot":
         result["screenshot_path"] = await take_screenshot(
-            session.page, session.project_name, label, screenshot_dir=session.screenshot_dir)
+            session.page, session.project_name, label, screenshot_dir=session.screenshot_dir,
+            prepare=not args.get("raw", False), meta=result)
     elif observe == "map":
         from handlers.agent_speed import build_page_map
         result["page_map"] = await build_page_map(session, args)
