@@ -46,6 +46,17 @@ saves a JSON report) → `get_report(path)`. For one page: `test_url(url)`.
 The `geo` check covers AI/agentic-search readiness: robots.txt access for AI
 crawlers, llms.txt compliance, WebMCP form annotations, and JSON-LD presence.
 
+The crawl is **deterministic and sitemap-seeded**: it seeds from
+`sitemap.xml`/robots.txt when present and sorts links before applying the cap,
+so the *same* site gives the *same* page subset every run — before/after
+re-tests are comparable (a page can't silently drop out and look "fixed").
+`max_pages` caps how many pages are tested (default 20); **`max_pages=0` tests
+the whole site** (unbounded, stops at a 2000-page safety ceiling and flags
+`ceiling_hit`). Whatever the cap leaves out comes back in `pages_not_tested[]`
+(≤100, else a count) — coverage is never silent. `test_project` also returns a
+`coverage` delta (`pages_added`/`pages_dropped`) vs the previous report. Set
+`use_sitemap=false` for a pure link-crawl.
+
 **Authenticated testing:** configure once with `set_form_login` /
 `set_basic_auth` / `set_cookies`, then `login_project(project)`. Pass
 `project` to `open_session` so the session shares the logged-in context.

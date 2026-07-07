@@ -15,6 +15,44 @@ from nav import resilient_goto
 from tester import redirected_to_login
 
 
+def _coverage_fields(crawl: dict, tested: bool) -> dict:
+    """Flatten the crawler's coverage report onto a handler result. `tested`
+    picks the noun (pages_not_tested for test_project, pages_not_crawled for
+    crawl_project) so the response reads honestly for each tool."""
+    noun = "tested" if tested else "crawled"
+    fields = {
+        "discovered_total": crawl["discovered_total"],
+        f"pages_not_{noun}": crawl["not_crawled"],
+        f"pages_not_{noun}_count": crawl["not_crawled_count"],
+        f"pages_not_{noun}_truncated": crawl["not_crawled_truncated"],
+        "crawl_sources": crawl["sources"],
+    }
+    if crawl["ceiling_hit"]:
+        fields["ceiling_hit"] = True
+        fields["ceiling"] = config.MAX_PAGES_CEILING
+    return fields
+
+
+def _latest_report_urls(project_name: str):
+    """The set of page URLs from this project's most recent saved report, plus
+    the report's filename — for the coverage delta. None if no prior report."""
+    try:
+        files = [f for f in os.listdir(config.REPORTS_DIR)
+                 if f.startswith(project_name + "_") and f.endswith(".json")]
+    except OSError:
+        return None
+    if not files:
+        return None
+    latest = max((os.path.join(config.REPORTS_DIR, f) for f in files), key=os.path.getmtime)
+    try:
+        with open(latest) as fh:
+            report = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    urls = {p.get("url") for p in report.get("pages", []) if p.get("url")}
+    return urls, os.path.basename(latest)
+
+
 def _form_login_url(project) -> str | None:
     """The configured login URL for form-login projects, else None."""
     if project and project.auth and project.auth.method == "form" and project.auth.form_login:
@@ -92,18 +130,20 @@ async def handle_crawl_project(args: dict) -> dict:
         context = await t.get_context(project.name)
         crawler = Crawler()
 
-        urls = await crawler.crawl(
+        crawl = await crawler.crawl(
             context=context,
             start_url=project.base_url,
             max_pages=args.get("max_pages", project.max_pages),
-            max_depth=args.get("max_depth", project.max_depth)
+            max_depth=args.get("max_depth", project.max_depth),
+            use_sitemap=args.get("use_sitemap", True),
         )
 
         result = {
             "project": project.name,
             "base_url": project.base_url,
-            "pages_found": len(urls),
-            "urls": urls
+            "pages_found": len(crawl["crawled"]),
+            "urls": crawl["crawled"],
+            **_coverage_fields(crawl, tested=False),
         }
         if auth_check:
             result["auth_check"] = auth_check
@@ -127,20 +167,35 @@ async def handle_test_project(args: dict) -> dict:
             }
         context = await t.get_context(project.name)
 
-        # Crawl first
+        # Crawl first (deterministic order + sitemap-seeded — issue #22)
         crawler = Crawler()
-        urls = await crawler.crawl(
+        crawl = await crawler.crawl(
             context=context,
             start_url=project.base_url,
             max_pages=args.get("max_pages", project.max_pages),
-            max_depth=project.max_depth
+            max_depth=project.max_depth,
+            use_sitemap=args.get("use_sitemap", True),
         )
+        urls = crawl["crawled"]
+
+        # Coverage delta vs the previous saved report — READ BEFORE we save the
+        # new one, so a shifted crawl window is visible instead of silent.
+        prior = _latest_report_urls(project.name)
 
         # Test all pages — flagging any that land on the login page mid-run
         checks = args.get("checks", project.test_types)
         results = await t.test_multiple(urls, project.name, checks,
                                         screenshot_dir=project.screenshot_dir,
                                         login_url=_form_login_url(project))
+        results.update(_coverage_fields(crawl, tested=True))
+        if prior is not None:
+            prior_set, prior_name = prior
+            cur = set(urls)
+            results["coverage"] = {
+                "compared_to": prior_name,
+                "pages_added": sorted(cur - prior_set),
+                "pages_dropped": sorted(prior_set - cur),
+            }
         if auth_check:
             results["auth_check"] = auth_check
 

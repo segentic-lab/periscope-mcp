@@ -164,25 +164,27 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="crawl_project",
-            description="Discover a project's pages by breadth-first crawling internal links from its base URL, bounded by max_pages/max_depth (overridable per call). Returns the list of discovered URLs (also cached for test_project). Runs in the project's authenticated context. Discovery only — use test_project to crawl and audit together.",
+            description="Discover a project's pages by breadth-first crawling internal links from its base URL, bounded by max_pages/max_depth (overridable per call). Discovery is deterministic (links sorted before the cap) and sitemap-seeded when a sitemap.xml/robots.txt Sitemap is present, so the same site yields the same page subset every run. Returns the discovered URLs plus pages_not_crawled[] (≤100, else a count) so a hit cap is never silent. Runs in the project's authenticated context. Discovery only — use test_project to crawl and audit together.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "project": {"type": "string", "description": "Project name"},
-                    "max_pages": {"type": "integer", "description": "Override max pages for this crawl"},
-                    "max_depth": {"type": "integer", "description": "Override max depth for this crawl"}
+                    "max_pages": {"type": "integer", "description": "Override max pages for this crawl. 0 = test the WHOLE site (unbounded, stops at a safety ceiling of 2000 and flags ceiling_hit)."},
+                    "max_depth": {"type": "integer", "description": "Override max depth for this crawl"},
+                    "use_sitemap": {"type": ["boolean", "string"], "description": "Seed discovery from sitemap.xml / robots.txt Sitemap: lines when present (default: true). Set false for pure link-crawl."}
                 },
                 "required": ["project"]
             }
         ),
         Tool(
             name="test_project",
-            description="Full-site audit: crawl every page (up to max_pages) and run the selected checks on each, saving a timestamped JSON report. Returns per-page issues plus site-wide findings (e.g. duplicate titles/descriptions) and an auth_check; pages that bounce to the login page come back as auth_lost, never as fake success. Reload the saved report with get_report.",
+            description="Full-site audit: crawl every page (up to max_pages) and run the selected checks on each, saving a timestamped JSON report. The crawl is deterministic + sitemap-seeded, so consecutive runs cover the same pages and before/after comparisons are reliable (issue #22). Returns per-page issues, site-wide findings (e.g. duplicate titles/descriptions), an auth_check, pages_not_tested[] when the cap is hit, and a coverage delta (pages_added/pages_dropped) vs the previous report. Pages that bounce to the login page come back as auth_lost, never as fake success. Reload the saved report with get_report.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "project": {"type": "string", "description": "Project name"},
-                    "max_pages": {"type": "integer", "description": "Override max pages"},
+                    "max_pages": {"type": "integer", "description": "Override max pages. 0 = audit the WHOLE site (unbounded, stops at a 2000-page safety ceiling and flags ceiling_hit)."},
+                    "use_sitemap": {"type": ["boolean", "string"], "description": "Seed the crawl from sitemap.xml / robots.txt when present (default: true). Set false for pure link-crawl."},
                     "checks": {
                         "type": ["array", "string"],
                         "description": "Types of checks to run",
