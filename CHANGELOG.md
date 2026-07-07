@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
-## [Unreleased]
+## [0.10.4] - 2026-07-07
 
 ### Changed
 - **`web_fetch` returns readable Markdown by default** and gained real teeth.
