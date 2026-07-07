@@ -6,7 +6,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
-## [Unreleased]
+## [0.10.3] - 2026-07-07
 
 Dogfooding batch — issues #22 and #23, filed while auditing real Astro sites.
 
