@@ -156,10 +156,15 @@ async def handle_web_fetch(args: dict) -> dict:
         # --- conditional fetch: only surface content if it contains the term(s) ---
         if contains is not None:
             terms = [t for t in (contains if isinstance(contains, list) else [contains]) if t]
-            hay = content.lower()
+            # Match against the FULL visible text, NOT the readable-extracted
+            # output — otherwise a term living in stripped nav/footer/boilerplate
+            # (or, in reading mode, anything trafilatura dropped) would be a false
+            # miss. The output stays readable; only the haystack is the whole page.
+            hay = _bs4_flat(BeautifulSoup(html, "html.parser")).lower()
             present = [t for t in terms if t.lower() in hay]
             matched = (len(present) == len(terms)) if contains_mode == "all" else bool(present)
-            result.update({"matched": matched, "matched_terms": present, "searched_terms": terms})
+            result.update({"matched": matched, "matched_terms": present,
+                           "searched_terms": terms, "match_scope": "full_text"})
             if not matched:
                 result.update({
                     "content_omitted": True, "length": len(content),

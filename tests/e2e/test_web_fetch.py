@@ -29,6 +29,17 @@ def test_contains_gates_the_content(run, handlers, good_site):
     assert miss.get("content_omitted") is True and "content" not in miss  # token-saving
 
 
+def test_contains_matches_boilerplate_even_in_reading_mode(run, handlers, good_site):
+    # "Cookie preferences" lives in the footer, which readable markdown strips.
+    # The conditional match must still find it (matches full page text), while
+    # the returned content stays clean (footer omitted).
+    r = run(handlers["web_fetch"]({
+        "url": f"{good_site}/article.html", "format": "markdown",
+        "contains": "Cookie preferences"}))
+    assert r["matched"] is True and r.get("match_scope") == "full_text", r
+    assert "Cookie preferences" not in r["content"]  # output still readable
+
+
 def test_save_writes_full_artifact(run, handlers, good_site, tmp_path):
     dest = str(tmp_path / "cascade.md")
     r = run(handlers["web_fetch"]({
