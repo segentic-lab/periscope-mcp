@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sticky + Reveal</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    header#nav { position: sticky; top: 0; height: 60px; background: #123; color: #fff; }
+    .spacer { height: 1400px; background: linear-gradient(#eef, #dde); }
+    /* scroll-reveal: hidden until IntersectionObserver adds .visible */
+    .reveal { opacity: 0; transform: translateY(40px); transition: opacity .6s, transform .6s; }
+    .reveal.visible { opacity: 1; transform: none; }
+    section#band { height: 400px; background: #2a7; color: #fff; }
+  </style>
+</head>
+<body>
+  <header id="nav">Sticky Nav</header>
+  <div class="spacer">top</div>
+  <section id="band" class="reveal"><h1 id="cta">Reveal Band</h1></section>
+  <div class="spacer">bottom</div>
+  <script>
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) e.target.classList.add('visible');
+    });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  </script>
+</body>
+</html>

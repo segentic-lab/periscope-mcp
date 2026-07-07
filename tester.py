@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 import config
+import interactions
 from nav import resilient_goto
 from checks.visual import check_visual
 from checks.accessibility import check_accessibility
@@ -266,9 +267,9 @@ class WebsiteTester:
             response, wait_downgraded = await resilient_goto(page, url)
             load_time = int((time.time() - start_time) * 1000)
 
-            # Take screenshot
+            # Take screenshot (prepared for faithful full-page capture — issue #23)
             screenshot_path = self._get_screenshot_path(project_name, url, screenshot_dir=screenshot_dir)
-            await page.screenshot(path=screenshot_path, full_page=True)
+            capture_prep = await interactions.capture_full_page(page, screenshot_path)
 
             # Get page info
             title = await page.title()
@@ -342,6 +343,7 @@ class WebsiteTester:
                 "title": title,
                 "meta_description": meta_description,
                 "screenshot_path": screenshot_path,
+                **({"capture_prep": capture_prep} if capture_prep else {}),
                 "load_time_ms": load_time,
                 "issues": all_issues,
                 "issue_count": len(all_issues),
@@ -498,11 +500,12 @@ class WebsiteTester:
                     project_dir,
                     f"responsive_{vp['name']}_{vp['width']}x{vp['height']}_{timestamp}.png"
                 )
-                await page.screenshot(path=screenshot_path, full_page=True)
+                capture_prep = await interactions.capture_full_page(page, screenshot_path)
 
                 vp_result = {
                     "viewport": vp,
                     "screenshot_path": screenshot_path,
+                    **({"capture_prep": capture_prep} if capture_prep else {}),
                     "title": await page.title(),
                 }
                 if vp_downgraded:
