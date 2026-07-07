@@ -138,6 +138,7 @@ class Crawler:
         max_pages: int = None,
         max_depth: int = None,
         use_sitemap: bool = True,
+        on_page=None,
     ) -> dict:
         """
         Crawl a website starting from start_url.
@@ -145,6 +146,9 @@ class Crawler:
         max_pages: cap on pages to CRAWL. 0 == unbounded ("test all"), which still
                    stops at config.MAX_PAGES_CEILING and flags it. None -> default.
         use_sitemap: seed discovery from sitemap.xml/robots.txt when present.
+        on_page: optional async callback(url, page) invoked for each crawled page
+                 while it is loaded (authenticated, post-JS) — lets a caller
+                 capture title/description/markdown without a second navigation.
 
         Returns a dict:
           crawled: list[str]            — URLs actually visited (ordered)
@@ -197,6 +201,13 @@ class Crawler:
                     continue
 
                 discovered.append(url)
+
+                if on_page is not None:
+                    # One page's capture failure must not abort discovery.
+                    try:
+                        await on_page(url, page)
+                    except Exception:
+                        pass
 
                 if depth >= max_depth:
                     continue

@@ -164,14 +164,17 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="crawl_project",
-            description="Discover a project's pages by breadth-first crawling internal links from its base URL, bounded by max_pages/max_depth (overridable per call). Discovery is deterministic (links sorted before the cap) and sitemap-seeded when a sitemap.xml/robots.txt Sitemap is present, so the same site yields the same page subset every run. Returns the discovered URLs plus pages_not_crawled[] (≤100, else a count) so a hit cap is never silent. Runs in the project's authenticated context. Discovery only — use test_project to crawl and audit together.",
+            description="Discover a project's pages by breadth-first crawling internal links from its base URL, bounded by max_pages/max_depth (overridable per call). Discovery is deterministic (links sorted before the cap) and sitemap-seeded when a sitemap.xml/robots.txt Sitemap is present, so the same site yields the same page subset every run. Returns the discovered URLs plus pages_not_crawled[] (≤100, else a count) so a hit cap is never silent. Runs in the project's authenticated context. Set meta=true to also get each page's title + meta description (captured during the crawl, so behind-login/JS pages work), and save_md=true to save every crawled page as readable Markdown to data/fetches/<project>/ (returns pages[] with saved_path + saved_dir). Discovery (optionally + capture) — use test_project to crawl and run full audits.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "project": {"type": "string", "description": "Project name"},
-                    "max_pages": {"type": "integer", "description": "Override max pages for this crawl. 0 = test the WHOLE site (unbounded, stops at a safety ceiling of 2000 and flags ceiling_hit)."},
+                    "max_pages": {"type": "integer", "description": "Override max pages for this crawl. 0 = the WHOLE site (unbounded, stops at a safety ceiling of 2000 and flags ceiling_hit)."},
                     "max_depth": {"type": "integer", "description": "Override max depth for this crawl"},
-                    "use_sitemap": {"type": ["boolean", "string"], "description": "Seed discovery from sitemap.xml / robots.txt Sitemap: lines when present (default: true). Set false for pure link-crawl."}
+                    "use_sitemap": {"type": ["boolean", "string"], "description": "Seed discovery from sitemap.xml / robots.txt Sitemap: lines when present (default: true). Set false for pure link-crawl."},
+                    "meta": {"type": ["boolean", "string"], "description": "Also return each crawled page's title + meta description in pages[] (default: false)."},
+                    "save_md": {"type": ["boolean", "string"], "description": "Save each crawled page as readable Markdown to data/fetches/<project>/ (default: false). Returns saved_dir + per-page saved_path."},
+                    "save_dir": {"type": "string", "description": "Directory to save Markdown into (implies save_md=true). Defaults to data/fetches/<project>/."}
                 },
                 "required": ["project"]
             }
@@ -1148,13 +1151,21 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="web_fetch",
-            description="Fetch a URL over HTTP (no browser) and return its readable text content, or raw HTML with raw_html=true, up to max_length. TLS is verified by default — set verify_ssl=false for self-signed dev certs. Use to read docs or verify external link content without opening a session.",
+            description="Fetch a URL and return clean, readable content — Markdown by default (structure preserved: headings, lists, links, code, tables), with page boilerplate (nav/footer/cookie bars) stripped via readability extraction. Far fewer tokens than a raw text dump. format='text' for plain text, 'html' for raw HTML (raw_html=true is an alias). Static HTTP fetch by default; render=true loads the page in headless Chromium so client-rendered/SPA content is captured (runs all JS, then extracts) — pass project to render a page behind that project's login (host fetch tools can't). contains=[words] only returns the content if the page contains the term(s) (contains_mode any|all), else omits it to save tokens. save=true (or save_path) writes the full content to disk and returns saved_path. TLS verified by default (verify_ssl=false for dev certs).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to fetch"},
-                    "max_length": {"type": "integer", "description": "Max content length in characters (default: 50000)", "default": 50000},
-                    "raw_html": {"type": "boolean", "description": "Return raw HTML instead of extracted text (default: false)", "default": False},
+                    "format": {"type": "string", "enum": ["markdown", "text", "html"], "description": "Output shape (default: markdown). markdown = readable structured Markdown; text = readable plain text; html = raw HTML."},
+                    "readable": {"type": ["boolean", "string"], "description": "Extract main content, dropping nav/footer/boilerplate (default: true). false = whole-page dump. Ignored for format=html."},
+                    "render": {"type": ["boolean", "string"], "description": "Load in headless Chromium and run JS before extracting (default: false). Use for client-rendered/SPA pages where a static fetch returns little. Slower than static."},
+                    "project": {"type": "string", "description": "With render=true, load the page in this project's authenticated context — read pages behind a login."},
+                    "contains": {"type": ["array", "string"], "description": "Only return content if the page contains these term(s) (case-insensitive). Otherwise content is omitted (matched=false) to save tokens.", "items": {"type": "string"}},
+                    "contains_mode": {"type": "string", "enum": ["any", "all"], "description": "Match if ANY term is present (default) or require ALL."},
+                    "save": {"type": ["boolean", "string"], "description": "Write the full (un-truncated) content to data/fetches/ and return saved_path (default: false)."},
+                    "save_path": {"type": "string", "description": "Explicit file path to save to (implies save=true)."},
+                    "max_length": {"type": "integer", "description": "Max returned content length in characters (default: 50000). Saved files are never truncated.", "default": 50000},
+                    "raw_html": {"type": "boolean", "description": "Alias for format='html' (default: false).", "default": False},
                     "verify_ssl": {"type": "boolean", "description": "Verify TLS certificates (default: true). Set false for self-signed certs on local/dev servers.", "default": True}
                 },
                 "required": ["url"]

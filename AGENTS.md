@@ -46,6 +46,11 @@ saves a JSON report) → `get_report(path)`. For one page: `test_url(url)`.
 The `geo` check covers AI/agentic-search readiness: robots.txt access for AI
 crawlers, llms.txt compliance, WebMCP form annotations, and JSON-LD presence.
 
+To capture a site (not just audit it): `crawl_project(project, meta=true)` adds
+each page's title + description, and `save_md=true` saves every crawled page as
+readable Markdown to `data/fetches/<project>/` — captured during the crawl on the
+loaded page, so behind-login and JS-rendered pages work.
+
 The crawl is **deterministic and sitemap-seeded**: it seeds from
 `sitemap.xml`/robots.txt when present and sorts links before applying the cap,
 so the *same* site gives the *same* page subset every run — before/after
@@ -181,6 +186,26 @@ anything?".
   `observe="map"` (or `"screenshot"`) on the step whose result you actually
   need — fewer tokens and no separate `get_page_map`/`screenshot_session`
   round-trip. Omit `observe` entirely to keep the default screenshot.
+
+## Reading external web content
+
+- `web_fetch(url)` returns **readable Markdown by default** — structure kept
+  (headings, lists, links, code, tables), nav/footer/cookie boilerplate stripped
+  (readability extraction). Far lighter than a raw text dump. `format="text"`
+  for plain text, `format="html"` for raw HTML.
+- `render=true` loads the page in headless Chromium and runs JS before
+  extracting — use it for client-rendered/SPA pages a static fetch returns empty
+  for. With `project=...` it renders in that project's authenticated context, so
+  you can read pages **behind a login** (a static fetch can't).
+- `contains=["term", …]` only returns the content if the page contains the
+  term(s) (`contains_mode` any|all) — otherwise it's omitted to save tokens.
+  Use it to check many URLs cheaply ("which of these pages mention X").
+- `save=true` (or `save_path`) writes the full, un-truncated content to disk and
+  returns `saved_path` — capture a doc/article as a clean `.md` file.
+- Boundary: for broad **research** and plain SSR docs, your host's
+  WebSearch/WebFetch are lighter and `web_search` here is DuckDuckGo-backed.
+  Reach for Periscope's `web_fetch` when you want rendered/authenticated content,
+  structured Markdown, a conditional check, or a saved artifact.
 
 ## Ordering rules and pitfalls
 

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>JS Rendered</title></head>
+<body>
+  <main id="app"><p>loading…</p></main>
+  <script>
+    // Content only exists after JS runs — a static fetch never sees the token.
+    document.getElementById('app').innerHTML =
+      '<h1>Rendered Heading</h1>' +
+      '<p>This paragraph was injected by JavaScript and contains the ' +
+      'marker sentinel-xyzzy that a static fetch cannot see. It has enough ' +
+      'prose for readability extraction to treat it as the main content of ' +
+      'the page rather than discarding it as boilerplate.</p>';
+  </script>
+</body>
+</html>

@@ -6,6 +6,39 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [Unreleased]
+
+### Changed
+- **`web_fetch` returns readable Markdown by default** and gained real teeth.
+  Extraction now uses trafilatura: structure preserved (headings, lists, links,
+  code, tables), page boilerplate (nav/footer/cookie bars) stripped — ~60% fewer
+  tokens than the old flat text dump, and the content starts at the actual
+  content instead of the nav mega-menu. `format=text|markdown|html` (raw_html is
+  an alias); `readable=false` restores the whole-page dump.
+
+### Added
+- **`web_fetch(render=true)`** — load the page in headless Chromium and run JS
+  before extracting, for client-rendered/SPA pages a static fetch returns empty
+  for. With `project=...`, renders in that project's authenticated context —
+  reads pages **behind a login** (host fetch tools can't).
+- **`web_fetch(contains=[…], contains_mode=any|all)`** — conditional fetch: only
+  returns the content if the page contains the term(s), else omits it (token
+  saving) — cheap "which of these URLs mention X" checks.
+- **`web_fetch(save=true | save_path=…)`** — write the full (un-truncated)
+  content to `data/fetches/` (or a given path) and return `saved_path`.
+- `web_fetch` now sends a real User-Agent and returns graceful `{success:false}`
+  errors (with `status_code`) instead of raising on HTTP errors.
+- **`web_fetch(contains=…)` matches the full page text**, not the readable-
+  extracted output — so a term in stripped nav/footer/boilerplate is no longer a
+  false miss in reading mode (the output stays readable; only the match haystack
+  is the whole page). Flagged `match_scope: "full_text"`.
+- **`crawl_project` can capture pages, not just list URLs.** `meta=true` adds each
+  crawled page's title + meta description; `save_md=true` saves every crawled
+  page as readable Markdown to `data/fetches/<project>/` (returns `pages[]` with
+  `saved_path`, plus `saved_dir`/`saved_count`). Capture happens *during* the
+  crawl on the loaded page, so it works for behind-login and JS-rendered pages
+  with no second navigation.
+
 ## [0.10.3] - 2026-07-07
 
 Dogfooding batch — issues #22 and #23, filed while auditing real Astro sites.

@@ -103,6 +103,26 @@ def test_use_sitemap_false_is_pure_link_crawl(run, handlers, crawl_site):
         run(handlers["delete_project"]({"name": "crawlnosm"}))
 
 
+def test_crawl_project_meta_and_save_md(run, handlers, crawl_site, tmp_path):
+    _project(run, handlers, "crawlcap", crawl_site)
+    md_dir = str(tmp_path / "site_md")
+    try:
+        r = run(handlers["crawl_project"]({
+            "project": "crawlcap", "max_pages": 4, "meta": True,
+            "save_md": True, "save_dir": md_dir}))
+        pages = r.get("pages")
+        assert pages and len(pages) == len(r["urls"]), r
+        # titles captured during the crawl (page path is used as <title>)
+        assert all("title" in p and "description" in p for p in pages), pages
+        # every crawled page saved as markdown
+        assert r["saved_dir"] == md_dir and r["saved_count"] == len(pages)
+        import os
+        saved = [p["saved_path"] for p in pages]
+        assert all(os.path.exists(s) and s.endswith(".md") for s in saved), saved
+    finally:
+        run(handlers["delete_project"]({"name": "crawlcap"}))
+
+
 def test_test_project_reports_coverage_delta(run, handlers, crawl_site):
     _project(run, handlers, "crawlcov", crawl_site)
     try:

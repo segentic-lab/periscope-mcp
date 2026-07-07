@@ -7,17 +7,17 @@ import json
 _STRUCTURED_ARGS = {
     "steps", "fields", "checks", "run_checks", "cookies", "viewports",
     "files", "keys", "attributes", "properties", "entries", "overrides",
-    "categories", "assertions",
+    "categories", "assertions", "contains",
 }
 # Structured args whose items are plain strings — a bare string like
 # "seo,performance" is accepted as a comma-separated list.
-_CSV_ARGS = {"checks", "run_checks", "files", "keys", "attributes", "properties", "categories"}
+_CSV_ARGS = {"checks", "run_checks", "files", "keys", "attributes", "properties", "categories", "contains"}
 # Boolean args per the tool schemas.
 _BOOL_ARGS = {
     "force", "check_external", "clear", "clear_first", "once", "submit",
     "full_page", "screenshot_after", "continue_on_error", "raw_html", "verify_ssl",
     "capture_console", "full_text", "headed", "apply", "include_hidden", "pdf", "include_screenshots",
-    "use_sitemap", "raw",
+    "use_sitemap", "raw", "readable", "render", "save", "meta", "save_md",
 }
 
 
