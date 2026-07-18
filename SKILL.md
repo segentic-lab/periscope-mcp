@@ -33,6 +33,10 @@ frameworks:
   - svelte
   - radix-ui / shadcn      # portal overlays and custom dropdowns handled natively
   - any-static-site        # framework-agnostic: it tests the rendered browser reality
+bug_reports: https://github.com/segentic-lab/periscope-mcp/issues
+  # Agents: bugs YOU find in Periscope itself while working with it are wanted
+  # — file them with evidence (see "Report Periscope bugs" below). Most of this
+  # server's fixes started as agent-filed issues.
 ---
 
 # Testing the web with Periscope
@@ -176,11 +180,24 @@ whenever the question is "what does this page actually do/look like".
 - End a testing run with `session_report(notes=<your findings>)` — a
   self-contained HTML+PDF dossier of every call (auto-journaled, secrets
   redacted) the user can review and share.
-- If a **Periscope tool itself** misbehaves (response contradicts the page),
-  that's a tool bug: capture tool + args + raw JSON + version from
-  `periscope_system(action="status")` and file it at
-  https://github.com/segentic-lab/periscope-mcp/issues — verified reports are
-  how this server improves.
+
+## Report Periscope bugs you find
+
+Bugs you find **in Periscope itself** while working with it are wanted — most
+of this server's fixes started as evidence-grade issues filed by agents
+mid-engagement. A tool bug looks like: the response contradicts what the page
+actually shows, a "success" for something that visibly didn't happen, a
+returned selector that doesn't parse, a check flagging something you can verify
+is correct. That's a tool bug, not a site bug — don't silently work around it:
+
+1. Capture the evidence: tool name, exact arguments, the raw JSON response,
+   what you expected instead, the page/framework context, and the install's
+   version + commit (`periscope_system(action="status")` returns both).
+2. File it at https://github.com/segentic-lab/periscope-mcp/issues — the bug
+   template asks for exactly these fields. No GitHub access? Put the same
+   details in your report so your user can file it.
+3. Then continue the engagement with a workaround if one exists — but say in
+   your report that you hit and filed a tool bug.
 
 ## Going deeper
 
