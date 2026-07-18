@@ -223,10 +223,28 @@ After configuring, restart your client.
 
 ### Teaching your agent to use the tools
 
-[`AGENTS.md`](AGENTS.md) contains a ready-made system-prompt block — workflows,
-tool-selection guidance, and known pitfalls. Paste its contents into your
-agent's system prompt (or custom instructions) so it drives the 74 tools
-effectively instead of discovering the conventions by trial and error.
+Two options, depending on your agent:
+
+- **Claude Code (recommended): install the skill.** [`skills/periscope/SKILL.md`](skills/periscope/SKILL.md)
+  is a Claude Code skill — it auto-triggers on web-testing tasks and loads a
+  distilled operating guide (workflow decision table + the pitfalls) only when
+  needed, costing ~0 context otherwise:
+
+  ```bash
+  ln -s "$(pwd)/skills/periscope" ~/.claude/skills/periscope
+  ```
+
+  A symlink keeps it current with `./update.sh` (copy the folder instead if you
+  prefer a frozen version).
+
+- **Any other MCP client: paste the guide.** [`AGENTS.md`](AGENTS.md) contains a
+  ready-made system-prompt block — workflows, tool-selection guidance, and known
+  pitfalls. Paste its contents into your agent's system prompt (or custom
+  instructions).
+
+Either way, the agent can always fetch the current full guide from the running
+server via `periscope_system(action="agents_md")` and the complete catalog via
+`describe_tools()`.
 
 ## MCP Tools Reference (74 tools)
 

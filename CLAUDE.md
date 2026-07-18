@@ -59,7 +59,7 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 - `interactive_login(project, login_url?)` → user logs in by hand in a **visible** window (for 2FA/SSO/CAPTCHA) → `save_login(project)` captures the session (storage_state → `data/sessions/{project}.json`, 0o600); project then runs authenticated + headless. Needs a display on the server.
 - `open_session(url, project?, headed?)` — `headed=true` opens a real visible window (needs a display)
 - `test_url(url, project?, checks?[])` — Screenshot + checks for one URL
-- `crawl_project(project, max_pages?, max_depth?)` — BFS page discovery
+- `crawl_project(project, max_pages?, max_depth?, use_sitemap?, meta?, save_md?, save_dir?)` — deterministic, sitemap-seeded BFS page discovery (`max_pages=0` = whole site up to a 2000 ceiling); `meta=true` adds per-page title+description, `save_md=true` saves each crawled page as readable Markdown to data/fetches/<project>/
 - `test_project(project, checks?[])` — Crawl + test all pages, saves JSON report
 - `get_screenshot(project, url)` / `list_reports(project?)` / `get_report(report_path)`
 - `session_report(title?, notes?, pdf?, clear?)` — HTML+PDF dossier of EVERY tool call this server run (args secrets-redacted, verdicts, timings, screenshot thumbnails); journal captured automatically at dispatch; `notes` = agent's findings narrative
@@ -145,7 +145,7 @@ close_session(session_id)
 
 ### Web Tools
 - `web_search(query, max_results?)` — Search DuckDuckGo, returns titles + URLs + snippets
-- `web_fetch(url, max_length?, raw_html?, verify_ssl?)` — Fetch URL and extract readable text content (or raw HTML). TLS verified by default; `verify_ssl=false` for self-signed dev servers.
+- `web_fetch(url, format?, readable?, render?, project?, contains?, contains_mode?, save?, save_path?, max_length?, raw_html?, verify_ssl?)` — Fetch URL → readable **Markdown** by default (boilerplate stripped via trafilatura; `format=text|html` for other shapes). `render=true` runs JS in headless Chromium first (+ `project` for behind-login pages); `contains=[terms]` gates the fetch (matched against full page text); `save`/`save_path` writes the artifact to data/fetches/. TLS verified by default; `verify_ssl=false` for self-signed dev servers.
 
 ### Utility Tools
 - `periscope_system(action, apply?, force?)` — `status` = version/commit/capabilities/update-check; `agents_md` = current AGENTS.md content (refresh a stale pasted copy); `update` = dry-run by default, `apply=true` runs update.sh (restart required to load new code; managed/Docker installs refuse with guidance)
