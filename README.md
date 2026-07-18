@@ -225,8 +225,9 @@ After configuring, restart your client.
 
 Two options, depending on your agent:
 
-- **Claude Code (recommended): install the skill.** [`skills/periscope/SKILL.md`](skills/periscope/SKILL.md)
-  is a Claude Code skill — it auto-triggers on web-testing tasks and loads a
+- **Claude Code (recommended): install the skill.** [`SKILL.md`](SKILL.md) (repo
+  root; also exposed at `skills/periscope/` in the Claude Code skill layout) is
+  a Claude Code skill — it auto-triggers on web-testing tasks and loads a
   distilled operating guide (workflow decision table + the pitfalls) only when
   needed, costing ~0 context otherwise:
 
