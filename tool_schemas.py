@@ -1039,7 +1039,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="run_lighthouse",
-            description="Run a real Google Lighthouse audit against a URL. Returns 0-100 category scores, Core Web Vitals lab metrics (LCP, TBT, CLS, Speed Index), and the failed audits, and saves the full JSON report. Requires Node.js — finds it on PATH or auto-detects nvm installs (~/.nvm); if none exists, returns the exact nvm install commands. Launches its own headless Chrome: no session or project auth state applies.",
+            description="Run a real Google Lighthouse audit: 0-100 category scores, Core Web Vitals, failed audits, and a SUMMARY an agent otherwise computes by hand — LCP element + phase breakdown (TTFB / load delay / load time / render delay), TTFB with a >2 s warning, transfer bytes by domain with third-party share, top opportunities by savings. runs=N gives the median run plus min/median/max spread; warmup=true primes server caches first. Full JSON report(s) saved to data/reports/. Requires Node.js (npm i -g lighthouse or npx). Runs its own Chrome — no session/auth state",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1050,7 +1050,9 @@ TOOLS: list[Tool] = [
                         "items": {"type": "string", "enum": ["performance", "accessibility", "best-practices", "seo"]}
                     },
                     "device": {"type": "string", "enum": ["mobile", "desktop"], "description": "Emulation preset (default: mobile, like Lighthouse's default)"},
-                    "timeout": {"type": "integer", "description": "Max seconds to wait (default: 180)"}
+                    "timeout": {"type": "integer", "description": "Max seconds to wait per run (default: 180)"},
+                    "runs": {"type": "integer", "description": "Run Lighthouse N times (1-5, default 1) and report the median-LCP run plus a min/median/max spread — use 3 for comparisons (staging vs live, before/after)"},
+                    "warmup": {"type": ["boolean", "string"], "description": "One plain GET before the runs to prime server-side page caches (WP Rocket, CDN), so a cold-cache TTFB doesn't poison the comparison (default: false)"}
                 },
                 "required": ["url"]
             }

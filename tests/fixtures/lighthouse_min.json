@@ -1,0 +1,374 @@
+{
+ "lighthouseVersion": "13.6.0",
+ "finalDisplayedUrl": "http://site.test/",
+ "categories": {
+  "performance": {
+   "id": "performance",
+   "score": 0.87
+  }
+ },
+ "audits": {
+  "first-contentful-paint": {
+   "id": "first-contentful-paint",
+   "title": "First Contentful Paint",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 629.13545,
+   "numericUnit": "millisecond",
+   "displayValue": "0.6\u00a0s",
+   "scoringOptions": {
+    "p10": 1800,
+    "median": 3000
+   }
+  },
+  "largest-contentful-paint": {
+   "id": "largest-contentful-paint",
+   "title": "Largest Contentful Paint",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 754.2709,
+   "numericUnit": "millisecond",
+   "displayValue": "0.8\u00a0s",
+   "scoringOptions": {
+    "p10": 2500,
+    "median": 4000
+   }
+  },
+  "total-blocking-time": {
+   "id": "total-blocking-time",
+   "title": "Total Blocking Time",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 0,
+   "numericUnit": "millisecond",
+   "displayValue": "0\u00a0ms",
+   "scoringOptions": {
+    "p10": 200,
+    "median": 600
+   }
+  },
+  "cumulative-layout-shift": {
+   "id": "cumulative-layout-shift",
+   "title": "Cumulative Layout Shift",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 0,
+   "numericUnit": "unitless",
+   "displayValue": "0",
+   "scoringOptions": {
+    "p10": 0.1,
+    "median": 0.25
+   },
+   "details": {
+    "type": "debugdata",
+    "items": [
+     {
+      "cumulativeLayoutShiftMainFrame": 0,
+      "newEngineResult": {
+       "cumulativeLayoutShift": 0,
+       "cumulativeLayoutShiftMainFrame": 0
+      },
+      "newEngineResultDiffered": false
+     }
+    ]
+   }
+  },
+  "speed-index": {
+   "id": "speed-index",
+   "title": "Speed Index",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 629.13545,
+   "numericUnit": "millisecond",
+   "displayValue": "0.6\u00a0s",
+   "scoringOptions": {
+    "p10": 3387,
+    "median": 5800
+   }
+  },
+  "interactive": {
+   "id": "interactive",
+   "title": "Time to Interactive",
+   "score": 1,
+   "scoreDisplayMode": "numeric",
+   "numericValue": 754.2709,
+   "numericUnit": "millisecond",
+   "displayValue": "0.8\u00a0s"
+  },
+  "lcp-breakdown-insight": {
+   "id": "lcp-breakdown-insight",
+   "title": "LCP breakdown",
+   "score": 1,
+   "scoreDisplayMode": "informative",
+   "metricSavings": {
+    "LCP": 0
+   },
+   "details": {
+    "type": "list",
+    "items": [
+     {
+      "type": "table",
+      "headings": [
+       {
+        "key": "label",
+        "valueType": "text",
+        "label": "Subpart"
+       },
+       {
+        "key": "duration",
+        "valueType": "ms",
+        "label": "Duration"
+       }
+      ],
+      "items": [
+       {
+        "subpart": "timeToFirstByte",
+        "label": "Time to first byte",
+        "duration": 5.869
+       },
+       {
+        "subpart": "elementRenderDelay",
+        "label": "Element render delay",
+        "duration": 653.287
+       }
+      ]
+     },
+     {
+      "type": "node",
+      "lhId": "page-0-H1",
+      "path": "1,HTML,1,BODY,2,SECTION,0,H1",
+      "selector": "body > section#band > h1#cta",
+      "boundingRect": {
+       "top": 1481,
+       "bottom": 1518,
+       "left": 0,
+       "right": 980,
+       "width": 980,
+       "height": 37
+      },
+      "snippet": "<h1 id=\"cta\">",
+      "nodeLabel": "Reveal Band"
+     }
+    ]
+   },
+   "guidanceLevel": 3
+  },
+  "server-response-time": {
+   "id": "server-response-time",
+   "title": "Initial server response time was short",
+   "score": 1,
+   "scoreDisplayMode": "metricSavings",
+   "numericValue": 2500,
+   "numericUnit": "millisecond",
+   "displayValue": "Root document took 2,500 ms",
+   "metricSavings": {
+    "FCP": 0,
+    "LCP": 0
+   },
+   "details": {
+    "type": "opportunity",
+    "headings": [
+     {
+      "key": "url",
+      "valueType": "url",
+      "label": "URL"
+     },
+     {
+      "key": "responseTime",
+      "valueType": "timespanMs",
+      "label": "Time Spent"
+     }
+    ],
+    "items": [
+     {
+      "url": "http://127.0.0.1:18765/sticky_reveal.html",
+      "responseTime": 4
+     }
+    ],
+    "overallSavingsMs": 0
+   },
+   "guidanceLevel": 1
+  },
+  "network-requests": {
+   "id": "network-requests",
+   "title": "Network Requests",
+   "score": 1,
+   "scoreDisplayMode": "informative",
+   "details": {
+    "type": "table",
+    "headings": [
+     {
+      "key": "url",
+      "valueType": "url",
+      "label": "URL"
+     },
+     {
+      "key": "protocol",
+      "valueType": "text",
+      "label": "Protocol"
+     },
+     {
+      "key": "networkRequestTime",
+      "valueType": "ms",
+      "granularity": 1,
+      "label": "Network Request Time"
+     },
+     {
+      "key": "networkEndTime",
+      "valueType": "ms",
+      "granularity": 1,
+      "label": "Network End Time"
+     },
+     {
+      "key": "transferSize",
+      "valueType": "bytes",
+      "displayUnit": "kb",
+      "granularity": 1,
+      "label": "Transfer Size"
+     },
+     {
+      "key": "resourceSize",
+      "valueType": "bytes",
+      "displayUnit": "kb",
+      "granularity": 1,
+      "label": "Resource Size"
+     },
+     {
+      "key": "statusCode",
+      "valueType": "text",
+      "label": "Status Code"
+     },
+     {
+      "key": "mimeType",
+      "valueType": "text",
+      "label": "MIME Type"
+     },
+     {
+      "key": "resourceType",
+      "valueType": "text",
+      "label": "Resource Type"
+     }
+    ],
+    "items": [
+     {
+      "url": "http://site.test/",
+      "transferSize": 10611,
+      "resourceSize": 45733,
+      "resourceType": "Document",
+      "statusCode": 200
+     },
+     {
+      "url": "http://site.test/app.js",
+      "transferSize": 120000,
+      "resourceSize": 300000,
+      "resourceType": "Script",
+      "statusCode": 200
+     },
+     {
+      "url": "https://player.vimeo.com/api/player.js",
+      "transferSize": 385000,
+      "resourceSize": 900000,
+      "resourceType": "Script",
+      "statusCode": 200
+     },
+     {
+      "url": "https://www.googletagmanager.com/gtag/js",
+      "transferSize": 90000,
+      "resourceSize": 250000,
+      "resourceType": "Script",
+      "statusCode": 200
+     }
+    ],
+    "debugData": {
+     "type": "debugdata",
+     "networkStartTimeTs": 316961701145,
+     "initiators": []
+    }
+   }
+  },
+  "render-blocking-insight": {
+   "id": "render-blocking-insight",
+   "title": "Render blocking requests",
+   "score": 0.5,
+   "scoreDisplayMode": "metricSavings",
+   "numericValue": 0,
+   "numericUnit": "millisecond",
+   "metricSavings": {
+    "FCP": 300,
+    "LCP": 300
+   },
+   "details": {
+    "type": "table",
+    "headings": [
+     {
+      "key": "url",
+      "valueType": "url",
+      "label": "URL"
+     },
+     {
+      "key": "totalBytes",
+      "valueType": "bytes",
+      "label": "Transfer Size"
+     },
+     {
+      "key": "wastedMs",
+      "valueType": "timespanMs",
+      "label": "Duration"
+     }
+    ],
+    "items": []
+   },
+   "guidanceLevel": 3
+  },
+  "image-delivery-insight": {
+   "id": "image-delivery-insight",
+   "title": "Improve image delivery",
+   "score": 0.3,
+   "scoreDisplayMode": "metricSavings",
+   "numericValue": 0,
+   "numericUnit": "byte",
+   "metricSavings": {
+    "LCP": 1200
+   },
+   "details": {
+    "type": "table",
+    "headings": [
+     {
+      "key": "node",
+      "valueType": "node",
+      "label": ""
+     },
+     {
+      "key": "url",
+      "valueType": "url",
+      "label": "URL",
+      "subItemsHeading": {
+       "key": "reason",
+       "valueType": "text"
+      }
+     },
+     {
+      "key": "totalBytes",
+      "valueType": "bytes",
+      "label": "Resource Size"
+     },
+     {
+      "key": "wastedBytes",
+      "valueType": "bytes",
+      "label": "Est Savings",
+      "subItemsHeading": {
+       "key": "wastedBytes",
+       "valueType": "bytes"
+      }
+     }
+    ],
+    "items": [],
+    "debugData": {
+     "type": "debugdata",
+     "wastedBytes": 0
+    }
+   },
+   "guidanceLevel": 3
+  }
+ }
+}
