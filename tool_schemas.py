@@ -638,12 +638,19 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="navigate_session",
-            description="Browser history/reload on a session: back, forward, or reload. Returns the new URL/title and a screenshot. Reload tests state persistence and caching; back/forward exercise SPA history.",
+            description="Navigate a session: goto a URL (with optional wait_for selector / wait_for_network substring armed BEFORE the load), back, forward, reload (hard=true bypasses the HTTP cache), or clear_site_data (unregister service workers + clear CacheStorage for the origin, then reload — fresh-deploy mode; cookies are never touched; include_storage=true also clears localStorage/IndexedDB). Every navigation reports served_by_service_worker so a stale, SW-cached document is obvious. Returns the new URL/title and the chosen observation.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "action": {"type": "string", "enum": ["back", "forward", "reload"], "description": "History action to perform"},
+                    "action": {"type": "string", "enum": ["goto", "back", "forward", "reload", "clear_site_data"], "description": "Navigation action"},
+                    "url": {"type": "string", "description": "URL to load (required for goto)"},
+                    "wait_for": {"type": "string", "description": "goto: CSS selector to wait for (visible) after the load"},
+                    "wait_for_network": {"type": "string", "description": "goto: plain URL substring of a response to wait for — armed before navigation so it can't be missed"},
+                    "wait_until": {"type": "string", "enum": ["load", "domcontentloaded", "networkidle"], "description": "Navigation wait strategy for this call (default: server setting, networkidle)"},
+                    "timeout": {"type": "integer", "description": "ms for wait_for / wait_for_network (defaults 10000 / 30000)"},
+                    "hard": {"type": ["boolean", "string"], "description": "reload: bypass the HTTP cache (default: false)"},
+                    "include_storage": {"type": ["boolean", "string"], "description": "clear_site_data: also clear localStorage/sessionStorage/IndexedDB (default: false; cookies are never cleared)"},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id", "action"]

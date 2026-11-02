@@ -55,6 +55,7 @@ async def handle_open_session(args: dict) -> dict:
         }
         if headed:
             result["headed"] = True
+        result["served_by_service_worker"] = session.served_by_service_worker
         if session.wait_downgraded:
             result["wait_downgraded"] = ("networkidle never settled (busy widget like Turnstile/"
                                          "websockets) — navigation completed with 'load' instead")
@@ -243,24 +244,114 @@ async def handle_select_page(args: dict) -> dict:
         }
 
 
+async def _cdp(session):
+    """One CDP session per page (shared with emulate_network)."""
+    if session.cdp_session is None:
+        cdp_page = real_page(session.page)
+        session.cdp_session = await cdp_page.context.new_cdp_session(cdp_page)
+    return session.cdp_session
+
+
 @tool("navigate_session")
 async def handle_navigate_session(args: dict) -> dict:
+        from nav import from_service_worker, resilient_goto
+
         session = session_manager.get_session(args["session_id"])
         action = args["action"]
         page = real_page(session.page)
+        wait_until = args.get("wait_until") or config.WAIT_UNTIL
+        result = {"success": True, "action": action}
+
         if action == "back":
-            await page.go_back(wait_until=config.WAIT_UNTIL)
+            await page.go_back(wait_until=wait_until)
         elif action == "forward":
-            await page.go_forward(wait_until=config.WAIT_UNTIL)
+            await page.go_forward(wait_until=wait_until)
         elif action == "reload":
-            await page.reload(wait_until=config.WAIT_UNTIL)
+            hard = bool(args.get("hard"))
+            if hard:
+                # Bypass the HTTP cache for this load: a redeploy must not be
+                # masked by a cached document/asset.
+                cdp = await _cdp(session)
+                await cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
+                try:
+                    await cdp.send("Network.clearBrowserCache")
+                except Exception:
+                    pass
+            try:
+                response = await page.reload(wait_until=wait_until)
+            finally:
+                if hard:
+                    try:
+                        await cdp.send("Network.setCacheDisabled", {"cacheDisabled": False})
+                    except Exception:
+                        pass
+            result["hard"] = hard
+            result["served_by_service_worker"] = from_service_worker(response)
+            if response is not None:
+                result["status_code"] = response.status
+        elif action == "goto":
+            url = args.get("url")
+            if not url:
+                return {"success": False, "error":
+                        "navigate_session action='goto' requires 'url' (the address to load). "
+                        "Optional: wait_for (CSS selector to wait for), wait_for_network "
+                        "(URL substring, armed before navigation), wait_until (load|domcontentloaded|networkidle)."}
+            armed = None
+            if args.get("wait_for_network"):
+                import asyncio as _asyncio
+                from interactions import _network_predicate
+                armed = _asyncio.ensure_future(page.wait_for_event(
+                    "response", predicate=_network_predicate(args["wait_for_network"]),
+                    timeout=int(args.get("timeout") or 30000)))
+            try:
+                response, downgraded = await resilient_goto(page, url, wait_until=wait_until)
+            except Exception:
+                if armed is not None:
+                    armed.cancel()
+                raise
+            if downgraded:
+                result["wait_downgraded"] = "load"
+            result["status_code"] = response.status if response is not None else None
+            result["served_by_service_worker"] = from_service_worker(response)
+            session.served_by_service_worker = result["served_by_service_worker"]
+            if args.get("wait_for"):
+                await session.page.locator(args["wait_for"]).first.wait_for(
+                    state="visible", timeout=int(args.get("timeout") or 10000))
+                result["waited_for"] = args["wait_for"]
+            if armed is not None:
+                matched = await armed
+                result["matched_url"] = matched.url
+                result["matched_status"] = matched.status
+        elif action == "clear_site_data":
+            # Fresh-deploy mode: drop service workers + CacheStorage (and,
+            # opt-in, local/session storage + IndexedDB) for this origin.
+            # Cookies are NEVER touched — that would log a project session out.
+            from urllib.parse import urlparse
+            parts = urlparse(page.url)
+            origin = f"{parts.scheme}://{parts.netloc}"
+            try:
+                sw_count = await page.evaluate(
+                    "async () => (await navigator.serviceWorker.getRegistrations()).length")
+            except Exception:
+                sw_count = 0
+            types = ["service_workers", "cache_storage"]
+            if args.get("include_storage"):
+                types += ["local_storage", "indexeddb"]
+            cdp = await _cdp(session)
+            await cdp.send("Storage.clearDataForOrigin",
+                           {"origin": origin, "storageTypes": ",".join(types)})
+            try:
+                await cdp.send("Network.clearBrowserCache")
+            except Exception:
+                pass
+            response = await page.reload(wait_until=wait_until)
+            result.update({"origin": origin, "cleared": types + ["http_cache"],
+                           "service_workers_unregistered": sw_count,
+                           "served_by_service_worker": from_service_worker(response)})
         else:
-            return {"success": False, "error": f"Unknown action '{action}'. Valid: back, forward, reload"}
+            return {"success": False, "error":
+                    f"Unknown action '{action}'. Valid: back, forward, reload, goto, clear_site_data"}
         session.url = page.url
-        result = {
-            "success": True,
-            "action": action,
-            "url": session.url,
-            "title": await session.page.title(),
-        }
+        result["url"] = session.url
+        result["title"] = await session.page.title()
         return await interactions.attach_observation(session, result, args, f"after_{action}")

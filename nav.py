@@ -31,3 +31,12 @@ async def resilient_goto(page, url: str, wait_until: str = None, timeout: int = 
         response = await page.goto(url, wait_until="load", timeout=timeout)
         await page.wait_for_timeout(SETTLE_MS)
         return response, True
+
+
+def from_service_worker(response) -> bool:
+    """True when the main document came from a service worker (stale-deploy
+    tell-tale). Tolerates None (about:blank, downgraded loads)."""
+    try:
+        return bool(response is not None and response.from_service_worker)
+    except Exception:
+        return False

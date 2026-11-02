@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from playwright.async_api import Page, BrowserContext
 import config
-from nav import resilient_goto
+from nav import from_service_worker, resilient_goto
 
 
 @dataclass
@@ -27,6 +27,7 @@ class PageSession:
     own_context: object = None  # set on project-less sessions: their private context, closed with them
     popups: list = field(default_factory=list)  # {"page", "captures", "adopted_session_id"?} per popup this page opened
     wait_downgraded: bool = False  # networkidle never settled; navigation used 'load' (issue #14)
+    served_by_service_worker: bool = False  # main document of the last navigation came from a SW
 
 
 def attach_capture(page) -> tuple[list, list, list, list]:
@@ -153,7 +154,7 @@ class SessionManager:
         await page.add_init_script(INP_INIT_SCRIPT)
 
         try:
-            _, downgraded = await resilient_goto(page, url)
+            response, downgraded = await resilient_goto(page, url)
         except Exception:
             # Not yet registered in self.sessions — close it or it leaks in the context.
             await page.close()
@@ -173,6 +174,7 @@ class SessionManager:
             response_bodies=response_bodies,
             screenshot_dir=screenshot_dir,
             wait_downgraded=downgraded,
+            served_by_service_worker=from_service_worker(response),
             popups=popups,
         )
         self.sessions[session_id] = session
