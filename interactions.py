@@ -636,7 +636,21 @@ async def take_screenshot(page: Page, project_name: str, label: str = "", screen
     prep = await capture_full_page(page, filepath, prepare=prepare)
     if meta is not None:
         meta["capture_prep"] = prep
+        meta["view"] = await read_view(page)
     return filepath
+
+
+async def read_view(page) -> dict | None:
+    """Viewport size, scroll offset and page height — correlates "what I see"
+    with element coordinates. None when the page can't be evaluated."""
+    try:
+        return await _owner_page(page).evaluate("""() => ({
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
+            page_height: document.documentElement.scrollHeight,
+        })""")
+    except Exception:
+        return None
 
 
 async def attach_observation(session, result: dict, args: dict, label: str) -> dict:

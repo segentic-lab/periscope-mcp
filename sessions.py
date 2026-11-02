@@ -28,6 +28,7 @@ class PageSession:
     popups: list = field(default_factory=list)  # {"page", "captures", "adopted_session_id"?} per popup this page opened
     wait_downgraded: bool = False  # networkidle never settled; navigation used 'load' (issue #14)
     served_by_service_worker: bool = False  # main document of the last navigation came from a SW
+    nav_generation: int = 0  # +1 per main-frame navigation — lets an agent notice it moved pages
 
 
 def attach_capture(page) -> tuple[list, list, list, list]:
@@ -178,6 +179,11 @@ class SessionManager:
             popups=popups,
         )
         self.sessions[session_id] = session
+
+        def on_nav(frame, _s=session, _p=page):
+            if frame == _p.main_frame:
+                _s.nav_generation += 1
+        page.on("framenavigated", on_nav)
         return session
 
     def get_session(self, session_id: str) -> PageSession:

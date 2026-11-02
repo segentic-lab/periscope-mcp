@@ -159,6 +159,7 @@ async def handle_screenshot_session(args: dict) -> dict:
             "url": session.url,
             "title": await session.page.title(),
             **({"capture_prep": _meta["capture_prep"]} if _meta.get("capture_prep") else {}),
+            "view": _meta.get("view") or await interactions.read_view(session.page),
         }
 
 
