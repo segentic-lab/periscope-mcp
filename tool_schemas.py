@@ -1038,6 +1038,19 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="check_pwa",
+            description="Inspect a page as an installable web app: fetch + validate the manifest (name, short_name, 192/512 icons, display, start_url within scope, theme/background colours), report the service worker registration (scope, state, controlling), Chrome's own installability errors via CDP when available, and — in url mode — whether beforeinstallprompt fired. Returns issues[] with type 'pwa'. Pass session_id to inspect the live page (after your interactions) or url for a one-shot check.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to check (one-shot page; enables beforeinstallprompt observation)"},
+                    "session_id": {"type": "string", "description": "Or an open session to inspect in place"},
+                    "project": {"type": "string", "description": "Project whose authenticated context to use in url mode"},
+                },
+                "required": []
+            }
+        ),
+        Tool(
             name="run_lighthouse",
             description="Run a real Google Lighthouse audit: 0-100 category scores, Core Web Vitals, failed audits, and a SUMMARY an agent otherwise computes by hand — LCP element + phase breakdown (TTFB / load delay / load time / render delay), TTFB with a >2 s warning, transfer bytes by domain with third-party share, top opportunities by savings. runs=N gives the median run plus min/median/max spread; warmup=true primes server caches first. Full JSON report(s) saved to data/reports/. Requires Node.js (npm i -g lighthouse or npx). Runs its own Chrome — no session/auth state",
             inputSchema={
