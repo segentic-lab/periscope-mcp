@@ -122,7 +122,14 @@ async def handle_web_fetch(args: dict) -> dict:
                 return {"success": False, "url": url, "status_code": e.response.status_code,
                         "error": f"HTTP {e.response.status_code} for {url}"}
             except Exception as e:
-                return {"success": False, "url": url, "error": str(e)}
+                msg = str(e)
+                if "CERTIFICATE_VERIFY_FAILED" in msg or "SSL" in msg.upper() and "certificate" in msg.lower():
+                    host = urlparse(url).netloc or url
+                    return {"success": False, "url": url, "tls_error": True,
+                            "error": f"TLS certificate verification failed for {host} ({msg[:120]}) — "
+                                     "retry with verify_ssl=false (static fetch) or render=true (browser "
+                                     "sessions already ignore certificate errors)"}
+                return {"success": False, "url": url, "error": msg}
             content_type = response.headers.get("content-type", "")
             # Don't decode-and-soup binary responses (PDFs, images) into garbage.
             main_type = content_type.split(";")[0].strip().lower()
