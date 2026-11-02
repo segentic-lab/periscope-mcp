@@ -52,3 +52,17 @@ def test_non_string_values_untouched():
     coerce_args(args)
     assert args["steps"] == [{"action": "wait"}]
     assert args["force"] is True
+
+
+def test_new_0_11_bools_coerced():
+    args = {"hard": "true", "include_storage": "false", "include_frames": "True",
+            "warmup": "true", "reload": "true"}
+    coerce_args(args)
+    assert args == {"hard": True, "include_storage": False, "include_frames": True,
+                    "warmup": True, "reload": True}
+
+
+def test_viewport_object_parsed():
+    args = {"viewport": '{"width": 400, "height": 700}'}
+    coerce_args(args)
+    assert args["viewport"] == {"width": 400, "height": 700}

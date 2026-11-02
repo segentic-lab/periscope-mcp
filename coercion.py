@@ -7,7 +7,7 @@ import json
 _STRUCTURED_ARGS = {
     "steps", "fields", "checks", "run_checks", "cookies", "viewports",
     "files", "keys", "attributes", "properties", "entries", "overrides",
-    "categories", "assertions", "contains",
+    "categories", "assertions", "contains", "viewport",
 }
 # Structured args whose items are plain strings — a bare string like
 # "seo,performance" is accepted as a comma-separated list.
