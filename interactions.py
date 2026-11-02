@@ -260,6 +260,28 @@ async def _mouse_drag(page: Page, source_sel: str, target_sel: str):
     await mouse.up()
 
 
+async def hover_element(page: Page, selector: str, steps: int = 8, network_log: list = None) -> dict:
+    """Hover with a realistic pointer path: a short warm-up move near the
+    element, then `steps` intermediate mousemove events onto its centre.
+    Menus that watch pointer motion (SmartMenus, hover-intent) need several
+    mousemoves; locator.hover()'s single jump never opens them."""
+    steps = max(1, int(steps or 8))
+    owner = _owner_page(page)
+    locator = page.locator(selector).first
+    await locator.wait_for(state="visible", timeout=10000)
+    await locator.scroll_into_view_if_needed()
+    box = await locator.bounding_box()
+    if not box:
+        raise Exception(f"Could not resolve bounding box for '{selector}'")
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    before = await pagechange.snapshot(page, network_log)
+    await owner.mouse.move(max(0, cx - 40), max(0, cy - 20), steps=3)   # warm-up
+    await owner.mouse.move(cx, cy, steps=steps)                          # paced travel
+    await owner.wait_for_timeout(150)
+    verdict = await pagechange.diff(page, before, network_log)
+    return {"selector": selector, "steps": steps, "moves": steps + 3, **verdict}
+
+
 async def _get_input_type(page: Page, selector: str) -> str | None:
     """Get the type attribute of an input element."""
     return await page.evaluate("""(selector) => {
@@ -716,7 +738,7 @@ async def execute_steps(
         wait_for: {action: "wait_for", selector: str, state: str (visible|hidden|attached|detached)}
         screenshot: {action: "screenshot", label: str?}
         navigate: {action: "navigate", url: str}
-        hover: {action: "hover", selector: str}
+        hover: {action: "hover", selector: str, steps: int?} — realistic stepped pointer path
         press_key: {action: "press_key", key: str}
         check: {action: "check", selector: str}
         uncheck: {action: "uncheck", selector: str}
@@ -811,9 +833,9 @@ async def execute_steps(
                 step_result["url"] = page.url
 
             elif action == "hover":
-                locator = page.locator(step["selector"]).first
-                await locator.wait_for(state="visible", timeout=10000)
-                await locator.hover()
+                step_result.update(await hover_element(
+                    page, step["selector"], steps=int(step.get("steps") or 8),
+                    network_log=network_log))
 
             elif action == "press_key":
                 await _owner_page(page).keyboard.press(step["key"])

@@ -355,6 +355,7 @@ TOOLS: list[Tool] = [
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
+                                "steps": {"type": "integer", "description": "For hover: intermediate mousemove steps (default: 8 — realistic pointer path for hover-intent menus)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "Required for wait_for_network: plain substring of the request URL (not a regex)"},
                                 "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
@@ -1049,6 +1050,20 @@ TOOLS: list[Tool] = [
         ),
 
         # New Tools — Friction Reducers
+        Tool(
+            name="hover_element",
+            description="Hover an element with a REALISTIC pointer path: the mouse travels to the element in several mousemove steps (default 8, plus a short warm-up move), the way menus that watch pointer motion (SmartMenus/Elementor mega-menus, hover-intent libraries) expect — a single synthetic hover often never opens them. Returns {moves, changed, change} plus the chosen observation. The interact_and_test 'hover' step uses the same path (steps field overrides).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of the element to hover"},
+                    "steps": {"type": "integer", "description": "Intermediate mousemove steps on the way to the element (default: 8)"},
+                    **OBSERVE_PROP,
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
         Tool(
             name="scroll_into_view",
             description="Scroll an element into the viewport without clicking it. Returns {success}. Use to trigger lazy-loaded content/images or to bring a section into view before screenshotting.",

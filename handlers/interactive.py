@@ -24,6 +24,16 @@ async def handle_click_element(args: dict) -> dict:
         return await interactions.attach_observation(session, result, args, "after_click")
 
 
+@tool("hover_element")
+async def handle_hover_element(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.hover_element(
+            session.page, args["selector"], steps=int(args.get("steps") or 8),
+            network_log=session.network_log)
+        result["success"] = True
+        return await interactions.attach_observation(session, result, args, "after_hover")
+
+
 @tool("fill_form")
 async def handle_fill_form(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

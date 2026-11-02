@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hover Menu Fixture Page</title>
+  <style>
+    #submenu { display: none; }
+    #submenu.open { display: block; }
+    #trigger { display: inline-block; padding: 20px 40px; background: #eee; }
+  </style>
+</head>
+<body>
+  <h1>Hover menu fixture</h1>
+  <nav>
+    <a id="trigger" href="#">Products</a>
+    <ul id="submenu"><li><a href="#a">Alpha</a></li></ul>
+  </nav>
+  <p id="moves">0</p>
+  <script>
+    // SmartMenus-style: only a pointer that visibly travels (several mousemove
+    // events over the trigger) opens the menu — a single synthetic hover doesn't.
+    let moves = 0;
+    const trigger = document.getElementById('trigger');
+    trigger.addEventListener('mousemove', () => {
+      moves++;
+      document.getElementById('moves').textContent = String(moves);
+      if (moves >= 3) document.getElementById('submenu').classList.add('open');
+    });
+  </script>
+</body>
+</html>

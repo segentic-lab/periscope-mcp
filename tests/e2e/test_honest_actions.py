@@ -92,3 +92,33 @@ def test_fill_step_reports_verification(run, handlers, trusted_session):
         "steps": [{"action": "fill", "selector": "#controlled", "value": "abc"}]}))
     assert r["success"], r
     assert r["steps"][0]["verified"] is True and r["steps"][0]["fill_method"] == "native_setter", r
+
+
+@pytest.fixture()
+def menu_session(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/menu_hover.html"}))
+    assert r["success"], r
+    yield r["session_id"]
+    run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def _submenu_visible(run, handlers, sid):
+    return run(handlers["assert_condition"]({
+        "session_id": sid, "assertion": "element_visible", "selector": "#submenu"}))["passed"]
+
+
+def test_hover_element_opens_mousemove_menu(run, handlers, menu_session):
+    r = run(handlers["hover_element"]({"session_id": menu_session, "selector": "#trigger",
+                                       "observe": "none"}))
+    assert r["success"] and r["steps"] == 8 and r["moves"] == 11, r
+    assert r["changed"] is True and "dom" in r["change"], r
+    assert _submenu_visible(run, handlers, menu_session)
+
+
+def test_hover_step_default_is_stepped(run, handlers, menu_session):
+    r = run(handlers["interact_and_test"]({
+        "session_id": menu_session, "screenshot_after": False,
+        "steps": [{"action": "hover", "selector": "#trigger"}]}))
+    assert r["success"], r
+    assert r["steps"][0]["moves"] >= 3, r["steps"][0]
+    assert _submenu_visible(run, handlers, menu_session)
