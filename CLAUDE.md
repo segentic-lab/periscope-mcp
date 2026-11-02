@@ -13,7 +13,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
 
 ## Key Files
 - `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
-- `tool_schemas.py` - All 74 MCP `Tool(...)` schema definitions
+- `tool_schemas.py` - All 79 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery, system); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
 - `coercion.py` - JSON-string arg coercion (whitelist-based; never touches free-text args)
@@ -57,7 +57,7 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 - `create_project(name, base_url, max_pages?, max_depth?, screenshot_dir?)` / `list_projects()` / `get_project(name)` / `delete_project(name)`
 - `set_form_login(project, login_url, username, password, selectors?)` / `set_basic_auth(project, username, password)` / `set_cookies(project, cookies[])` — configure auth, then `login_project(project)` to execute
 - `interactive_login(project, login_url?)` → user logs in by hand in a **visible** window (for 2FA/SSO/CAPTCHA) → `save_login(project)` captures the session (storage_state → `data/sessions/{project}.json`, 0o600); project then runs authenticated + headless. Needs a display on the server.
-- `open_session(url, project?, headed?)` — `headed=true` opens a real visible window (needs a display)
+- `open_session(url, project?, headed?, device?, width?, height?, consent?)` — `headed=true` opens a real visible window (needs a display); `device` = viewport preset or a real device descriptor (`"iPhone 14"`, `samsung_internet`: UA/DPR/touch in a private context seeded with project auth); `consent=accept|deny` handles the cookie banner first
 - `test_url(url, project?, checks?[])` — Screenshot + checks for one URL
 - `crawl_project(project, max_pages?, max_depth?, use_sitemap?, meta?, save_md?, save_dir?)` — deterministic, sitemap-seeded BFS page discovery (`max_pages=0` = whole site up to a 2000 ceiling); `meta=true` adds per-page title+description, `save_md=true` saves each crawled page as readable Markdown to data/fetches/<project>/
 - `test_project(project, checks?[])` — Crawl + test all pages, saves JSON report
@@ -83,26 +83,30 @@ close_session(session_id)
 - `select_page(session_id, index?)` — Adopt a popup/new tab the session opened (OAuth, target=_blank) as a new drivable session; capture runs from popup birth
 - `close_session(session_id)` — Close session and free resources
 - `list_sessions()` — List all active sessions with URLs/idle times
-- `set_viewport(session_id, width?, height?, device?)` — Switch viewport size. Presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
+- `set_viewport(session_id, width?, height?, device?, reload?)` — Switch viewport size (`reload=true` re-evaluates JS breakpoints). Presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
 ### Interactive Tools
-- `click_element(session_id, selector, force?)` — Click element, return screenshot + new URL/title. Portal overlays (Radix/shadcn) that intercept the pointer trigger an automatic element-level JS-click fallback (flagged `click_method: "js_dispatch"`).
-- `fill_form(session_id, fields[], submit_selector?, force?)` — Fill fields, optionally submit; `force=true` bypasses actionability checks (overlays, dialogs behind inputs)
+- `click_element(session_id, selector, force?, strategy?)` — Click element, return URL/title + honest change report (`changed`, `change`, `click_method`, `attempts`, `hint` when nothing changed). Overlay-blocked/unstable elements fall back to a synthetic `js_dispatch` click (hosted checkouts ignore it — `force=true` is a trusted pointer click; `strategy="auto"` escalates pointer → force → js_dispatch until the page changes).
+- `hover_element(session_id, selector, steps?)` — Realistic stepped mouse path for hover-intent menus (same path as the `hover` step)
+- `handle_consent(session_id, action)` — Accept/deny/dismiss the cookie banner (CMP table + multilingual fallback; no banner = `found: false`)
+- `fill_form(session_id, fields[], submit_selector?, force?)` — Fill fields (each verified: `verified`, `fill_method`, `actual`; controlled inputs get a native-setter retry), optionally submit; `force=true` bypasses actionability checks (overlays, dialogs behind inputs)
 - `select_option(session_id, selector, value?, label?, index?, element_index?)` — Select from native `<select>` or custom dropdown (Radix/shadcn combobox). Auto-detects type. `element_index` targets the Nth match of the selector (attribute-less selects).
-- `interact_and_test(url|session_id, steps[], run_checks?[], capture_console?, ...)` — Multi-step workflow (`capture_console=true` returns console output from the steps) with 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network
+- `interact_and_test(url|session_id, steps[], run_checks?[], capture_console?, ...)` — Multi-step workflow (`capture_console=true` returns console output from the steps) with 26 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network, consent. A `click` step followed by `wait_for_network` arms the waiter before the click.
 - `get_page_elements(selector, url|session_id, max_results?, attributes?[], full_text?)` — List matching elements with attributes; `attributes[]` adds specific HTML attribute values (data-*, aria-*, style), `full_text=true` returns complete text content
 
 ### Analysis Tools
 - `test_form_validation(url|session_id, form_selector?)` — Analyze form validation
 - `compare_screenshots(screenshot1, screenshot2, threshold?)` — Pixel diff using Pillow
 - `test_responsive(url, viewports?[], run_checks?[])` — Test at mobile/tablet/desktop viewports
+- `compare_pages(url_a, url_b, project?, project_b?, steps?, consent?, device?, run_checks?, max_diff_percent?)` — Staging vs live: screenshot pixel diff, facts diff (title/meta/canonical/H1/hreflang/og), text diff, performance + weight deltas, `same`
+- `check_pwa(url|session_id, project?)` — Manifest validation, service-worker state, Chrome installability errors, `beforeinstallprompt`
 - `check_links(url|session_id, check_external?, max_links?)` — Comprehensive link checker
 - `measure_interaction(session_id, selector, wait_for?, wait_for_network?)` — Measure click-to-result timing + the click's real INP. `wait_for_network` (URL substring) binds the measurement to that response — use it for async submit handlers where network-idle settles early.
 - `get_table_data(session_id, selector?, max_rows?)` — Parse HTML table into structured JSON with headers mapped to cell values
 - `get_toast_messages(session_id, wait_ms?, selector?)` — Capture visible toast/notification messages (checks role=alert, role=status, aria-live, .toast, Toastify, Sonner, Radix)
 - `visual_check(session_id, name, action?, selector?, max_diff_percent?)` — Named visual-regression baselines: `set` captures, `check` compares → hard pass/fail + diff image; stored per project in data/baselines/
-- `download_file(session_id, selector, timeout?)` — Click a trigger and capture the downloaded file: path, size, sha256, text preview; falls back to context refetch (flagged `capture_method`) when the browser artifact is empty
-- `run_lighthouse(url, categories?[], device?, timeout?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, full report saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
+- `download_file(session_id, selector, timeout?)` — Click a trigger and capture the downloaded file: path, size, sha256, text preview, `content_type`, `content_disposition`; `navigated_instead: true` when the click opened the file inline; falls back to context refetch (flagged `capture_method`) when the browser artifact is empty
+- `run_lighthouse(url, categories?[], device?, timeout?, runs?, warmup?)` — Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits, `summary` (LCP element + phases, TTFB warning, bytes by domain, opportunities); `runs=N` → median run + spread, `warmup=true` primes server caches; full report(s) saved to data/reports/. Requires Node.js (`npm i -g lighthouse` or npx). Runs its own Chrome — no session/auth state.
 - `get_interaction_log(session_id, format?, clear?)` — Export the real **INP** time series (one record per interaction Periscope drove: input→next-paint latency, type, target, ts, url) as JSON (graphable) or CSV, with p50/p75/p90/p98/worst stats. INP is also surfaced inline: `interaction_to_next_paint_ms` on `interact_and_test` results and the `performance` check. Measured from actual Event Timing entries (Lighthouse can't do INP in lab mode — it falls back to TBT); null until interactions happen.
 
 ### Advanced Tools
@@ -111,9 +115,9 @@ close_session(session_id)
 - `get_console_errors(session_id, clear?)` — Get all console errors/logs since session opened (or last read). Passive monitoring, no steps needed.
 
 ### Workflow Speed Tools
-- `screenshot_session(session_id, full_page?, selector?)` — Quick screenshot of current page state (selector clips to one element), no actions performed
+- `screenshot_session(session_id, full_page?, selector?, mode?, tile_height?)` — Quick screenshot of current page state (selector clips to one element; `mode="tiles"` splits long pages into legible tiles), no actions performed; result carries `view` (viewport, scroll, page_height)
 - `run_checks_on_session(session_id, checks?[])` — Run checks on active session page (no new page opened)
-- `navigate_session(session_id, action)` — Browser history navigation + reload: `back`, `forward`, `reload`
+- `navigate_session(session_id, action, url?, wait_for?, wait_for_network?, wait_until?, hard?, include_storage?)` — `goto` (waits armed before the load), `back`, `forward`, `reload` (`hard=true` bypasses the HTTP cache), `clear_site_data` (unregister service workers + purge CacheStorage, never cookies). Every navigation reports `served_by_service_worker`
 - `handle_dialog(session_id, action, prompt_text?)` — Accept/dismiss JS alert/confirm/prompt (call BEFORE triggering)
 - `upload_file(session_id, selector, files[])` — Set files on `<input type="file">`
 - `wait_for_network(session_id, url_pattern, method?, timeout?)` — Wait for specific API request to complete
@@ -126,7 +130,7 @@ close_session(session_id)
 - `intercept_network(session_id, url_pattern, status?, body?, content_type?, once?)` — Mock API responses to test error/empty/loading states
 - `clear_intercepts(session_id, url_pattern?)` — Remove network mocks set by intercept_network (all, or by pattern)
 - `get_local_storage(session_id, storage?, keys?)` / `set_local_storage(session_id, entries, storage?, clear_first?)` — Read/write localStorage or sessionStorage
-- `select_iframe(session_id, selector)` — Switch into iframe, returns new session scoped to iframe content
+- `select_iframe(session_id, selector)` — Switch into iframe, returns new session scoped to iframe content (`get_page_map(include_frames=true)` lists the selectors)
 - `get_computed_style(session_id, selector, properties[])` — Get actual rendered CSS values (color, font-size, display, etc.)
 - `emulate_network(session_id, preset)` — Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset`
 - `test_dark_mode(session_id, mode)` — Toggle `prefers-color-scheme` to `dark` or `light`
@@ -134,10 +138,11 @@ close_session(session_id)
 ### AI Agent Speed Tools
 - `assert_condition(session_id, assertion, selector?, expected?, attribute?)` — Programmatic pass/fail assertions: `text_contains`, `text_equals`, `element_exists`, `element_visible`, `element_count`, `url_contains`, `title_contains`, `attribute_equals`
 - `assert_all(session_id, assertions[])` — Batch assertions: every one evaluated (no early abort), per-item verdicts + overall `passed`/`failed_count`
-- `get_page_map(session_id, max_nodes?, include_hidden?)` — Semantic page map in one call: interactive elements + landmarks/headings with role, accessible name, state, and a ready selector; `unnamed` flags = a11y findings
+- `get_page_map(session_id, max_nodes?, include_hidden?, include_frames?)` — Semantic page map in one call: interactive elements + landmarks/headings with role, accessible name, state, and a ready selector; `unnamed` flags = a11y findings; `include_frames=true` adds the iframe inventory (`frame_count` always)
 - `find_element(session_id, text?, tag?, role?, near?, max_results?)` — Smart element finder by text/role/proximity. Returns best CSS selectors.
 - `auto_fill_form(session_id, form_selector?, overrides?, submit?)` — Auto-detect fields, infer types (email/phone/name/etc.), fill with test data. One call replaces 5-10.
-- `get_network_log(session_id, url_filter?, clear?)` — All network requests captured during session (URL, status, method, type)
+- `get_network_log(session_id, url_filter?, clear?)` — All network requests captured during session (URL, status, method, type, content_length, from_service_worker)
+- `network_summary(session_id, since?, top?)` — Bytes/requests by domain (third-party flagged) and type, heaviest requests, third-party share; `since="clear"` after `get_network_log(clear=true)`
 - `page_state(session_id, action, name)` — Named checkpoints: `snapshot` saves URL + cookies + storage + DOM, `restore` returns to it, `diff` compares current DOM vs it
 - `get_cookies(session_id, domain_filter?)` — Read all cookies from session context
 - `check_color_contrast(session_id, selector?, level?, max_results?)` — WCAG AA/AAA contrast ratio checks on text elements
@@ -145,7 +150,7 @@ close_session(session_id)
 
 ### Web Tools
 - `web_search(query, max_results?)` — Search DuckDuckGo, returns titles + URLs + snippets
-- `web_fetch(url, format?, readable?, render?, project?, contains?, contains_mode?, save?, save_path?, max_length?, raw_html?, verify_ssl?)` — Fetch URL → readable **Markdown** by default (boilerplate stripped via trafilatura; `format=text|html` for other shapes). `render=true` runs JS in headless Chromium first (+ `project` for behind-login pages); `contains=[terms]` gates the fetch (matched against full page text); `save`/`save_path` writes the artifact to data/fetches/. TLS verified by default; `verify_ssl=false` for self-signed dev servers.
+- `web_fetch(url, format?, readable?, render?, project?, contains?, contains_mode?, save?, save_path?, max_length?, raw_html?, verify_ssl?)` — Fetch URL → readable **Markdown** by default (boilerplate stripped via trafilatura; `format=text|html` for other shapes). `render=true` runs JS in headless Chromium first (+ `project` for behind-login pages); `contains=[terms]` gates the fetch (matched against full page text); `save`/`save_path` writes the artifact to data/fetches/. TLS verified by default; `verify_ssl=false` for self-signed/expired certs (a failure names this fix; browser sessions ignore cert errors already).
 
 ### Utility Tools
 - `periscope_system(action, apply?, force?)` — `status` = version/commit/capabilities/update-check; `agents_md` = current AGENTS.md content (refresh a stale pasted copy); `update` = dry-run by default, `apply=true` runs update.sh (restart required to load new code; managed/Docker installs refuse with guidance)
@@ -154,6 +159,7 @@ close_session(session_id)
 ### Session Config (`config.py`)
 - `MAX_SESSIONS = 20` — Max concurrent sessions (env-overridable: `MAX_SESSIONS=50`); oldest session is evicted at the cap
 - Project-less calls are context-isolated (no cookie sharing); pass `project` for shared auth state
+- Every session result carries `nav_generation` (main-frame navigation count), stamped by the `@tool` registry decorator
 - `SESSION_TIMEOUT = 300` — Auto-expire after 300s idle (env-overridable: `SESSION_TIMEOUT=600`)
 - `MAX_RESPONSE_BODY_SIZE = 512000` — Max response body capture size (500KB)
 - `MAX_RESPONSE_BODIES = 100` — Max captured response bodies kept per session

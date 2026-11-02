@@ -2,7 +2,7 @@
 
 [![periscope-mcp MCP server](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp/badges/score.svg)](https://glama.ai/mcp/servers/segentic-lab/periscope-mcp)
 
-An MCP server that gives AI agents **74 Playwright tools to QA, test, and
+An MCP server that gives AI agents **79 Playwright tools to QA, test, and
 analyze web apps** — static sites, SPAs, and apps behind a login — returning
 hard verdicts, not screenshots to squint at. Not a thin wrapper around browser
 APIs; the tools are shaped around how agents actually work:
@@ -67,14 +67,14 @@ MCP client (AI agent)  -->  MCP Server (stdio)  -->  Playwright (Headless Chrome
                                  +-- Videos (WebM)
 ```
 
-**How it works:** your MCP client connects to this server over stdio. The server exposes 74 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
+**How it works:** your MCP client connects to this server over stdio. The server exposes 79 tools the agent can call to create projects, configure authentication, crawl websites, run static checks, and interactively test web applications using persistent browser sessions. Results (JSON + screenshots + videos) are returned to the agent for analysis.
 
 ## Project Structure
 
 ```
 periscope-mcp/
 ├── server.py              # MCP server entry point (stdio wiring + dispatch)
-├── tool_schemas.py        # All 74 MCP tool definitions (schemas)
+├── tool_schemas.py        # All 79 MCP tool definitions (schemas)
 ├── runtime.py             # Shared singletons (project store, sessions, browser)
 ├── coercion.py            # Argument coercion for MCP clients with stale schemas
 ├── handlers/              # Tool handlers, grouped by category
@@ -247,7 +247,7 @@ Either way, the agent can always fetch the current full guide from the running
 server via `periscope_system(action="agents_md")` and the complete catalog via
 `describe_tools()`.
 
-## MCP Tools Reference (74 tools)
+## MCP Tools Reference (79 tools)
 
 ### Project Management (4 tools)
 
@@ -300,30 +300,32 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `open_session` | Open persistent browser session (`headed=true` for a visible window) | `url` |
+| `open_session` | Open persistent browser session (`headed=true` for a visible window; `device=` real-device emulation; `consent=` handles the cookie banner) | `url` |
 | `close_session` | Close session and free resources | `session_id` |
 | `list_sessions` | List all active sessions | _(none)_ |
-| `set_viewport` | Switch viewport size (8 device presets or custom w/h) | `session_id` |
+| `set_viewport` | Switch viewport size (8 device presets or custom w/h; `reload=true` for JS breakpoints) | `session_id` |
 | `select_page` | Adopt a popup/new tab (OAuth, target=_blank) as a new drivable session | `session_id` |
 
 `set_viewport` presets: `mobile_sm` (320x568), `mobile` (375x812), `mobile_lg` (428x926), `tablet` (768x1024), `tablet_lg` (1024x1366), `laptop` (1366x768), `desktop` (1920x1080), `desktop_lg` (2560x1440)
 
-### Interactive Actions (7 tools)
+### Interactive Actions (9 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `click_element` | Click element (`force=true` bypasses overlays) | `session_id`, `selector` |
-| `fill_form` | Fill form fields, optionally submit | `session_id`, `fields` |
+| `click_element` | Click with an honest change report (`changed`, `click_method`, `hint`); `strategy="auto"` escalates pointer → force → js_dispatch | `session_id`, `selector` |
+| `hover_element` | Realistic stepped hover for hover-intent menus | `session_id`, `selector` |
+| `handle_consent` | Accept/deny/dismiss the cookie banner (CMP table + multilingual fallback) | `session_id`, `action` |
+| `fill_form` | Fill form fields (each verified, native-setter retry), optionally submit | `session_id`, `fields` |
 | `select_option` | Native `<select>` or custom dropdown (Radix/shadcn) — auto-detects | `session_id`, `selector` |
-| `interact_and_test` | Multi-step workflow with 25 actions (see below) | `steps` |
+| `interact_and_test` | Multi-step workflow with 26 actions (see below) | `steps` |
 | `get_page_elements` | List matching elements with attributes | `selector` |
 | `flow` | Save / run / list / delete named step sequences (reusable workflows) | _(varies by action)_ |
 | `scroll_into_view` | Scroll element into viewport without clicking | `session_id`, `selector` |
 
-**`interact_and_test` supports 25 step actions:**
-`click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`
+**`interact_and_test` supports 26 step actions:**
+`click`, `force_click`, `fill`, `force_fill`, `type`, `select`, `select_option`, `wait`, `wait_for`, `wait_for_text`, `screenshot`, `navigate`, `hover`, `press_key`, `check`, `uncheck`, `scroll_to`, `scroll_within`, `evaluate_js`, `drag`, `right_click`, `go_back`, `go_forward`, `upload_file`, `wait_for_network`, `consent`
 
-### Analysis (10 tools)
+### Analysis (12 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
@@ -331,20 +333,22 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `compare_screenshots` | Pixel diff between two screenshots | `screenshot1`, `screenshot2` |
 | `visual_check` | Named visual-regression baselines: set once, check for a hard pass/fail | `session_id`, `name` |
 | `test_responsive` | Test at mobile/tablet/desktop viewports | `url` |
+| `compare_pages` | Staging vs live: screenshot/facts/text diff + performance and weight deltas | `url_a`, `url_b` |
+| `check_pwa` | Manifest validation, service worker state, installability errors | _(url or session_id)_ |
 | `check_links` | Comprehensive link checker (internal + external) | _(url or session_id)_ |
 | `measure_interaction` | Measure click-to-result timing | `session_id`, `selector` |
 | `get_table_data` | Parse HTML table into structured JSON (headers → cell values) | `session_id` |
 | `get_toast_messages` | Capture visible toast/notification messages | `session_id` |
-| `run_lighthouse` | Real Google Lighthouse audit: 0-100 scores, Core Web Vitals, failed audits (needs Node.js) | `url` |
+| `run_lighthouse` | Real Google Lighthouse audit: scores, Core Web Vitals, failed audits + LCP/TTFB/bytes summary; `runs=N` median, `warmup` (needs Node.js) | `url` |
 | `get_interaction_log` | Export real **INP** time series (per interaction) as JSON/CSV + percentile stats | `session_id` |
 
 ### Workflow Speed (8 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
-| `screenshot_session` | Quick screenshot of current page state | `session_id` |
+| `screenshot_session` | Quick screenshot of current page state (`mode="tiles"` for long pages; result carries `view`) | `session_id` |
 | `run_checks_on_session` | Run checks on active session (no new page) | `session_id` |
-| `navigate_session` | Browser history: back, forward, or reload | `session_id`, `action` |
+| `navigate_session` | `goto` (waits armed before the load), back, forward, reload (`hard=true`), `clear_site_data` (SW + cache purge); reports `served_by_service_worker` | `session_id`, `action` |
 | `handle_dialog` | Accept/dismiss JS alert/confirm/prompt (call BEFORE trigger) | `session_id`, `action` |
 | `upload_file` | Set file(s) on `<input type="file">` | `session_id`, `selector`, `files` |
 | `wait_for_network` | Wait for specific API URL pattern to complete | `session_id`, `url_pattern` |
@@ -363,7 +367,7 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `get_computed_style` | Get actual rendered CSS values | `session_id`, `selector`, `properties` |
 | `emulate_network` | Throttle network: `slow_3g`, `fast_3g`, `offline`, `reset` | `session_id`, `preset` |
 | `test_dark_mode` | Toggle `prefers-color-scheme` dark/light | `session_id`, `mode` |
-| `download_file` | Click a trigger and capture the downloaded file (path, sha256, text preview) | `session_id`, `selector` |
+| `download_file` | Click a trigger and capture the downloaded file (path, sha256, preview, content headers; `navigated_instead` flag) | `session_id`, `selector` |
 
 ### Recording & Console (3 tools)
 
@@ -373,16 +377,17 @@ Sessions keep browser pages alive across tool calls, enabling multi-step interac
 | `test_keyboard_navigation` | Tab-order and focus indicator audit | _(url or session_id)_ |
 | `get_console_errors` | Get all console errors/logs (passive monitoring) | `session_id` |
 
-### AI Agent Speed Tools (10 tools)
+### AI Agent Speed Tools (11 tools)
 
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `assert_condition` | Programmatic pass/fail: text_contains, element_exists, url_contains, etc. | `session_id`, `assertion` |
 | `assert_all` | Batch assertions — every verdict in one call, no early abort | `session_id`, `assertions` |
-| `get_page_map` | Semantic page map: roles, names, states + ready selectors in one call | `session_id` |
+| `get_page_map` | Semantic page map: roles, names, states + ready selectors in one call (`include_frames` lists iframes) | `session_id` |
 | `find_element` | Smart finder by text, tag, role, or proximity to another element | `session_id` |
 | `auto_fill_form` | Auto-detect fields, infer types, fill with test data. One call = many fills. | `session_id` |
-| `get_network_log` | All captured network requests (URL, status, method, type) | `session_id` |
+| `get_network_log` | All captured network requests (URL, status, method, type, size, SW) | `session_id` |
+| `network_summary` | Bytes by domain/type, third-party share, heaviest requests (`since="clear"` for before/after) | `session_id` |
 | `get_response_body` | Actual API response body text (diagnose 400/500 errors) | `session_id`, `url_pattern` |
 | `page_state` | Named checkpoints: snapshot / restore / diff page state | `session_id`, `action`, `name` |
 | `get_cookies` | Read all cookies from session | `session_id` |

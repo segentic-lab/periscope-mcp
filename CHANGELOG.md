@@ -6,6 +6,98 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.11.0] - 2026-11-02
+
+Field-feedback release: every ask from two real engagements — the klimacar.si
+build (Astro + Cloudflare Workers, Stripe hosted checkout, installable PWAs) and
+the Vibrant Longevity WordPress migration (Elementor/WPML, staging → live) —
+plus the design flaw those reports exposed. 79 tools now.
+
+### Fixed
+- **The Stripe trap: a click could report success for a click the page
+  ignored.** When Playwright's actionability check failed, the overlay fallback
+  dispatched a *synthetic* click and returned ok — hosted payment pages check
+  `isTrusted`, so that click never worked. Every click now reports `changed`,
+  `change` (`url`/`dom`/`network`), `click_method` (`pointer` | `pointer_force` |
+  `js_dispatch`) and `attempts`; a click that changed nothing carries a `hint`
+  (and names `isTrusted` when the synthetic path was taken). `strategy="auto"`
+  escalates pointer → forced pointer → js_dispatch and stops at the first
+  attempt that changes the page (never re-clicks after a change). Unstable
+  (animating) elements now take the fallback instead of raising.
+- **Fills are verified.** Every fill reads the value back; framework-controlled
+  inputs that discard typed text get a native-setter retry. Results carry
+  `verified`, `fill_method`, `actual` (per field in `fill_form.fields[]`, inline
+  on `fill`/`force_fill` steps).
+- **click + wait_for_network as consecutive steps can no longer miss a fast
+  response** — the response waiter is armed before the click.
+- `web_fetch` names the fix on a TLS certificate failure (`verify_ssl=false`,
+  or `render=true` — browser sessions already ignore certificate errors) and
+  flags `tls_error`.
+- `describe_tools` catalog refreshed (it had drifted: `web_fetch` params,
+  `navigate_session` `observe`); a unit test now fails when a registered tool
+  is missing from the catalog.
+
+### Added
+- **`navigate_session`** gained `goto` (with `wait_for` selector and
+  `wait_for_network` substring armed *before* the load, per-call `wait_until`),
+  `reload` with `hard=true` (HTTP cache bypass), and `clear_site_data`
+  (unregister service workers + purge CacheStorage for the origin, then reload;
+  `include_storage=true` adds local/session storage + IndexedDB; cookies are
+  never touched). Every navigation and `open_session` report
+  `served_by_service_worker` — the instant explanation for "I'm still seeing
+  the pre-deploy page".
+- **`nav_generation`** (main-frame navigation count) on every session result,
+  stamped at the handler registry — notice when you are no longer on the page
+  you think you are. Screenshot results carry `view` (viewport, scroll,
+  page_height).
+- **`hover_element`** tool and a stepped `hover` step: a realistic pointer path
+  (warm-up move + 8 intermediate `mousemove`s) that opens hover-intent menus
+  (SmartMenus/Elementor) a single synthetic hover never did.
+- **`open_session(device, width, height, consent)`** — open already sized, or
+  emulating a real device (any Playwright device name such as `"iPhone 14"`,
+  `"Galaxy S9+"`, plus `samsung_internet`): user agent, DPR and touch in a
+  private context seeded with the project's login state. `set_viewport(reload=true)`
+  re-evaluates JS breakpoints.
+- **`handle_consent(action=accept|deny|dismiss)`** — cookie-banner helper with
+  a CMP table (Complianz, Cookiebot, CookieYes, OneTrust, Borlabs, Usercentrics,
+  Didomi, Osano, Iubenda, Klaro, Cookie Notice, Cookie Law Info, Moove GDPR,
+  Quantcast, Termly, HubSpot) and a generic en/sl/de/hr/it/es/fr button-text
+  fallback. No banner = success with `found: false`. Also a `consent` step and
+  the `open_session(consent=…)` / `compare_pages(consent=…)` parameters.
+- **`check_pwa(url|session_id)`** — manifest fetch + validation (name,
+  short_name, 192/512 icons, display, start_url within scope, colours),
+  service-worker registration/state, Chrome's installability errors via CDP,
+  `beforeinstallprompt` observation in url mode. Issues typed `pwa`.
+- **`get_page_map(include_frames=true)`** — iframe inventory (selector, url,
+  name, cross_origin) with ready `select_iframe` selectors; `frame_count` is
+  always returned. The way into Stripe card fields.
+- **`download_file`** reports `content_type` and `content_disposition`, and
+  `navigated_instead: true` (with `final_url`) when the click opened the file
+  instead of downloading it.
+- **`screenshot_session(mode="tiles", tile_height=1600)`** splits a long page
+  into legible images (`tiles[]`); full-page shots of pages over 6000 px get a
+  note suggesting it. `mode` also accepts `full|viewport|element`.
+- **`network_summary(session_id, since=open|clear|<epoch ms>)`** — bytes and
+  requests by domain (third-party flagged) and by resource type, heaviest
+  requests, third-party share, service-worker hits. Sizes from Resource Timing
+  with `Content-Length` fallback, unknowns counted. `get_network_log` entries
+  now carry `content_length` and `from_service_worker`.
+- **`run_lighthouse(runs=N, warmup=true)`** — median-LCP run plus min/median/max
+  spread across runs, a cache-priming GET before the runs, and a `summary`:
+  LCP element + phase breakdown (TTFB / load delay / load time / render delay),
+  TTFB with a > 2 s warning, bytes by domain with third-party share, top
+  opportunities by savings. Handles Lighthouse 13 insight audits and the older
+  `largest-contentful-paint-element` shape.
+- **`compare_pages(url_a, url_b, steps?, consent?, device?, run_checks?)`** —
+  staging vs live in one call: side-by-side full-page screenshots + pixel diff,
+  facts diff (title, meta description, canonical, H1s, hreflang, lang, robots,
+  og tags, link/image/form counts), visible-text diff, performance and
+  transfer-weight deltas, `same`. A side that fails to load is reported with its
+  error while the other side is captured in full.
+- E2E fixtures for all of the above (`trusted_click`, `sw`, `menu_hover`,
+  `consent`, `frames`, `long`, `weighty`, `pwa`) and a Lighthouse 13 unit
+  fixture.
+
 ## [0.10.4] - 2026-07-07
 
 ### Changed

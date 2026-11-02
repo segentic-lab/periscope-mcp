@@ -1,7 +1,7 @@
 ---
 name: periscope
 description: >-
-  Drive the Periscope MCP server (74 Playwright + headless-Chrome tools) to
+  Drive the Periscope MCP server (79 Playwright + headless-Chrome tools) to
   test, audit, and debug websites and web apps — static sites, SPAs, and apps
   behind a login. Use this skill whenever the user wants to test a website or
   web app, run an E2E or interactive flow, audit accessibility/SEO/GEO/
@@ -73,7 +73,15 @@ whenever the question is "what does this page actually do/look like".
 | Verify without squinting | `assert_all(session_id, assertions=[...])` — hard pass/fail + actual values, every assertion evaluated |
 | Visual regression | `visual_check(name, action="set", selector?)` … later `action="check"` → pass/fail + diff image (element-scoped flakes less) |
 | Responsive | `test_responsive(url)` one-shot, or `set_viewport(device=...)` inside a session |
-| Real performance | `performance` check = lab LCP/CLS/TBT + **real INP**; `run_lighthouse(url)` for official scores (needs Node, no login state) |
+| Emulate a real device | `open_session(url, device="iPhone 14")` (any Playwright device name, or `samsung_internet`) — UA, DPR, touch, project auth carried in |
+| Clear a cookie banner | `open_session(url, consent="accept")` or `handle_consent(session_id, action)` — CMP table + multilingual fallback |
+| Verify a redeploy | `navigate_session(action="reload", hard=true)` / `action="clear_site_data"`; watch `served_by_service_worker` on every navigation |
+| Hosted checkout (Stripe) | `get_page_map(include_frames=true)` → `select_iframe` → verified fills; `click_element(strategy="auto")` for controls that ignore synthetic clicks |
+| Staging vs live | `compare_pages(url_a, url_b, steps?, consent?)` — screenshot, facts, text, performance and weight diffs in one call |
+| Page weight / third parties | `network_summary(session_id, since="clear")` after `get_network_log(clear=true)` |
+| PWA install readiness | `check_pwa(url)` — manifest, service worker, installability errors |
+| Long page screenshots | `screenshot_session(mode="tiles")` — legible 1600 px tiles instead of one unreadable image |
+| Real performance | `performance` check = lab LCP/CLS/TBT + **real INP**; `run_lighthouse(url, runs=3, warmup=true)` for official scores + LCP element/phases summary (needs Node, no login state) |
 | Fill a form fast | `auto_fill_form(session_id, overrides?, submit=true)` — detects fields, infers realistic data |
 | Read an external page | `web_fetch(url)` → readable Markdown; `render=true` for SPA/JS pages; `project=` to read behind a login; `save=true` for a `.md` artifact |
 | Deliver the results | `session_report(notes=...)` — HTML+PDF dossier of every call, secrets redacted |
@@ -120,10 +128,15 @@ whenever the question is "what does this page actually do/look like".
   `element_index` (0-based) to `select_option`.
 
 **Clicking and inputs**
-- Portal overlays (Radix/shadcn) that swallow clicks are handled
-  automatically — the result is flagged `click_method: "js_dispatch"`. Don't
-  build `evaluate_js` workarounds. For *fills* blocked by overlays, use
-  `fill_form(force=true)`.
+- **Every click reports `changed`/`change`/`click_method`** and a `hint` when
+  nothing changed — read it before retrying. Portal overlays (Radix/shadcn)
+  that swallow clicks fall back to `click_method: "js_dispatch"` automatically;
+  that click is *synthetic*, so hosted checkouts (`isTrusted`) ignore it — use
+  `force=true` (trusted pointer click) or `strategy="auto"`. Fills are verified
+  (`verified`, `fill_method`); `fill_form(force=true)` only for overlay-blocked
+  inputs.
+- Hover-intent menus (SmartMenus/Elementor) need pointer motion: use
+  `hover_element` or the `hover` step (stepped mouse path), never `evaluate_js`.
 - Custom dropdowns: `select_option` (auto-detects native vs combobox), never
   click + click.
 - `handle_dialog` must run **before** the action that triggers the
@@ -148,8 +161,13 @@ whenever the question is "what does this page actually do/look like".
 
 **Frames, popups, auth**
 - `select_iframe` returns a **new** session id scoped to the frame; keep the
-  parent id for page-level actions. `select_page` (popup adoption) works only
+  parent id for page-level actions. `get_page_map(include_frames=true)` lists
+  the frames with ready selectors. `select_page` (popup adoption) works only
   on the **root** session id.
+- Browser sessions ignore TLS certificate errors; the static `web_fetch` path
+  needs `verify_ssl=false` (or `render=true`) for expired/self-signed certs.
+- `nav_generation` on every session result is the main-frame navigation
+  count — if it jumped unexpectedly, re-orient with `get_page_map`.
 - Landing on the login page is **never** a pass: results say
   `status: "auth_lost"` (test tools), or carry a warning (`open_session`).
   `test_project`/`crawl_project` preflight auth and re-login once
@@ -201,7 +219,7 @@ is correct. That's a tool bug, not a site bug — don't silently work around it:
 
 ## Going deeper
 
-- `describe_tools(category?)` — all 74 tool signatures, recommended
+- `describe_tools(category?)` — all 79 tool signatures, recommended
   workflows, and tips, served by the running install (never stale).
 - `periscope_system(action="agents_md")` — the complete current operating
   guide (superset of this skill); prefer it on any version mismatch.
