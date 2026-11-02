@@ -77,3 +77,51 @@ def test_screenshot_result_has_view(run, handlers, session):
     assert r["view"]["scroll"] == {"x": 0, "y": 0} and r["view"]["page_height"] > 0, r
     c = run(handlers["click_element"]({"session_id": session, "selector": "#btn"}))
     assert "view" in c and c["view"]["viewport"]["width"] == 1920, c
+
+
+# --- review fixes ----------------------------------------------------------
+
+def test_popup_session_counts_navigations(run, handlers, good_site):
+    s = run(handlers["open_session"]({"url": f"{good_site}/popup.html"}))
+    assert s["success"], s
+    try:
+        run(handlers["click_element"]({"session_id": s["session_id"], "selector": "#open", "observe": "none"}))
+        p = run(handlers["select_page"]({"session_id": s["session_id"]}))
+        assert p["success"], p
+        g = _nav(run, handlers, p["session_id"], action="goto", url=f"{good_site}/app.html")
+        assert g["nav_generation"] >= 1, g
+    finally:
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
+def test_iframe_session_reports_owner_generation_and_shares_network(run, handlers, good_site):
+    s = run(handlers["open_session"]({"url": f"{good_site}/frames.html"}))
+    assert s["success"], s
+    try:
+        f = run(handlers["select_iframe"]({"session_id": s["session_id"], "selector": "#inner"}))
+        assert f["success"], f
+        parent = run(handlers["get_page_map"]({"session_id": s["session_id"]}))
+        child = run(handlers["get_page_map"]({"session_id": f["iframe_session_id"]}))
+        assert child["nav_generation"] == parent["nav_generation"], (parent, child)
+        log = run(handlers["get_network_log"]({"session_id": f["iframe_session_id"]}))
+        assert log["total_requests"] > 0, log
+        # a network-only click inside the frame is a change
+        c = run(handlers["click_element"]({"session_id": f["iframe_session_id"], "selector": "#btn", "observe": "none"}))
+        assert c["changed"] is True, c
+        # after the owner page navigates, the (now stale) frame session reports the new generation
+        f2 = run(handlers["select_iframe"]({"session_id": s["session_id"], "selector": "#inner"}))
+        g = _nav(run, handlers, s["session_id"], action="goto", url=f"{good_site}/frames.html")
+        child2 = run(handlers["get_cookies"]({"session_id": f2["iframe_session_id"]}))
+        assert child2["nav_generation"] == g["nav_generation"] == parent["nav_generation"] + 1, (g, child2)
+    finally:
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
+def test_goto_wait_for_timeout_cancels_armed_waiter(run, handlers, session, good_site, loop):
+    import asyncio
+    with pytest.raises(Exception):
+        _nav(run, handlers, session, action="goto", url=f"{good_site}/app.html",
+             wait_for_network="/never-requested", wait_for="#nope", timeout=500)
+    pending = [t for t in asyncio.all_tasks(loop) if not t.done()
+               and "wait_for_event" in repr(t.get_coro())]
+    assert not pending, pending

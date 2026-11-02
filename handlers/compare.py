@@ -88,10 +88,15 @@ async def _capture(t, label: str, url: str, project, args: dict, shot_dir: str) 
             side["wait_downgraded"] = "load"
         if args.get("consent"):
             import consent
-            side["consent"] = await consent.apply(page, args["consent"])
+            try:
+                side["consent"] = await consent.apply(page, args["consent"])
+            except Exception as e:
+                side["consent"] = {"success": False, "error": f"consent handling failed: {str(e)[:200]}"}
         if args.get("steps"):
+            from sessions import attach_request_counter
             steps = await interactions.execute_steps(page, args["steps"], "compare",
-                                                     continue_on_error=False, screenshot_dir=shot_dir)
+                                                     continue_on_error=False, screenshot_dir=shot_dir,
+                                                     request_counter=attach_request_counter(page))
             side["steps_ok"] = bool(steps.get("success"))
             if not steps.get("success"):
                 side["steps_error"] = steps.get("error")

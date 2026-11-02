@@ -332,6 +332,9 @@ async def handle_select_iframe(args: dict) -> dict:
         now = time.time()
 
         # The frame object supports most Page methods (evaluate, locator, etc.)
+        # Capture is per PAGE: the frame's traffic/console land in the owning
+        # session's buffers, so share them (otherwise a checkout iframe would
+        # look silent to change detection and network_summary).
         iframe_session = PageSession(
             session_id=iframe_session_id,
             project_name=session.project_name,
@@ -339,8 +342,13 @@ async def handle_select_iframe(args: dict) -> dict:
             url=content_frame.url,
             created_at=now,
             last_accessed=now,
+            console_log=session.console_log,
+            console_errors=session.console_errors,
+            network_log=session.network_log,
+            response_bodies=session.response_bodies,
             screenshot_dir=session.screenshot_dir,
             parent_session_id=session.session_id,
+            request_counter=session.request_counter,
         )
         session_manager.register_session(iframe_session)
 

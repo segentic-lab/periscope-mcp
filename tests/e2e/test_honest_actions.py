@@ -122,3 +122,48 @@ def test_hover_step_default_is_stepped(run, handlers, menu_session):
     assert r["success"], r
     assert r["steps"][0]["moves"] >= 3, r["steps"][0]
     assert _submenu_visible(run, handlers, menu_session)
+
+
+# --- review fixes: slow requests, delayed DOM, missing selectors ------------
+
+def _slow_hits(run, handlers, sid):
+    r = run(handlers["interact_and_test"]({"session_id": sid, "screenshot_after": False,
+                                           "steps": [{"action": "evaluate_js",
+                                                      "script": "fetch('/api/slow-count').then(r => r.json()).then(j => j.count)"}]}))
+    return r["steps"][0]["result"]
+
+
+def test_slow_request_counts_as_change_single(run, handlers, trusted_session):
+    r = _click(run, handlers, trusted_session, "#slow-post")
+    assert r["changed"] is True and "network" in r["change"] and "hint" not in r, r
+
+
+def test_auto_never_reclicks_slow_post(run, handlers, trusted_session):
+    before = _slow_hits(run, handlers, trusted_session)
+    r = run(handlers["interact_and_test"]({
+        "session_id": trusted_session, "screenshot_after": False,
+        "steps": [{"action": "click", "selector": "#slow-post", "strategy": "auto"},
+                  {"action": "wait", "timeout": 1200}]}))
+    assert r["success"] and r["steps"][0]["attempts"] == ["pointer"], r["steps"][0]
+    assert _slow_hits(run, handlers, trusted_session) == before + 1
+
+
+def test_auto_waits_for_delayed_dom_change(run, handlers, trusted_session):
+    r = _click(run, handlers, trusted_session, "#delayed-dom", strategy="auto")
+    assert r["attempts"] == ["pointer"] and r["changed"] is True and "dom" in r["change"], r
+
+
+def test_missing_selector_fails_fast_and_clearly(run, handlers, trusted_session):
+    import time
+    t0 = time.time()
+    r = _click(run, handlers, trusted_session, "#does-not-exist", strategy="auto")
+    assert time.time() - t0 < 4, "must not walk the whole escalation chain for a missing element"
+    assert r.get("success") is False and "no element matches" in r["error"], r
+
+
+def test_fill_contenteditable_and_shadow_input(run, handlers, trusted_session):
+    r = run(handlers["fill_form"]({"session_id": trusted_session, "observe": "none",
+                                   "fields": [{"selector": "#ed", "value": "rich text"},
+                                              {"selector": "#sh input", "value": "shadowed"}]}))
+    assert r["all_verified"] is True, r
+    assert r["fields"][0]["actual"] == "rich text" and r["fields"][1]["actual"] == "shadowed", r

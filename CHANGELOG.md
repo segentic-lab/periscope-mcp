@@ -30,6 +30,20 @@ plus the design flaw those reports exposed. 79 tools now.
   on `fill`/`force_fill` steps).
 - **click + wait_for_network as consecutive steps can no longer miss a fast
   response** — the response waiter is armed before the click.
+- Change detection counts requests *started* (a per-session monotonic
+  counter, immune to the network-log cap), so a slow POST fired by a click is
+  a change while still in flight — `strategy="auto"` never re-fires it. A
+  click that shows no change yet gets one 750 ms quiet window for late
+  handlers before the "no change" verdict. A selector that matches nothing
+  fails fast with a clear error instead of walking the escalation chain.
+- Fill verification goes through the locator (shadow DOM, contenteditable
+  keep working); the native-setter retry only targets input/textarea.
+- Popup sessions count their navigations; iframe sessions report their owning
+  page's `nav_generation` and share its console/network capture (a checkout
+  iframe is no longer "silent" to change detection or `network_summary`).
+- Device sessions for basic-auth projects carry the credentials; a consent
+  failure during `open_session` is reported in `consent` without losing the
+  session; a `goto` whose `wait_for` times out cancels its armed waiter.
 - `web_fetch` names the fix on a TLS certificate failure (`verify_ssl=false`,
   or `render=true` — browser sessions already ignore certificate errors) and
   flags `tls_error`.

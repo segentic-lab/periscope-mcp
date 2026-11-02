@@ -83,7 +83,11 @@ async def handle_open_session(args: dict) -> dict:
             result["headed"] = True
         if args.get("consent"):
             import consent
-            result["consent"] = await consent.apply(session.page, args["consent"])
+            try:
+                result["consent"] = await consent.apply(session.page, args["consent"])
+            except Exception as e:  # the session is already open — report, don't lose it
+                result["consent"] = {"success": False, "action": args["consent"],
+                                     "error": f"consent handling failed: {str(e)[:200]}"}
         if device:
             result["device"] = device
         if descriptor is not None:
@@ -278,7 +282,7 @@ async def handle_select_page(args: dict) -> dict:
                 pass
             popup_session_id = _uuid.uuid4().hex[:12]
             now = _time.time()
-            cl, ce, nl, rb = entry["captures"]
+            cl, ce, nl, rb, rc = entry["captures"]
             popup_session = PageSession(
                 session_id=popup_session_id,
                 project_name=session.project_name,
@@ -290,6 +294,7 @@ async def handle_select_page(args: dict) -> dict:
                 network_log=nl, response_bodies=rb,
                 screenshot_dir=session.screenshot_dir,
                 parent_session_id=session.session_id,
+                request_counter=rc,
             )
             session_manager.register_session(popup_session)
             entry["adopted_session_id"] = popup_session_id
@@ -349,6 +354,7 @@ async def handle_navigate_session(args: dict) -> dict:
                         pass
             result["hard"] = hard
             result["served_by_service_worker"] = from_service_worker(response)
+            session.served_by_service_worker = result["served_by_service_worker"]
             if response is not None:
                 result["status_code"] = response.status
         elif action == "goto":
@@ -367,23 +373,23 @@ async def handle_navigate_session(args: dict) -> dict:
                     timeout=int(args.get("timeout") or 30000)))
             try:
                 response, downgraded = await resilient_goto(page, url, wait_until=wait_until)
-            except Exception:
+                if downgraded:
+                    result["wait_downgraded"] = "load"
+                result["status_code"] = response.status if response is not None else None
+                result["served_by_service_worker"] = from_service_worker(response)
+                session.served_by_service_worker = result["served_by_service_worker"]
+                if args.get("wait_for"):
+                    await session.page.locator(args["wait_for"]).first.wait_for(
+                        state="visible", timeout=int(args.get("timeout") or 10000))
+                    result["waited_for"] = args["wait_for"]
                 if armed is not None:
+                    matched = await armed
+                    armed = None
+                    result["matched_url"] = matched.url
+                    result["matched_status"] = matched.status
+            finally:
+                if armed is not None and not armed.done():
                     armed.cancel()
-                raise
-            if downgraded:
-                result["wait_downgraded"] = "load"
-            result["status_code"] = response.status if response is not None else None
-            result["served_by_service_worker"] = from_service_worker(response)
-            session.served_by_service_worker = result["served_by_service_worker"]
-            if args.get("wait_for"):
-                await session.page.locator(args["wait_for"]).first.wait_for(
-                    state="visible", timeout=int(args.get("timeout") or 10000))
-                result["waited_for"] = args["wait_for"]
-            if armed is not None:
-                matched = await armed
-                result["matched_url"] = matched.url
-                result["matched_status"] = matched.status
         elif action == "clear_site_data":
             # Fresh-deploy mode: drop service workers + CacheStorage (and,
             # opt-in, local/session storage + IndexedDB) for this origin.
@@ -410,6 +416,7 @@ async def handle_navigate_session(args: dict) -> dict:
             result.update({"origin": origin, "cleared": types + ["http_cache"],
                            "service_workers_unregistered": sw_count,
                            "served_by_service_worker": from_service_worker(response)})
+            session.served_by_service_worker = result["served_by_service_worker"]
         else:
             return {"success": False, "error":
                     f"Unknown action '{action}'. Valid: back, forward, reload, goto, clear_site_data"}

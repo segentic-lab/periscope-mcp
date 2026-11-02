@@ -22,9 +22,16 @@
        coordinates (trusted); dispatch_event is synthetic and ignored. -->
   <button id="jittery" style="position:relative">Jittery pay</button>
 
+  <!-- Slow request: the only effect is a POST that takes ~800 ms -->
+  <button id="slow-post">Slow post</button>
+  <!-- Delayed DOM change (600 ms after the click) -->
+  <button id="delayed-dom">Delayed</button>
+
   <!-- Inputs for the fill tests -->
   <input id="plain-input" type="text">
   <input id="controlled" type="text">
+  <div id="ed" contenteditable="true" style="border:1px solid #999;min-height:20px"></div>
+  <div id="sh"></div>
 
   <script>
     const status = document.getElementById('status');
@@ -43,6 +50,15 @@
       requestAnimationFrame(jitter);
     };
     requestAnimationFrame(jitter);
+    document.getElementById('slow-post').addEventListener('click', () => {
+      fetch('/api/slow', { method: 'POST' });
+    });
+    document.getElementById('delayed-dom').addEventListener('click', () => {
+      setTimeout(() => { status.textContent = 'DELAYED'; }, 600);
+    });
+    // Shadow-DOM input (web components / Salesforce-style)
+    const root = document.getElementById('sh').attachShadow({ mode: 'open' });
+    root.innerHTML = '<input id="shadow-input" type="text">';
     // Framework-controlled input: discards typed text (typing has an inputType);
     // a native-setter dispatch has no inputType and is kept.
     document.getElementById('controlled').addEventListener('input', (e) => {

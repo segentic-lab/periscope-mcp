@@ -172,7 +172,15 @@ class WebsiteTester:
         kwargs = {**descriptor, "ignore_https_errors": True}
         if seed_state:
             kwargs["storage_state"] = seed_state
-        return await browser.new_context(**kwargs)
+        context = await browser.new_context(**kwargs)
+        # Basic auth lives in a context route, not in storage_state — install
+        # it on the new context too, or the device session silently gets 401s.
+        if project_name:
+            import runtime
+            project = runtime.project_manager.get(project_name)
+            if project and project.auth and project.auth.method == "basic":
+                await runtime.auth_handler.login(context, project)
+        return context
 
     async def launch_interactive_login(self, project_name: str, url: str):
         """Open a visible browser at a login page for the user to log in by hand.

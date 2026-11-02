@@ -38,3 +38,17 @@ def test_snapshot_without_network_log():
     before = run(pagechange.snapshot(page))
     assert before["net_count"] == 0
     assert run(pagechange.diff(page, before)) == {"changed": False, "change": []}
+
+
+def test_request_counter_beats_capped_log():
+    """A log that hit its cap stays the same length; a monotonic request
+    counter still registers new (even in-flight) requests as a change."""
+    from sessions import RequestCounter
+    page = FakePage(url="http://a/", hashes=[5, 5])
+    counter = RequestCounter()
+    counter.n = 1000
+    capped_log = [{}] * 1000
+    before = run(pagechange.snapshot(page, network_log=capped_log, request_counter=counter))
+    counter.n += 1  # request started, no response yet, log length unchanged
+    d = run(pagechange.diff(page, before, network_log=capped_log, request_counter=counter))
+    assert d == {"changed": True, "change": ["network"]}

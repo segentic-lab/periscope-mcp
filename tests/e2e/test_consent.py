@@ -59,3 +59,17 @@ def test_consent_step_in_interact_and_test(run, handlers, good_site):
         assert _state(run, handlers, s["session_id"]) == "accepted"
     finally:
         run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
+def test_open_session_consent_failure_keeps_session(run, handlers, good_site, monkeypatch):
+    import consent
+
+    async def boom(page, action):
+        raise RuntimeError("cmp exploded")
+    monkeypatch.setattr(consent, "apply", boom)
+    s = run(handlers["open_session"]({"url": f"{good_site}/consent.html", "consent": "accept"}))
+    assert s["success"] and s["session_id"], s
+    try:
+        assert s["consent"]["success"] is False and "cmp exploded" in s["consent"]["error"], s
+    finally:
+        run(handlers["close_session"]({"session_id": s["session_id"]}))

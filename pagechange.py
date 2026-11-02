@@ -21,16 +21,25 @@ NO_CHANGE_HINT = ("no page change detected (url/dom/network unchanged) — if th
                   "strategy='auto'")
 
 
-async def snapshot(page, network_log: list | None = None) -> dict:
+def _net_count(network_log, request_counter) -> int:
+    """Requests STARTED when a counter is available (registers in-flight
+    requests, immune to the log cap); otherwise the response-log length."""
+    if request_counter is not None:
+        return request_counter.n
+    return len(network_log or [])
+
+
+async def snapshot(page, network_log: list | None = None, request_counter=None) -> dict:
     """Capture {url, dom_hash, net_count} for a later diff()."""
     try:
         dom_hash = await page.evaluate(DOM_HASH_JS)
     except Exception:
         dom_hash = None
-    return {"url": page.url, "dom_hash": dom_hash, "net_count": len(network_log or [])}
+    return {"url": page.url, "dom_hash": dom_hash,
+            "net_count": _net_count(network_log, request_counter)}
 
 
-async def diff(page, before: dict, network_log: list | None = None) -> dict:
+async def diff(page, before: dict, network_log: list | None = None, request_counter=None) -> dict:
     """Compare the page against a snapshot → {changed, change: [url|dom|network]}."""
     change = []
     if page.url != before.get("url"):
@@ -41,6 +50,6 @@ async def diff(page, before: dict, network_log: list | None = None) -> dict:
         dom_hash = None
     if dom_hash != before.get("dom_hash"):
         change.append("dom")
-    if len(network_log or []) != before.get("net_count", 0):
+    if _net_count(network_log, request_counter) != before.get("net_count", 0):
         change.append("network")
     return {"changed": bool(change), "change": change}

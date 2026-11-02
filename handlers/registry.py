@@ -28,7 +28,13 @@ def _stamp_session_generation(args, result) -> None:
             return
         from runtime import session_manager
         session = session_manager.sessions.get(sid)
-        if session is not None:
-            result["nav_generation"] = session.nav_generation
+        if session is None:
+            return
+        # Iframe sessions hold a Frame: the owning page session carries the count.
+        if session.parent_session_id and not hasattr(session.page, "main_frame"):
+            parent = session_manager.sessions.get(session.parent_session_id)
+            if parent is not None:
+                session = parent
+        result["nav_generation"] = session.nav_generation
     except Exception:
         pass

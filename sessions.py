@@ -7,6 +7,16 @@ import config
 from nav import from_service_worker, resilient_goto
 
 
+class RequestCounter:
+    """Monotonic count of requests STARTED on a page. Unlike the network log
+    (appended on response, and capped) it registers an in-flight request the
+    moment a click fires it — the signal change detection needs."""
+    __slots__ = ("n",)
+
+    def __init__(self):
+        self.n = 0
+
+
 @dataclass
 class PageSession:
     session_id: str
@@ -30,12 +40,24 @@ class PageSession:
     served_by_service_worker: bool = False  # main document of the last navigation came from a SW
     nav_generation: int = 0  # +1 per main-frame navigation — lets an agent notice it moved pages
     network_cleared_at: float = None  # set by get_network_log(clear=true); network_summary(since='clear')
+    request_counter: RequestCounter = field(default_factory=RequestCounter)  # requests started (see attach_capture)
 
 
-def attach_capture(page) -> tuple[list, list, list, list]:
+def attach_request_counter(page) -> RequestCounter:
+    counter = RequestCounter()
+
+    def on_request(_req):
+        counter.n += 1
+    page.on("request", on_request)
+    return counter
+
+
+def attach_capture(page) -> tuple[list, list, list, list, RequestCounter]:
     """Attach console/network/response-body listeners to a page; returns the
-    four capped buffers. Shared by root sessions and adopted popups."""
+    four capped buffers plus a request counter. Shared by root sessions and
+    adopted popups."""
     console_log, console_errors, network_log, response_bodies = [], [], [], []
+    request_counter = attach_request_counter(page)
 
     def on_console(msg):
         if msg.type == "error":
@@ -84,7 +106,7 @@ def attach_capture(page) -> tuple[list, list, list, list]:
     page.on("console", on_console)
     page.on("pageerror", lambda err: _capped_append(console_errors, str(err), config.MAX_CONSOLE_LOG))
     page.on("response", on_response)
-    return console_log, console_errors, network_log, response_bodies
+    return console_log, console_errors, network_log, response_bodies, request_counter
 
 
 def real_page(page_or_frame) -> Page:
@@ -159,7 +181,7 @@ class SessionManager:
         if viewport:
             await page.set_viewport_size({"width": int(viewport["width"]), "height": int(viewport["height"])})
 
-        console_log, console_errors, network_log, response_bodies = attach_capture(page)
+        console_log, console_errors, network_log, response_bodies, request_counter = attach_capture(page)
 
         # Popups (window.open / target=_blank / OAuth): capture at birth so the
         # popup's own loading traffic is recorded; adopt later via select_page.
@@ -193,14 +215,25 @@ class SessionManager:
             wait_downgraded=downgraded,
             served_by_service_worker=from_service_worker(response),
             popups=popups,
+            request_counter=request_counter,
         )
         self.sessions[session_id] = session
+        self._track_navigation(session)
+        return session
+
+    @staticmethod
+    def _track_navigation(session: PageSession):
+        """Count main-frame navigations on the session's page (popups adopted
+        via register_session get this too; iframe sessions report their
+        owner's count at stamp time)."""
+        page = session.page
+        if not isinstance(page, Page):
+            return
 
         def on_nav(frame, _s=session, _p=page):
             if frame == _p.main_frame:
                 _s.nav_generation += 1
         page.on("framenavigated", on_nav)
-        return session
 
     def get_session(self, session_id: str) -> PageSession:
         """Get a session by ID, updating last_accessed. Raises KeyError if not found or expired."""
@@ -239,6 +272,8 @@ class SessionManager:
         if len(self.sessions) >= config.MAX_SESSIONS:
             self._evict_oldest()
         self.sessions[session.session_id] = session
+        if session.parent_session_id is None or isinstance(session.page, Page):
+            self._track_navigation(session)
 
     async def close_session(self, session_id: str) -> bool:
         """Close a session and free its resources. Returns True if found."""

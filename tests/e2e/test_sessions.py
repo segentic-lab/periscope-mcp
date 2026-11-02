@@ -117,3 +117,19 @@ def test_set_viewport_reload(run, handlers, session):
     r = run(handlers["set_viewport"]({"session_id": session, "device": "tablet", "reload": True,
                                       "observe": "none"}))
     assert r["success"] and r["reloaded"] is True and r["viewport"] == {"width": 768, "height": 1024}, r
+
+
+def test_device_session_carries_basic_auth(run, handlers, good_site):
+    p = "basicdev"
+    try:
+        assert run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/basic"}))["success"]
+        run(handlers["set_basic_auth"]({"project": p, "username": "u", "password": "p"}))
+        assert run(handlers["login_project"]({"project": p}))["success"]
+        r = run(handlers["open_session"]({"url": f"{good_site}/basic", "project": p, "device": "iPhone 13"}))
+        assert r["success"], r
+        try:
+            assert r["title"] == "Basic OK", r
+        finally:
+            run(handlers["close_session"]({"session_id": r["session_id"]}))
+    finally:
+        run(handlers["delete_project"]({"name": p}))

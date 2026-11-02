@@ -97,6 +97,10 @@ async def clear_interaction_log(page):
 _ESCALATABLE = ("intercepts pointer events", "not stable", "Timeout")
 
 _CLICK_SETTLE_MS = 250
+# After an attempt that shows no change yet, wait this long for a late
+# handler (deferred fetch, setTimeout-driven DOM update) before concluding
+# "no change" — and, in auto mode, before escalating to another click.
+_QUIET_WINDOW_MS = 750
 
 
 async def _attempt_click(locator, method: str) -> None:
@@ -108,7 +112,7 @@ async def _attempt_click(locator, method: str) -> None:
     elif method == "pointer_force":
         await locator.click(force=True, timeout=5000)
     elif method == "js_dispatch":
-        await locator.dispatch_event("click")
+        await locator.dispatch_event("click", timeout=5000)
     else:
         raise ValueError(f"unknown click method {method!r}")
 
@@ -120,70 +124,95 @@ async def _settle_after_click(page, settle_ms: int) -> None:
         pass
     # SPA routers often push the new URL slightly after the network settles —
     # without this beat the reported URL/screenshot are pre-navigation (issue #9).
-    # Steps pass 0: a following wait_for_network step must still be able to
-    # catch a fast response triggered by the click.
     if settle_ms:
         await page.wait_for_timeout(settle_ms)
 
 
+async def _observe(page, before, network_log, request_counter, settle_ms: int) -> dict:
+    """Settle, diff; if nothing changed yet, give late handlers one quiet
+    window and diff again. The verdict is only "no change" after that."""
+    await _settle_after_click(page, settle_ms)
+    verdict = await pagechange.diff(page, before, network_log, request_counter)
+    if not verdict["changed"]:
+        await page.wait_for_timeout(_QUIET_WINDOW_MS)
+        verdict = await pagechange.diff(page, before, network_log, request_counter)
+    return verdict
+
+
+def _reason(err) -> str:
+    """Playwright's actionability reason, trimmed ("element is not enabled",
+    "intercepts pointer events", "element is not stable", …)."""
+    text = str(err or "")
+    for key in ("element is not enabled", "element is not visible", "element is not stable",
+                "intercepts pointer events", "element is outside of the viewport"):
+        if key in text:
+            return key
+    return text.splitlines()[0][:160] if text else "unknown"
+
+
 async def click_with_detection(page, selector: str, force: bool = False,
                                strategy: str = "single", network_log: list = None,
-                               settle_ms: int = _CLICK_SETTLE_MS) -> dict:
+                               settle_ms: int = _CLICK_SETTLE_MS, request_counter=None) -> dict:
     """Click `selector`, detect whether the page changed, and report honestly.
 
     strategy="single" (default): one trusted pointer click (forced when
-    force=True); if the element can't take a pointer event (overlay, unstable)
-    fall back to a synthetic js_dispatch — flagged. No retries, so a click
-    that DID work is never repeated (no double submits).
+    force=True); if the element can't take a pointer event (overlay, unstable,
+    disabled) fall back to a synthetic js_dispatch — flagged. No retries, so a
+    click that DID work is never repeated (no double submits).
     strategy="auto": pointer → pointer_force → js_dispatch, stopping at the
-    first attempt that changes the page (url/dom/network).
+    first attempt that changes the page (url / dom / a request STARTED —
+    in-flight requests count, so a slow POST is never re-fired).
 
-    Returns {changed, change, click_method, attempts, hint?, overlay_bypassed?}.
+    Returns {changed, change, click_method, attempts, hint?, pointer_error?,
+    overlay_bypassed?}. Raises for a selector that matches nothing.
     """
     locator = page.locator(selector).first
+    if await locator.count() == 0:
+        raise Exception(f"no element matches selector '{selector}' — use get_page_map or "
+                        "find_element to get a selector that resolves on the current page")
     if strategy == "auto":
         chain = ["pointer", "pointer_force", "js_dispatch"]
     else:
         chain = ["pointer_force" if force else "pointer"]
 
-    attempts, method, last_error = [], None, None
-    before = await pagechange.snapshot(page, network_log)
+    attempts, method, pointer_error = [], None, None
+    before = await pagechange.snapshot(page, network_log, request_counter)
     verdict = {"changed": False, "change": []}
-    for i, m in enumerate(chain):
+    for m in chain:
         attempts.append(m)
         try:
             await _attempt_click(locator, m)
         except Exception as e:
-            last_error = e
-            escalatable = any(k in str(e) for k in _ESCALATABLE)
-            if not escalatable:
+            if not any(k in str(e) for k in _ESCALATABLE):
                 raise
+            pointer_error = pointer_error or _reason(e)
             if strategy != "auto":
                 # legacy fallback: the element can't take a pointer — dispatch
                 attempts.append("js_dispatch")
-                await locator.dispatch_event("click")
+                await locator.dispatch_event("click", timeout=5000)
                 method = "js_dispatch"
                 break
             continue  # auto: next method in the chain
         method = m
-        await _settle_after_click(page, settle_ms)
-        verdict = await pagechange.diff(page, before, network_log)
+        verdict = await _observe(page, before, network_log, request_counter, settle_ms)
         if verdict["changed"] or strategy != "auto":
             break
     if method == "js_dispatch" and strategy != "auto":
-        await _settle_after_click(page, settle_ms)
-        verdict = await pagechange.diff(page, before, network_log)
+        verdict = await _observe(page, before, network_log, request_counter, settle_ms)
     if method is None:
-        raise last_error or Exception(f"could not click {selector}")
+        raise Exception(f"could not click '{selector}': {pointer_error}")
 
     result = {"changed": verdict["changed"], "change": verdict["change"],
               "click_method": method, "attempts": attempts}
+    if pointer_error:
+        result["pointer_error"] = pointer_error
     if method == "js_dispatch":
         result["overlay_bypassed"] = True
     if not verdict["changed"]:
         if method == "js_dispatch":
-            result["hint"] = ("synthetic click was ignored (page likely checks isTrusted) — "
-                              "retry with force=true for a trusted pointer click")
+            result["hint"] = (f"synthetic click was ignored (pointer click failed: {pointer_error}; "
+                              "the page may check isTrusted) — retry with force=true for a trusted "
+                              "pointer click, or fix the blocking condition first")
         else:
             result["hint"] = pagechange.NO_CHANGE_HINT
     return result
@@ -196,13 +225,15 @@ async def _click_with_overlay_fallback(page: Page, selector: str, force: bool = 
 
 
 async def click_element(page: Page, selector: str, force: bool = False,
-                        strategy: str = "single", network_log: list = None) -> dict:
+                        strategy: str = "single", network_log: list = None,
+                        request_counter=None) -> dict:
     """Click an element and return post-click state + honest change report."""
     locator = page.locator(selector).first
-    if not force and strategy != "auto":
+    if not force and strategy != "auto" and await locator.count():
         await locator.wait_for(state="visible", timeout=10000)
     detection = await click_with_detection(page, selector, force=force,
-                                           strategy=strategy, network_log=network_log)
+                                           strategy=strategy, network_log=network_log,
+                                           request_counter=request_counter)
     result = {"url": page.url, "title": await page.title(), **detection}
     return result
 
@@ -260,7 +291,8 @@ async def _mouse_drag(page: Page, source_sel: str, target_sel: str):
     await mouse.up()
 
 
-async def hover_element(page: Page, selector: str, steps: int = 8, network_log: list = None) -> dict:
+async def hover_element(page: Page, selector: str, steps: int = 8, network_log: list = None,
+                        request_counter=None) -> dict:
     """Hover with a realistic pointer path: a short warm-up move near the
     element, then `steps` intermediate mousemove events onto its centre.
     Menus that watch pointer motion (SmartMenus, hover-intent) need several
@@ -274,36 +306,50 @@ async def hover_element(page: Page, selector: str, steps: int = 8, network_log: 
     if not box:
         raise Exception(f"Could not resolve bounding box for '{selector}'")
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-    before = await pagechange.snapshot(page, network_log)
+    before = await pagechange.snapshot(page, network_log, request_counter)
     await owner.mouse.move(max(0, cx - 40), max(0, cy - 20), steps=3)   # warm-up
     await owner.mouse.move(cx, cy, steps=steps)                          # paced travel
     await owner.wait_for_timeout(150)
-    verdict = await pagechange.diff(page, before, network_log)
+    verdict = await pagechange.diff(page, before, network_log, request_counter)
     return {"selector": selector, "steps": steps, "moves": steps + 3, **verdict}
 
 
 async def _get_input_type(page: Page, selector: str) -> str | None:
-    """Get the type attribute of an input element."""
-    return await page.evaluate("""(selector) => {
-        const el = document.querySelector(selector);
-        return el ? el.type : null;
-    }""", selector)
+    """Type of the first match (through the locator, so shadow DOM and any
+    selector the locator accepts work); None when it can't be read."""
+    try:
+        return await page.locator(selector).first.evaluate("el => el.type || null")
+    except Exception:
+        return None
 
 
-async def set_value_native(page: Page, selector: str, value: str):
-    """Set an input's value through the prototype setter and dispatch
+_SET_VALUE_NATIVE_JS = """(el, value) => {
+    const tag = el.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        if (el.isContentEditable) { el.textContent = value; el.dispatchEvent(new Event('input', { bubbles: true })); return true; }
+        return false;
+    }
+    const proto = tag === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    nativeSetter.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+}"""
+
+_READ_VALUE_JS = """el => {
+    if (typeof el.value === 'string') return el.value;
+    if (el.isContentEditable) return el.textContent;
+    return null;
+}"""
+
+
+async def set_value_native(page: Page, selector: str, value: str) -> bool:
+    """Set an input/textarea value through the prototype setter and dispatch
     input/change — the way React-controlled and date inputs accept a value
-    that typing would discard."""
-    await page.evaluate("""([selector, value]) => {
-        const el = document.querySelector(selector);
-        if (!el) throw new Error('Element not found: ' + selector);
-        const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype
-                                                : window.HTMLInputElement.prototype;
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-        nativeSetter.call(el, value);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-    }""", [selector, value])
+    that typing would discard. contenteditable gets its text set. Returns
+    False for elements that have no settable value."""
+    return bool(await page.locator(selector).first.evaluate(_SET_VALUE_NATIVE_JS, value))
 
 
 _fill_date_input = set_value_native  # back-compat alias
@@ -311,23 +357,26 @@ _fill_date_input = set_value_native  # back-compat alias
 
 async def _read_value(page: Page, selector: str):
     try:
-        return await page.evaluate(
-            "(sel) => { const el = document.querySelector(sel); return el ? el.value : null; }",
-            selector)
+        return await page.locator(selector).first.evaluate(_READ_VALUE_JS)
     except Exception:
         return None
 
 
 async def _verified_fill(page: Page, selector: str, value: str, first_method: str, do_fill) -> dict:
     """Run do_fill(), read the value back, retry via the native setter when the
-    page discarded it (framework-controlled inputs). Returns the fill report."""
+    page discarded it (framework-controlled inputs). Never raises on the
+    verification itself: an element whose value can't be read reports
+    verified=False."""
     await do_fill()
     actual = await _read_value(page, selector)
     method = first_method
     if actual != value and first_method != "native_setter":
-        await set_value_native(page, selector, value)
-        actual = await _read_value(page, selector)
-        method = "native_setter"
+        try:
+            if await set_value_native(page, selector, value):
+                actual = await _read_value(page, selector)
+                method = "native_setter"
+        except Exception:
+            pass
     return {"verified": actual == value, "fill_method": method, "actual": actual}
 
 
@@ -725,6 +774,31 @@ async def execute_steps(
     screenshot_dir: str = None,
     touch=None,
     network_log: list = None,
+    request_counter=None,
+) -> dict:
+    """Execute a sequence of interaction steps (see _execute_steps for the
+    action reference). Guarantees a response waiter pre-armed for a
+    click + wait_for_network pair never outlives the run."""
+    armed_holder = [None]
+    try:
+        return await _execute_steps(page, steps, project_name, continue_on_error, screenshot_dir,
+                                    touch, network_log, request_counter, armed_holder)
+    finally:
+        waiter = armed_holder[0]
+        if waiter is not None and not waiter.done():
+            waiter.cancel()
+
+
+async def _execute_steps(
+    page: Page,
+    steps: list[dict],
+    project_name: str = "default",
+    continue_on_error: bool = False,
+    screenshot_dir: str = None,
+    touch=None,
+    network_log: list = None,
+    request_counter=None,
+    armed_holder: list = None,
 ) -> dict:
     """Execute a sequence of interaction steps.
 
@@ -761,7 +835,7 @@ async def execute_steps(
     """
     results = []
     screenshots = []
-    armed_response = None  # response waiter pre-armed before a click (see below)
+    armed_holder = armed_holder if armed_holder is not None else [None]
 
     for i, step in enumerate(steps):
         action = step.get("action")
@@ -784,18 +858,20 @@ async def execute_steps(
                 nxt = steps[i + 1] if i + 1 < len(steps) else None
                 if nxt and nxt.get("action") == "wait_for_network" and nxt.get("url_pattern"):
                     import asyncio
-                    armed_response = asyncio.ensure_future(_owner_page(page).wait_for_event(
+                    if armed_holder[0] is not None and not armed_holder[0].done():
+                        armed_holder[0].cancel()
+                    armed_holder[0] = asyncio.ensure_future(_owner_page(page).wait_for_event(
                         "response",
                         predicate=_network_predicate(nxt["url_pattern"], nxt.get("method")),
                         timeout=nxt.get("timeout", 30000)))
                 try:
                     step_result.update(await click_with_detection(
                         page, step["selector"], force=force, strategy=strategy,
-                        network_log=network_log, settle_ms=0))
+                        network_log=network_log, request_counter=request_counter))
                 except Exception:
-                    if armed_response is not None:
-                        armed_response.cancel()
-                        armed_response = None
+                    if armed_holder[0] is not None:
+                        armed_holder[0].cancel()
+                        armed_holder[0] = None
                     raise
                 step_result["url"] = page.url
 
@@ -843,7 +919,7 @@ async def execute_steps(
             elif action == "hover":
                 step_result.update(await hover_element(
                     page, step["selector"], steps=int(step.get("steps") or 8),
-                    network_log=network_log))
+                    network_log=network_log, request_counter=request_counter))
 
             elif action == "press_key":
                 await _owner_page(page).keyboard.press(step["key"])
@@ -948,8 +1024,8 @@ async def execute_steps(
 
             elif action == "wait_for_network":
                 url_pattern = step["url_pattern"]
-                if armed_response is not None:
-                    waiter, armed_response = armed_response, None
+                if armed_holder[0] is not None:
+                    waiter, armed_holder[0] = armed_holder[0], None
                     response = await waiter  # armed before the preceding click
                     step_result["armed_before_click"] = True
                 else:
