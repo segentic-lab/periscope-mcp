@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from playwright.async_api import Page
 import config
+import pagechange
 from nav import resilient_goto
 
 
@@ -737,13 +738,7 @@ async def execute_steps(
                 # Cheap in-page DOM fingerprint: DnD failures are silent
                 # (pointer-tracking and HTML5-native pipelines ignore synthetic
                 # drags), so flag drags that changed nothing (issue #9).
-                _dom_hash = """() => {
-                    let h = 0;
-                    const s = document.body.innerHTML;
-                    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-                    return h;
-                }"""
-                before_hash = await page.evaluate(_dom_hash)
+                before_hash = await page.evaluate(pagechange.DOM_HASH_JS)
                 if step.get("method") == "mouse":
                     await _mouse_drag(page, step["selector"], step["target"])
                 else:
@@ -754,7 +749,7 @@ async def execute_steps(
                     await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
                     pass
-                if await page.evaluate(_dom_hash) == before_hash:
+                if await page.evaluate(pagechange.DOM_HASH_JS) == before_hash:
                     step_result["warning"] = (
                         "drag produced no observable DOM change — the widget may use "
                         "pointer-tracking or native HTML5 DnD that ignores synthetic drags; "
