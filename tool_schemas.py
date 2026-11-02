@@ -1038,6 +1038,26 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="compare_pages",
+            description="Compare two URLs in one call — staging vs live, before vs after a deploy. Loads both (optionally after the same interact_and_test steps, a consent action, and a device emulation), then returns: side-by-side full-page screenshots + pixel diff (passed vs max_diff_percent), a facts diff (title, meta description, canonical, H1s, hreflang, lang, robots, og tags, link/image/form counts), a visible-text diff (similarity + added/removed lines), performance metric deltas (b − a), transfer-weight delta, and `same` (true when screenshot, facts and text all agree). A side that fails to load is reported with its error while the other side is still captured in full.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url_a": {"type": "string", "description": "First URL (e.g. staging)"},
+                    "url_b": {"type": "string", "description": "Second URL (e.g. live)"},
+                    "project": {"type": "string", "description": "Project whose authenticated context loads url_a (and url_b unless project_b is given)"},
+                    "project_b": {"type": "string", "description": "Project for url_b when the two sites have different logins"},
+                    "steps": {"type": "array", "items": {"type": "object"}, "description": "interact_and_test steps to run on BOTH pages before capturing (e.g. open a menu, switch language)"},
+                    "consent": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "Handle the cookie banner on both pages first"},
+                    "device": {"type": "string", "description": "Viewport preset or device name for both pages (see open_session.device)"},
+                    "run_checks": {"type": ["array", "string"], "items": {"type": "string"}, "description": "Audit checks to run on both sides (visual, accessibility, functionality, seo, geo, performance) — adds issues[] per side and issue_count_delta"},
+                    "max_diff_percent": {"type": "number", "description": "Screenshot diff threshold for passed (default: 1.0)"},
+                    "threshold": {"type": "integer", "description": "Per-pixel colour tolerance 0-255 (default: 10)"},
+                },
+                "required": ["url_a", "url_b"]
+            }
+        ),
+        Tool(
             name="check_pwa",
             description="Inspect a page as an installable web app: fetch + validate the manifest (name, short_name, 192/512 icons, display, start_url within scope, theme/background colours), report the service worker registration (scope, state, controlling), Chrome's own installability errors via CDP when available, and — in url mode — whether beforeinstallprompt fired. Returns issues[] with type 'pwa'. Pass session_id to inspect the live page (after your interactions) or url for a one-shot check.",
             inputSchema={
