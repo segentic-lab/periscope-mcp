@@ -590,7 +590,7 @@ async def handle_auto_fill_form(args: dict) -> dict:
                 elif f["type"] == "file":
                     filled.append({"selector": selector, "value": "skipped"})
                 elif f["type"] in interactions._DATE_TYPES:
-                    await interactions._fill_date_input(session.page, selector, str(value))
+                    await interactions.set_value_native(session.page, selector, str(value))
                     filled.append({"selector": selector, "value": str(value)})
                 else:
                     locator = session.page.locator(selector).first

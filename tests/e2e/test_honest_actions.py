@@ -68,3 +68,27 @@ def test_click_step_carries_change_fields(run, handlers, trusted_session):
     assert r["success"], r
     assert r["steps"][0]["changed"] is False and "hint" in r["steps"][0], r["steps"][0]
     assert r["steps"][1]["click_method"] == "pointer_force", r["steps"][1]
+
+
+def test_fill_controlled_input_retries_native(run, handlers, trusted_session):
+    r = run(handlers["fill_form"]({"session_id": trusted_session, "observe": "none",
+                                   "fields": [{"selector": "#controlled", "value": "hello"}]}))
+    f = r["fields"][0]
+    assert f["verified"] is True and f["fill_method"] == "native_setter", r
+    assert f["actual"] == "hello", r
+
+
+def test_fill_plain_input_is_verified_first_try(run, handlers, trusted_session):
+    r = run(handlers["fill_form"]({"session_id": trusted_session, "observe": "none",
+                                   "fields": [{"selector": "#plain-input", "value": "x"}]}))
+    assert r["fields"][0] == {"selector": "#plain-input", "verified": True,
+                              "fill_method": "fill", "actual": "x"}, r
+    assert r["fields_filled"] == ["#plain-input"]
+
+
+def test_fill_step_reports_verification(run, handlers, trusted_session):
+    r = run(handlers["interact_and_test"]({
+        "session_id": trusted_session, "screenshot_after": False,
+        "steps": [{"action": "fill", "selector": "#controlled", "value": "abc"}]}))
+    assert r["success"], r
+    assert r["steps"][0]["verified"] is True and r["steps"][0]["fill_method"] == "native_setter", r

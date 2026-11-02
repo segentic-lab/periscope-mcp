@@ -268,40 +268,71 @@ async def _get_input_type(page: Page, selector: str) -> str | None:
     }""", selector)
 
 
-async def _fill_date_input(page: Page, selector: str, value: str):
-    """Fill a date/datetime input and trigger React-compatible change events."""
+async def set_value_native(page: Page, selector: str, value: str):
+    """Set an input's value through the prototype setter and dispatch
+    input/change — the way React-controlled and date inputs accept a value
+    that typing would discard."""
     await page.evaluate("""([selector, value]) => {
         const el = document.querySelector(selector);
         if (!el) throw new Error('Element not found: ' + selector);
-        const nativeSetter = Object.getOwnPropertyDescriptor(
-            window.HTMLInputElement.prototype, 'value'
-        ).set;
+        const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype
+                                                : window.HTMLInputElement.prototype;
+        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
         nativeSetter.call(el, value);
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
     }""", [selector, value])
 
 
-async def force_fill(page: Page, selector: str, value: str):
-    """Fill an input bypassing actionability checks. Uses force=True."""
-    input_type = await _get_input_type(page, selector)
-    if input_type in _DATE_TYPES:
-        await _fill_date_input(page, selector, value)
-    else:
-        locator = page.locator(selector).first
-        await locator.fill(value, force=True)
+_fill_date_input = set_value_native  # back-compat alias
 
 
-async def fill_field(page: Page, selector: str, value: str):
-    """Fill a single form field."""
+async def _read_value(page: Page, selector: str):
+    try:
+        return await page.evaluate(
+            "(sel) => { const el = document.querySelector(sel); return el ? el.value : null; }",
+            selector)
+    except Exception:
+        return None
+
+
+async def _verified_fill(page: Page, selector: str, value: str, first_method: str, do_fill) -> dict:
+    """Run do_fill(), read the value back, retry via the native setter when the
+    page discarded it (framework-controlled inputs). Returns the fill report."""
+    await do_fill()
+    actual = await _read_value(page, selector)
+    method = first_method
+    if actual != value and first_method != "native_setter":
+        await set_value_native(page, selector, value)
+        actual = await _read_value(page, selector)
+        method = "native_setter"
+    return {"verified": actual == value, "fill_method": method, "actual": actual}
+
+
+async def force_fill(page: Page, selector: str, value: str) -> dict:
+    """Fill an input bypassing actionability checks (force=True); verified."""
     input_type = await _get_input_type(page, selector)
     if input_type in _DATE_TYPES:
-        await _fill_date_input(page, selector, value)
-    else:
-        locator = page.locator(selector).first
+        return await _verified_fill(page, selector, value, "native_setter",
+                                    lambda: set_value_native(page, selector, value))
+    locator = page.locator(selector).first
+    return await _verified_fill(page, selector, value, "fill",
+                                lambda: locator.fill(value, force=True))
+
+
+async def fill_field(page: Page, selector: str, value: str) -> dict:
+    """Fill a single form field; verified (value read back, native-setter retry)."""
+    input_type = await _get_input_type(page, selector)
+    if input_type in _DATE_TYPES:
+        return await _verified_fill(page, selector, value, "native_setter",
+                                    lambda: set_value_native(page, selector, value))
+    locator = page.locator(selector).first
+
+    async def do_fill():
         await locator.wait_for(state="visible", timeout=10000)
         await locator.click()
         await locator.fill(value)
+    return await _verified_fill(page, selector, value, "fill", do_fill)
 
 
 async def fill_form(page: Page, fields: list[dict], submit_selector: str = None, force: bool = False) -> dict:
@@ -315,15 +346,17 @@ async def fill_form(page: Page, fields: list[dict], submit_selector: str = None,
 
     Returns dict with result info.
     """
-    filled = []
+    filled, reports = [], []
     for f in fields:
         if force:
-            await force_fill(page, f["selector"], f["value"])
+            report = await force_fill(page, f["selector"], f["value"])
         else:
-            await fill_field(page, f["selector"], f["value"])
+            report = await fill_field(page, f["selector"], f["value"])
         filled.append(f["selector"])
+        reports.append({"selector": f["selector"], **report})
 
-    result = {"fields_filled": filled, "submitted": False}
+    result = {"fields_filled": filled, "fields": reports,
+              "all_verified": all(r["verified"] for r in reports), "submitted": False}
 
     if submit_selector:
         submit = page.locator(submit_selector).first
@@ -730,7 +763,7 @@ async def execute_steps(
                 step_result["url"] = page.url
 
             elif action == "fill":
-                await fill_field(page, step["selector"], step["value"])
+                step_result.update(await fill_field(page, step["selector"], step["value"]))
 
             elif action == "type":
                 locator = page.locator(step["selector"]).first
@@ -885,7 +918,7 @@ async def execute_steps(
                 step_result["status"] = response.status
 
             elif action == "force_fill":
-                await force_fill(page, step["selector"], step["value"])
+                step_result.update(await force_fill(page, step["selector"], step["value"]))
 
             elif action == "select_option":
                 result = await select_option(
