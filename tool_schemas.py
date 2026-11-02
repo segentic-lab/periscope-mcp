@@ -260,6 +260,7 @@ TOOLS: list[Tool] = [
                     "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
                     "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."},
                     "device": {"type": "string", "description": "Open already emulating a device. Size presets (mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg) just set the viewport. Any Playwright device name ('iPhone 14', 'Pixel 7', 'Galaxy S9+', 'iPad Pro 11') or 'samsung_internet' also emulates user agent, DPR and touch in a private context seeded with the project's login state."},
+                    "consent": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "Handle the cookie-consent banner right after the page loads (same as handle_consent)."},
                     "width": {"type": "integer", "description": "Custom viewport width (applied before the first load)"},
                     "height": {"type": "integer", "description": "Custom viewport height"},
                 },
@@ -341,11 +342,11 @@ TOOLS: list[Tool] = [
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network", "consent"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click, drag, right_click, wait_for_text container)"},
-                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "value": {"type": "string", "description": "Value (for fill, select); for consent: accept|deny|dismiss"},
                                 "text": {"type": "string", "description": "Text to type (for type action), or text to wait for (for wait_for_text)"},
                                 "target": {"type": "string", "description": "CSS selector of drop target (for drag action)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
@@ -522,11 +523,11 @@ TOOLS: list[Tool] = [
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network", "consent"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector"},
-                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "value": {"type": "string", "description": "Value (for fill, select); for consent: accept|deny|dismiss"},
                                 "text": {"type": "string", "description": "Text to type or wait for"},
                                 "target": {"type": "string", "description": "Drop target selector (for drag)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key)"},
@@ -1054,6 +1055,19 @@ TOOLS: list[Tool] = [
         ),
 
         # New Tools — Friction Reducers
+        Tool(
+            name="handle_consent",
+            description="Accept, deny, or dismiss the cookie-consent banner on a session page in one call. Detects the CMP (Complianz, Cookiebot, CookieYes, OneTrust, Borlabs, Usercentrics, Didomi, Osano, Iubenda, Klaro, Cookie Notice, Cookie Law Info, Moove GDPR, Quantcast, Termly, HubSpot) by its markup, else falls back to button text in English/Slovenian/German/Croatian/Italian/Spanish/French inside cookie/consent containers. Returns {found, cmp, clicked, banner_gone}; a page with no banner is success with found=false. Also available as open_session(consent=...) and the 'consent' step.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "action": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "What to do with the banner (default: accept)"},
+                    **OBSERVE_PROP,
+                },
+                "required": ["session_id", "action"]
+            }
+        ),
         Tool(
             name="hover_element",
             description="Hover an element with a REALISTIC pointer path: the mouse travels to the element in several mousemove steps (default 8, plus a short warm-up move), the way menus that watch pointer motion (SmartMenus/Elementor mega-menus, hover-intent libraries) expect — a single synthetic hover often never opens them. Returns {moves, changed, change} plus the chosen observation. The interact_and_test 'hover' step uses the same path (steps field overrides).",

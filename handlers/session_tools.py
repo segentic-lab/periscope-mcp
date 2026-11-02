@@ -81,6 +81,9 @@ async def handle_open_session(args: dict) -> dict:
         }
         if headed:
             result["headed"] = True
+        if args.get("consent"):
+            import consent
+            result["consent"] = await consent.apply(session.page, args["consent"])
         if device:
             result["device"] = device
         if descriptor is not None:

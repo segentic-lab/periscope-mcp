@@ -24,6 +24,16 @@ async def handle_click_element(args: dict) -> dict:
         return await interactions.attach_observation(session, result, args, "after_click")
 
 
+@tool("handle_consent")
+async def handle_handle_consent(args: dict) -> dict:
+        import consent
+        session = session_manager.get_session(args["session_id"])
+        result = await consent.apply(session.page, args.get("action") or "accept")
+        if not result.get("success"):
+            return result
+        return await interactions.attach_observation(session, result, args, "after_consent")
+
+
 @tool("hover_element")
 async def handle_hover_element(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])

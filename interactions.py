@@ -739,6 +739,7 @@ async def execute_steps(
         screenshot: {action: "screenshot", label: str?}
         navigate: {action: "navigate", url: str}
         hover: {action: "hover", selector: str, steps: int?} — realistic stepped pointer path
+        consent: {action: "consent", value: "accept"|"deny"|"dismiss"} — handle the cookie banner (CMP table + generic)
         press_key: {action: "press_key", key: str}
         check: {action: "check", selector: str}
         uncheck: {action: "uncheck", selector: str}
@@ -831,6 +832,13 @@ async def execute_steps(
                 if downgraded:
                     step_result["wait_downgraded"] = "load"
                 step_result["url"] = page.url
+
+            elif action == "consent":
+                import consent
+                r = await consent.apply(page, step.get("value") or step.get("consent") or "accept")
+                if not r.get("success"):
+                    raise Exception(r["error"])
+                step_result.update(r)
 
             elif action == "hover":
                 step_result.update(await hover_element(
