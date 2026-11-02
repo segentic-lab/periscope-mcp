@@ -150,6 +150,30 @@ class WebsiteTester:
             ignore_https_errors=True,
         )
 
+    async def new_device_context(self, project_name, descriptor: dict, headed: bool = False) -> BrowserContext:
+        """Private context emulating a device (UA, DPR, touch, viewport) — the
+        caller owns and closes it. Seeded with the project's login state: the
+        live project context's storage_state when one exists, else the saved
+        interactive-login session file. Cookies set inside the device session
+        stay in it (they do not flow back to the project's shared context)."""
+        browser = await self.get_browser(headed)
+        seed_state = None
+        if project_name:
+            live = (self.headed_contexts if headed else self.contexts).get(project_name) \
+                or (self.contexts if headed else self.headed_contexts).get(project_name)
+            if live is not None:
+                try:
+                    seed_state = await live.storage_state()
+                except Exception:
+                    seed_state = None
+            if seed_state is None:
+                import runtime  # deferred: runtime imports tester at module load
+                seed_state = runtime.project_manager.load_session_state(project_name)
+        kwargs = {**descriptor, "ignore_https_errors": True}
+        if seed_state:
+            kwargs["storage_state"] = seed_state
+        return await browser.new_context(**kwargs)
+
     async def launch_interactive_login(self, project_name: str, url: str):
         """Open a visible browser at a login page for the user to log in by hand.
         Held open until capture_login() saves the resulting session."""

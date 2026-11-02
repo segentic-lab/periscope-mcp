@@ -5,6 +5,7 @@ import os
 import time
 
 import config
+import devices
 import interactions
 from crawler import Crawler
 from runtime import auth_handler, get_tester, project_manager, session_manager
@@ -26,9 +27,33 @@ async def handle_open_session(args: dict) -> dict:
         # context per session, so unrelated targets never see each other's
         # cookies (issue #8). Closed together with the session.
         # headed=true opens a real visible window (needs a display).
+        # Device emulation: a size preset only resizes the page; a full
+        # descriptor (UA/DPR/touch) needs its own context, seeded with the
+        # project's login state so auth is preserved.
+        device = args.get("device")
+        viewport = None
+        descriptor = None
+        if device:
+            try:
+                kind, resolved = devices.resolve_device(device, t.playwright.devices if t.playwright else {})
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+            if kind == "viewport":
+                viewport = resolved
+            else:
+                descriptor = resolved
+        if args.get("width") or args.get("height"):
+            viewport = {"width": int(args.get("width") or config.VIEWPORT_WIDTH),
+                        "height": int(args.get("height") or config.VIEWPORT_HEIGHT)}
+
         own_context = None
         try:
-            if project:
+            if descriptor is not None:
+                if viewport:
+                    descriptor = {**descriptor, "viewport": viewport}
+                own_context = await t.new_device_context(project, descriptor, headed=headed)
+                context = own_context
+            elif project:
                 context = await t.get_context(project, headed=headed)
             else:
                 own_context = await t.new_ephemeral_context(headed=headed)
@@ -37,7 +62,8 @@ async def handle_open_session(args: dict) -> dict:
             return {"success": False, "error": str(e)}
         try:
             session = await session_manager.create_session(
-                context, args["url"], project_name, screenshot_dir=proj_screenshot_dir)
+                context, args["url"], project_name, screenshot_dir=proj_screenshot_dir,
+                viewport=viewport if descriptor is None else None)
         except Exception:
             if own_context is not None:
                 await own_context.close()
@@ -55,6 +81,15 @@ async def handle_open_session(args: dict) -> dict:
         }
         if headed:
             result["headed"] = True
+        if device:
+            result["device"] = device
+        if descriptor is not None:
+            result["user_agent"] = descriptor.get("user_agent")
+            result["viewport"] = descriptor.get("viewport")
+            result["device_context"] = ("private context emulating the device, seeded with the "
+                                        "project's login state; cookies set here stay in this session")
+        elif viewport:
+            result["viewport"] = viewport
         result["served_by_service_worker"] = session.served_by_service_worker
         if session.wait_downgraded:
             result["wait_downgraded"] = ("networkidle never settled (busy widget like Turnstile/"
@@ -89,16 +124,7 @@ async def handle_list_sessions(args: dict) -> dict:
 @tool("set_viewport")
 async def handle_set_viewport(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
-        device_presets = {
-            "mobile_sm": {"width": 320, "height": 568},    # iPhone SE
-            "mobile": {"width": 375, "height": 812},        # iPhone 12
-            "mobile_lg": {"width": 428, "height": 926},     # iPhone 14 Pro Max
-            "tablet": {"width": 768, "height": 1024},       # iPad
-            "tablet_lg": {"width": 1024, "height": 1366},   # iPad Pro
-            "laptop": {"width": 1366, "height": 768},       # Common laptop
-            "desktop": {"width": 1920, "height": 1080},     # Full HD
-            "desktop_lg": {"width": 2560, "height": 1440},  # QHD
-        }
+        device_presets = devices.VIEWPORT_PRESETS
         device = args.get("device")
         if device:
             if device not in device_presets:
@@ -114,10 +140,15 @@ async def handle_set_viewport(args: dict) -> dict:
             height = args.get("height", config.VIEWPORT_HEIGHT)
 
         await real_page(session.page).set_viewport_size({"width": width, "height": height})
+        reloaded = bool(args.get("reload"))
+        if reloaded:
+            # JS-driven breakpoints (Elementor, slider libs) only re-evaluate on load.
+            await real_page(session.page).reload(wait_until=config.WAIT_UNTIL)
         result = {
             "success": True,
             "viewport": {"width": width, "height": height},
             "device": device,
+            "reloaded": reloaded,
             "url": session.url,
         }
         return await interactions.attach_observation(

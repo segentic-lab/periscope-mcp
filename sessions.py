@@ -131,9 +131,11 @@ class SessionManager:
             pass
 
     async def create_session(
-        self, context: BrowserContext, url: str, project_name: str = "default", screenshot_dir: str = None
+        self, context: BrowserContext, url: str, project_name: str = "default",
+        screenshot_dir: str = None, viewport: dict = None,
     ) -> PageSession:
-        """Create a new persistent page session."""
+        """Create a new persistent page session (viewport, if given, is applied
+        before the first navigation so responsive CSS/JS see the right size)."""
         self._cleanup_expired()
 
         if len(self.sessions) >= config.MAX_SESSIONS:
@@ -142,6 +144,8 @@ class SessionManager:
         session_id = uuid.uuid4().hex[:12]
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
+        if viewport:
+            await page.set_viewport_size({"width": int(viewport["width"]), "height": int(viewport["height"])})
 
         console_log, console_errors, network_log, response_bodies = attach_capture(page)
 

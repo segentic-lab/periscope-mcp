@@ -258,7 +258,10 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "url": {"type": "string", "description": "URL to open"},
                     "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
-                    "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."}
+                    "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."},
+                    "device": {"type": "string", "description": "Open already emulating a device. Size presets (mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg) just set the viewport. Any Playwright device name ('iPhone 14', 'Pixel 7', 'Galaxy S9+', 'iPad Pro 11') or 'samsung_internet' also emulates user agent, DPR and touch in a private context seeded with the project's login state."},
+                    "width": {"type": "integer", "description": "Custom viewport width (applied before the first load)"},
+                    "height": {"type": "integer", "description": "Custom viewport height"},
                 },
                 "required": ["url"]
             }
@@ -604,6 +607,7 @@ TOOLS: list[Tool] = [
                         ],
                         "description": "Device preset: mobile_sm (320x568 iPhone SE), mobile (375x812 iPhone 12), mobile_lg (428x926 iPhone 14 Pro Max), tablet (768x1024 iPad), tablet_lg (1024x1366 iPad Pro), laptop (1366x768), desktop (1920x1080), desktop_lg (2560x1440)"
                     },
+                    "reload": {"type": ["boolean", "string"], "description": "Reload after resizing so JS-driven breakpoints (Elementor, sliders) re-evaluate (default: false). For user-agent/touch emulation open a new session with open_session(device=...)."},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id"]
