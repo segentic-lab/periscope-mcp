@@ -932,7 +932,8 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "max_nodes": {"type": "integer", "description": "Max nodes to return (default: 150); 'total' reports how many exist"},
-                    "include_hidden": {"type": ["boolean", "string"], "description": "Include invisible elements, flagged hidden (default: false)"}
+                    "include_hidden": {"type": ["boolean", "string"], "description": "Include invisible elements, flagged hidden (default: false)"},
+                    "include_frames": {"type": ["boolean", "string"], "description": "List the page's iframes (selector, url, name, cross_origin) with ready select_iframe selectors — the way into Stripe/hosted-checkout card fields (default: false; frame_count is always returned)"}
                 },
                 "required": ["session_id"]
             }

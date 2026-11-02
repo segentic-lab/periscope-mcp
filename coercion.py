@@ -18,7 +18,7 @@ _BOOL_ARGS = {
     "full_page", "screenshot_after", "continue_on_error", "raw_html", "verify_ssl",
     "capture_console", "full_text", "headed", "apply", "include_hidden", "pdf", "include_screenshots",
     "use_sitemap", "raw", "readable", "render", "save", "meta", "save_md",
-    "hard", "include_storage", "reload",
+    "hard", "include_storage", "reload", "include_frames",
 }
 
 

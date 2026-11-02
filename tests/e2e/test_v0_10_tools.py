@@ -157,3 +157,32 @@ def test_download_navigated_instead(run, handlers, popup_session):
     r = run(handlers["download_file"]({"session_id": popup_session, "selector": "#inline", "timeout": 3000}))
     assert r["success"] is False and r["navigated_instead"] is True, r
     assert r["final_url"].endswith("/inline.html") and "Content-Disposition" in r["error"], r
+
+
+@pytest.fixture()
+def frames_session(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/frames.html"}))
+    assert r["success"], r
+    yield r["session_id"]
+    run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def test_page_map_lists_frames(run, handlers, frames_session):
+    m = run(handlers["get_page_map"]({"session_id": frames_session, "include_frames": True}))
+    assert len(m["frames"]) == 2, m["frames"]
+    first = m["frames"][0]
+    assert first["selector"] == "#inner" and first["name"] == "inner", first
+    assert first["url"].endswith("/app.html") and first["cross_origin"] is False, first
+    assert "select_iframe" in first["use"]
+    for f in m["frames"]:
+        r = run(handlers["assert_condition"]({"session_id": frames_session,
+                                              "assertion": "element_exists", "selector": f["selector"]}))
+        assert r["passed"], (f, r)
+    # the advertised selector drives select_iframe directly
+    s = run(handlers["select_iframe"]({"session_id": frames_session, "selector": m["frames"][1]["selector"]}))
+    assert s["success"] and s["iframe_url"].endswith("/popup_child.html"), s
+
+
+def test_page_map_without_frames_flag_omits_them(run, handlers, frames_session):
+    m = run(handlers["get_page_map"]({"session_id": frames_session}))
+    assert "frames" not in m and m["frame_count"] == 2, m

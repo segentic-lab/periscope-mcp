@@ -263,7 +263,7 @@ async def build_page_map(session, args: dict) -> dict:
             return { nodes, total: considered };
         }""", [max_nodes, include_hidden])
 
-        return {
+        result = {
             "url": real_page(session.page).url,
             "title": await session.page.title(),
             "total": data["total"],
@@ -272,6 +272,55 @@ async def build_page_map(session, args: dict) -> dict:
             "unnamed_interactive": sum(1 for n in data["nodes"] if n.get("unnamed")),
             "nodes": data["nodes"],
         }
+        frames = await _frame_inventory(session)
+        result["frame_count"] = len(frames)
+        if _as_bool(args.get("include_frames")):
+            result["frames"] = frames
+        elif frames:
+            result["frames_note"] = (f"{len(frames)} iframe(s) on the page — pass include_frames=true "
+                                     "to list them with ready select_iframe selectors")
+        return result
+
+
+def _as_bool(v) -> bool:
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes")
+    return bool(v)
+
+
+async def _frame_inventory(session) -> list[dict]:
+    """Child frames of the session's page: a selector for the <iframe>, url,
+    name, and whether it is cross-origin (Playwright can drive both; the flag
+    tells the agent why page-level selectors don't reach into it)."""
+    from urllib.parse import urlparse
+    page = real_page(session.page)
+    main_parts = urlparse(page.url)
+    main_origin = (main_parts.scheme, main_parts.hostname, main_parts.port)
+    out = []
+    for i, frame in enumerate(f for f in page.frames if f != page.main_frame):
+        try:
+            handle = await frame.frame_element()
+            selector = await handle.evaluate("""(el) => {
+                const q = (s) => { try { return document.querySelector(s) === el; } catch { return false; } };
+                if (el.id && q('#' + CSS.escape(el.id))) return '#' + CSS.escape(el.id);
+                if (el.name && q('iframe[name=' + JSON.stringify(el.name) + ']'))
+                    return 'iframe[name=' + JSON.stringify(el.name) + ']';
+                const src = el.getAttribute('src');
+                if (src && q('iframe[src=' + JSON.stringify(src) + ']'))
+                    return 'iframe[src=' + JSON.stringify(src) + ']';
+                const all = Array.from(document.querySelectorAll('iframe'));
+                return 'iframe:nth-of-type(' + (all.indexOf(el) + 1) + ')';
+            }""")
+            await handle.dispose()
+        except Exception:
+            selector = f"iframe:nth-of-type({i + 1})"
+        parts = urlparse(frame.url)
+        cross = bool(frame.url) and frame.url != "about:blank" and \
+            (parts.scheme, parts.hostname, parts.port) != main_origin
+        out.append({"index": i, "selector": selector, "url": frame.url, "name": frame.name or None,
+                    "cross_origin": cross,
+                    "use": f"select_iframe(session_id, selector={selector!r}) → drive the frame with the returned session id"})
+    return out
 
 
 @tool("find_element")
