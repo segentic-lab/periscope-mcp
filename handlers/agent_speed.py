@@ -706,9 +706,91 @@ async def handle_get_network_log(args: dict) -> dict:
 
         if clear:
             session.network_log.clear()
+            session.network_cleared_at = time.time()
             result["cleared"] = True
 
         return result
+
+
+@tool("network_summary")
+async def handle_network_summary(args: dict) -> dict:
+        """Aggregate the session's captured traffic: bytes by domain and
+        resource type, the heaviest requests, third-party share. Sizes come
+        from in-page Resource Timing (transferSize, current document) with the
+        Content-Length header as fallback; unknown sizes are counted, not guessed."""
+        from urllib.parse import urlparse
+        session = session_manager.get_session(args["session_id"])
+        since = args.get("since") or "open"
+        top = int(args.get("top") or 10)
+
+        log = list(session.network_log)
+        if since == "clear":
+            if session.network_cleared_at is None:
+                return {"success": False, "error":
+                        "since='clear' needs a prior get_network_log(clear=true) on this session."}
+            log = [e for e in log if e["timestamp"] >= session.network_cleared_at]
+        elif since != "open":
+            try:
+                since_s = float(since) / 1000.0  # epoch ms
+            except (TypeError, ValueError):
+                return {"success": False, "error":
+                        "since must be 'open', 'clear', or an epoch timestamp in ms."}
+            log = [e for e in log if e["timestamp"] >= since_s]
+
+        # Resource Timing sizes for the current document (keyed by URL).
+        try:
+            timing = await session.page.evaluate("""() => {
+                const out = {};
+                const add = (e) => { if (e && e.name && e.transferSize) out[e.name] = e.transferSize; };
+                performance.getEntriesByType('navigation').forEach(add);
+                performance.getEntriesByType('resource').forEach(add);
+                return out;
+            }""")
+        except Exception:
+            timing = {}
+
+        page_host = urlparse(real_page(session.page).url).netloc
+        by_domain, by_type = {}, {}
+        rows = []
+        total, known = 0, 0
+        for e in log:
+            size = timing.get(e["url"]) or e.get("content_length")
+            host = urlparse(e["url"]).netloc
+            rtype = e.get("resource_type") or "other"
+            if size is not None:
+                total += size
+                known += 1
+            d = by_domain.setdefault(host, {"domain": host, "requests": 0, "bytes": 0,
+                                            "third_party": host != page_host})
+            d["requests"] += 1
+            d["bytes"] += size or 0
+            t = by_type.setdefault(rtype, {"type": rtype, "requests": 0, "bytes": 0})
+            t["requests"] += 1
+            t["bytes"] += size or 0
+            rows.append({"url": e["url"] if len(e["url"]) <= 120 else "..." + e["url"][-117:],
+                         "type": rtype, "bytes": size, "status": e.get("status"),
+                         "from_service_worker": e.get("from_service_worker", False)})
+
+        third_bytes = sum(d["bytes"] for d in by_domain.values() if d["third_party"])
+        largest = sorted(rows, key=lambda r: r["bytes"] or 0, reverse=True)[:top]
+        return {
+            "success": True,
+            "since": since,
+            "page_host": page_host,
+            "requests": len(log),
+            "bytes_total": total,
+            "bytes_total_kb": round(total / 1024, 1),
+            "bytes_known_for": known,
+            "size_unknown_count": len(log) - known,
+            "by_domain": sorted(by_domain.values(), key=lambda d: d["bytes"], reverse=True),
+            "by_type": sorted(by_type.values(), key=lambda t: t["bytes"], reverse=True),
+            "largest": largest,
+            "third_party_bytes": third_bytes,
+            "third_party_share": round(third_bytes / total, 3) if total else 0.0,
+            "served_by_service_worker_count": sum(1 for r in rows if r["from_service_worker"]),
+            "note": "sizes = transfer bytes from Resource Timing (current document) or Content-Length; "
+                    "requests with neither are counted in size_unknown_count",
+        }
 
 
 @tool("page_state")

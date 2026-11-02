@@ -974,6 +974,19 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="network_summary",
+            description="Aggregate the session's captured network traffic: bytes and request counts by domain (with third_party flag) and by resource type, the heaviest requests, third-party share, and how many responses came from a service worker. since='open' (default, whole session), 'clear' (only traffic after get_network_log(clear=true) — the before/after-an-interaction pattern: clear, act, summarize), or an epoch-ms timestamp. Sizes come from Resource Timing (transfer bytes, current document) with Content-Length as fallback; unknowns are counted honestly. Use to verify a consent 'deny' really blocked GA/Meta/Vimeo, or to find what makes a page heavy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "since": {"type": "string", "description": "'open' (default) | 'clear' | epoch milliseconds"},
+                    "top": {"type": "integer", "description": "How many of the largest requests to list (default: 10)"},
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
             name="get_network_log",
             description="Return the network requests captured on a session — each with URL, HTTP method, status, resource type, and size. Optionally filter by URL substring; clear=true empties the log after reading. Returns the request list. Use to see which API calls fired and their status when debugging.",
             inputSchema={

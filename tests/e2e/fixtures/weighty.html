@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Network Weight Fixture Page</title>
+  <script src="/sw.js"></script>
+</head>
+<body>
+  <h1>Network weight fixture</h1>
+  <img id="local-img" src="/img/pixel.gif" alt="pixel">
+  <button id="more">Load more</button>
+  <script>
+    // Optional third-party origin passed as ?third=http://host:port
+    const third = new URLSearchParams(location.search).get('third');
+    if (third) {
+      const img = document.createElement('img');
+      img.src = third + '/img/pixel.gif?third=1';
+      img.alt = 'third-party pixel';
+      document.body.appendChild(img);
+    }
+    fetch('/api/items?from=weighty');
+    document.getElementById('more').addEventListener('click', () => {
+      fetch('/api/items?from=click');
+    });
+  </script>
+</body>
+</html>

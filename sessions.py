@@ -29,6 +29,7 @@ class PageSession:
     wait_downgraded: bool = False  # networkidle never settled; navigation used 'load' (issue #14)
     served_by_service_worker: bool = False  # main document of the last navigation came from a SW
     nav_generation: int = 0  # +1 per main-frame navigation — lets an agent notice it moved pages
+    network_cleared_at: float = None  # set by get_network_log(clear=true); network_summary(since='clear')
 
 
 def attach_capture(page) -> tuple[list, list, list, list]:
@@ -43,12 +44,23 @@ def attach_capture(page) -> tuple[list, list, list, list]:
             _capped_append(console_log, msg.text, config.MAX_CONSOLE_LOG)
 
     async def on_response(response):
+        try:
+            cl = response.headers.get("content-length")
+            content_length = int(cl) if cl and cl.isdigit() else None
+        except Exception:
+            content_length = None
+        try:
+            from_sw = bool(response.from_service_worker)
+        except Exception:
+            from_sw = False
         _capped_append(network_log, {
             "url": response.url,
             "status": response.status,
             "method": response.request.method,
             "resource_type": response.request.resource_type,
             "timestamp": time.time(),
+            "content_length": content_length,  # header fallback for sizes
+            "from_service_worker": from_sw,
         }, config.MAX_NETWORK_LOG)
         # Capture response bodies for fetch/xhr/document requests
         if response.request.resource_type in ("fetch", "xhr", "document"):

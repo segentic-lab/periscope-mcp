@@ -145,3 +145,39 @@ def test_intercept_network_substring_with_query_chars(run, handlers, session):
     assert body["status"] == 503 and "mocked" in body["body_text"]
     r = run(handlers["clear_intercepts"]({"session_id": session}))
     assert r["removed_count"] == 1
+
+
+# --- 0.11: network_summary ---------------------------------------------------
+
+def test_network_summary_bytes_by_domain_and_type(run, handlers, good_site, bad_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/weighty.html?third={bad_site}"}))
+    assert r["success"], r
+    sid = r["session_id"]
+    try:
+        run(handlers["interact_and_test"]({"session_id": sid, "screenshot_after": False,
+                                           "steps": [{"action": "wait", "timeout": 500}]}))
+        s = run(handlers["network_summary"]({"session_id": sid}))
+        assert s["success"] and s["requests"] >= 4, s
+        assert s["bytes_total"] > 0 and s["bytes_known_for"] >= 1, s
+        assert sum(d["requests"] for d in s["by_domain"]) == s["requests"], s["by_domain"]
+        domains = {d["domain"]: d for d in s["by_domain"]}
+        third_host = bad_site.split("//")[1]
+        assert domains[third_host]["third_party"] is True and domains[third_host]["requests"] == 1, domains
+        first_host = good_site.split("//")[1]
+        assert domains[first_host]["third_party"] is False
+        types = {t["type"] for t in s["by_type"]}
+        assert {"document", "image", "script", "fetch"} <= types, types
+        bytes_list = [x["bytes"] or 0 for x in s["largest"]]
+        assert bytes_list == sorted(bytes_list, reverse=True), s["largest"]
+        assert 0 <= s["third_party_share"] <= 1
+
+        # since="clear": only requests after get_network_log(clear=true)
+        run(handlers["get_network_log"]({"session_id": sid, "clear": True}))
+        run(handlers["interact_and_test"]({"session_id": sid, "screenshot_after": False,
+                                           "steps": [{"action": "click", "selector": "#more"},
+                                                     {"action": "wait_for_network", "url_pattern": "from=click"}]}))
+        s2 = run(handlers["network_summary"]({"session_id": sid, "since": "clear"}))
+        assert s2["requests"] == 1 and s2["since"] == "clear", s2
+        assert s2["largest"][0]["url"].endswith("from=click"), s2
+    finally:
+        run(handlers["close_session"]({"session_id": sid}))
