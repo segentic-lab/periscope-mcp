@@ -625,7 +625,9 @@ TOOLS: list[Tool] = [
                     "session_id": {"type": "string", "description": "Session ID"},
                     "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"},
                     "selector": {"type": "string", "description": "Clip to one element: screenshot just the first match (for citing evidence). Overrides full_page."},
-                    "raw": {"type": ["boolean", "string"], "description": "Skip full-page capture preparation (sticky neutralization, reveal forcing) and capture the raw Playwright stitch (default: false). Only affects full-page captures."}
+                    "raw": {"type": ["boolean", "string"], "description": "Skip full-page capture preparation (sticky neutralization, reveal forcing) and capture the raw Playwright stitch (default: false). Only affects full-page captures."},
+                    "mode": {"type": "string", "enum": ["full", "viewport", "tiles", "element"], "description": "full (default) | viewport | tiles: full-page capture split into legible tile_height-px images (use for pages taller than ~6000 px — the result also lists tiles[]) | element (needs selector)"},
+                    "tile_height": {"type": "integer", "description": "Tile height in px for mode='tiles' (default: 1600)"}
                 },
                 "required": ["session_id"]
             }

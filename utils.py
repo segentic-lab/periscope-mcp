@@ -80,3 +80,22 @@ def compare_screenshots(
         "screenshot2": path2,
         "threshold": threshold,
     }
+
+
+def split_tiles(path: str, tile_height: int) -> list[str]:
+    """Crop a (full-page) screenshot into vertical tiles of `tile_height` px,
+    saved next to it as <stem>_tile01.png, _tile02.png, … Returns the paths.
+    A tall page's full-page image is unreadable when downscaled; tiles keep
+    the text legible."""
+    tile_height = max(200, int(tile_height))
+    img = Image.open(path)
+    w, h = img.size
+    stem, _ = os.path.splitext(path)
+    tiles = []
+    n = 0
+    for top in range(0, h, tile_height):
+        n += 1
+        tile_path = f"{stem}_tile{n:02d}.png"
+        img.crop((0, top, w, min(top + tile_height, h))).save(tile_path)
+        tiles.append(tile_path)
+    return tiles

@@ -163,8 +163,25 @@ async def handle_screenshot_session(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         full_page = args.get("full_page", True)
         selector = args.get("selector")
+        mode = args.get("mode")
+        if mode and mode not in ("full", "viewport", "tiles", "element"):
+            return {"success": False, "error":
+                    f"Unknown mode '{mode}' — use full (default), viewport, tiles (full-page split "
+                    "into tile_height px images), or element (with selector)."}
+        if mode == "viewport":
+            full_page = False
+        elif mode == "element" and not selector:
+            return {"success": False, "error": "mode='element' needs 'selector'."}
+        tiles = None
         _meta = {}
-        if selector:
+        if mode == "tiles":
+            from utils import split_tiles
+            tile_height = int(args.get("tile_height") or 1600)
+            screenshot_path = await interactions.take_screenshot(
+                session.page, session.project_name, "session_tiles", screenshot_dir=session.screenshot_dir,
+                prepare=not args.get("raw", False), meta=_meta)
+            tiles = split_tiles(screenshot_path, tile_height)
+        elif selector:
             # Element clip: screenshot just the matching element (evidence citing)
             base_dir = session.screenshot_dir if session.screenshot_dir else config.SCREENSHOT_DIR
             project_dir = os.path.join(base_dir, session.project_name)
@@ -187,14 +204,24 @@ async def handle_screenshot_session(args: dict) -> dict:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             screenshot_path = os.path.join(project_dir, f"interactive_{timestamp}_viewport.png")
             await real_page(session.page).screenshot(path=screenshot_path, full_page=False)
-        return {
+        view = _meta.get("view") or await interactions.read_view(session.page)
+        result = {
             "success": True,
+            "mode": mode or ("element" if selector else "full" if full_page else "viewport"),
             "screenshot_path": screenshot_path,
             "url": session.url,
             "title": await session.page.title(),
             **({"capture_prep": _meta["capture_prep"]} if _meta.get("capture_prep") else {}),
-            "view": _meta.get("view") or await interactions.read_view(session.page),
+            "view": view,
         }
+        page_height = (view or {}).get("page_height") or 0
+        if tiles is not None:
+            result.update({"tiles": tiles, "tile_count": len(tiles), "tile_height": tile_height,
+                           "page_height": page_height})
+        elif result["mode"] == "full" and page_height > 6000:
+            result["note"] = (f"page is {page_height} px tall — a full-page image this size is unreadable "
+                              "when downscaled; pass mode='tiles' (tile_height=1600) for legible images")
+        return result
 
 
 @tool("select_page")
