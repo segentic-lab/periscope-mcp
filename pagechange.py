@@ -6,10 +6,12 @@ framework-controlled inputs discarding typed text). Snapshot before, diff
 after: url, a cheap DOM fingerprint, and the network-log length.
 """
 
-# Cheap in-page DOM fingerprint — a 32-bit rolling hash of body.innerHTML.
+# Cheap in-page DOM fingerprint — a 32-bit rolling hash of body.innerHTML with
+# inline style attributes stripped (animations/jitter mutate `style` every
+# frame and would otherwise read as a page change).
 DOM_HASH_JS = """() => {
     let h = 0;
-    const s = document.body ? document.body.innerHTML : '';
+    const s = (document.body ? document.body.innerHTML : '').replace(/ style="[^"]*"/g, '');
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     return h;
 }"""

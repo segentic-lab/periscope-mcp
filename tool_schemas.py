@@ -283,13 +283,14 @@ TOOLS: list[Tool] = [
         # Interactive Tools
         Tool(
             name="click_element",
-            description="Click an element in a session page. Returns a screenshot and the new URL/title after click. If a full-screen portal overlay (Radix/shadcn dialogs & menus) intercepts the pointer, automatically falls back to an element-level JS click and flags click_method='js_dispatch' — no workaround needed. Use force=true to bypass actionability checks for other cases (hidden/animating elements).",
+            description="Click an element in a session page. Returns the new URL/title plus an HONEST change report: changed (bool), change (url/dom/network), click_method (pointer | pointer_force | js_dispatch), attempts. If nothing changed the result carries a hint. If a portal overlay (Radix/shadcn) or an unstable element blocks the pointer, the default strategy falls back to a synthetic JS click (flagged click_method='js_dispatch') — hosted payment pages ignore synthetic clicks (isTrusted), so use force=true (trusted pointer click at coordinates) or strategy='auto' (pointer → force → js_dispatch, stopping at the first attempt that changes the page; never re-clicks after a change).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector of element to click"},
-                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."},
+                    "force": {"type": ["boolean", "string"], "description": "Trusted pointer click at the element's coordinates, skipping actionability checks (default: false). Use for controls that ignore synthetic clicks (Stripe/hosted checkouts) or animating elements."},
+                    "strategy": {"type": "string", "enum": ["single", "auto"], "description": "single (default): one attempt, honest change report. auto: escalate pointer → pointer_force → js_dispatch until the page changes."},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id", "selector"]
@@ -349,7 +350,8 @@ TOOLS: list[Tool] = [
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
                                 "label": {"type": "string", "description": "Label for screenshot filename (screenshot action), or option label text (select_option action)"},
-                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks on click (default: false)"},
+                                "force": {"type": ["boolean", "string"], "description": "Trusted pointer click at coordinates, skipping actionability checks (for click; default: false)"},
+                                "strategy": {"type": "string", "enum": ["single", "auto"], "description": "For click: 'auto' escalates pointer → pointer_force → js_dispatch until the page changes (default: single)"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trusted Click Fixture Page</title>
+</head>
+<body>
+  <h1>Trusted click fixture</h1>
+  <p id="status">idle</p>
+
+  <!-- Reacts only to trusted (real pointer) events, like hosted payment pages -->
+  <button id="trusted-only">Pay</button>
+
+  <!-- No handler at all: clicking changes nothing observable -->
+  <button id="noop">Nothing</button>
+
+  <!-- Only side effect is a network request -->
+  <button id="net-only">Ping</button>
+
+  <!-- Unstable (jittering) trusted-only button: Playwright's stability check
+       never passes, so a plain pointer click times out; force=true clicks at
+       coordinates (trusted); dispatch_event is synthetic and ignored. -->
+  <button id="jittery" style="position:relative">Jittery pay</button>
+
+  <!-- Inputs for the fill tests -->
+  <input id="plain-input" type="text">
+  <input id="controlled" type="text">
+
+  <script>
+    const status = document.getElementById('status');
+    const trustedHandler = (e) => { if (e.isTrusted) status.textContent = 'TRUSTED'; };
+    document.getElementById('trusted-only').addEventListener('click', trustedHandler);
+    document.getElementById('jittery').addEventListener('click', trustedHandler);
+    document.getElementById('net-only').addEventListener('click', () => {
+      fetch('/api/items?from=net');
+    });
+    // Jitter: move every animation frame so no two consecutive frames agree
+    // (Playwright's stability check needs two identical frames).
+    let flip = false;
+    const jitter = () => {
+      flip = !flip;
+      document.getElementById('jittery').style.transform = flip ? 'translateX(3px)' : 'translateX(0)';
+      requestAnimationFrame(jitter);
+    };
+    requestAnimationFrame(jitter);
+    // Framework-controlled input: discards typed text (typing has an inputType);
+    // a native-setter dispatch has no inputType and is kept.
+    document.getElementById('controlled').addEventListener('input', (e) => {
+      if (e.inputType !== undefined) e.target.value = '';
+    });
+  </script>
+</body>
+</html>

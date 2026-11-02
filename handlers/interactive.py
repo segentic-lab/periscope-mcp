@@ -17,7 +17,8 @@ from .registry import tool
 async def handle_click_element(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         result = await interactions.click_element(
-            session.page, args["selector"], force=args.get("force", False)
+            session.page, args["selector"], force=args.get("force", False),
+            strategy=args.get("strategy") or "single", network_log=session.network_log,
         )
         session.url = result["url"]
         return await interactions.attach_observation(session, result, args, "after_click")
@@ -83,7 +84,7 @@ async def handle_interact_and_test(args: dict) -> dict:
         try:
             result = await interactions.execute_steps(
                 page, steps, project_name, continue_on_error, screenshot_dir=shot_dir,
-                touch=touch,
+                touch=touch, network_log=session.network_log if session else None,
             )
             if capture_console:
                 result["console_log"] = new_logs

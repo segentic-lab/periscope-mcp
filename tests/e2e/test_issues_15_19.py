@@ -27,7 +27,7 @@ def test_unblocked_click_stays_pointer_based(run, handlers, overlay_session):
     # The fallback must not kick in for ordinary clicks.
     r = run(handlers["click_element"]({"session_id": overlay_session, "selector": "#plain-btn"}))
     assert "error" not in r, r
-    assert "click_method" not in r, r
+    assert r["click_method"] == "pointer" and "overlay_bypassed" not in r, r
 
 
 def test_select_option_element_index(run, handlers, overlay_session):
