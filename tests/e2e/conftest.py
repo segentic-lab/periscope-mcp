@@ -48,6 +48,19 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._text(json.dumps({"items": [1, 2, 3]}), "application/json")
         if path == "/submit":
             return self._text("<html><body>submitted</body></html>", "text/html")
+        if path == "/download.pdf":
+            # attachment: the browser must download, never navigate
+            data = b"%PDF-1.4 fixture"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", 'attachment; filename="report.pdf"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == "/inline.html":
+            # no disposition: a click here NAVIGATES instead of downloading
+            return self._text("<html><body><h1>Inline document</h1></body></html>", "text/html")
 
         # --- form-login protected area (auth expiry / issue #11 tests) ------
         if path in ("/app", "/app/page2"):
@@ -97,7 +110,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         # Mirror GET's notion of existence — a blanket 200 would hide 404s
         # from checks that verify resources via HEAD (e.g. lazy images).
         path = self.path.split("?")[0]
-        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login"}
+        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login", "/download.pdf", "/inline.html"}
         if path in known or os.path.isfile(os.path.join(FIXTURES, path.lstrip("/"))):
             self.send_response(200)
         else:

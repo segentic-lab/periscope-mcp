@@ -218,18 +218,48 @@ async def handle_download_file(args: dict) -> dict:
         page = real_page(session.page)
         selector = args["selector"]
         timeout = int(args.get("timeout") or 30000)
+        url_before = page.url
 
+        # Capture response headers for the download URL (Playwright's Download
+        # object doesn't expose them): a temporary listener keyed by URL.
+        headers_by_url = {}
+
+        def on_response(resp):
+            try:
+                h = resp.headers
+                headers_by_url[resp.url] = {"content_type": h.get("content-type"),
+                                            "content_disposition": h.get("content-disposition")}
+            except Exception:
+                pass
+        page.on("response", on_response)
         try:
-            async with page.expect_download(timeout=timeout) as dl_info:
-                await interactions._click_with_overlay_fallback(session.page, selector)
-            download = await dl_info.value
-        except Exception as e:
-            return {"success": False,
-                    "error": f"No download started within {timeout}ms after clicking "
-                             f"'{selector}': {e}",
-                    "hint": "If the click opens a new tab that then downloads, adopt the "
-                            "tab with select_page first. If the file is served inline "
-                            "(opens in the browser), use get_response_body instead."}
+            try:
+                async with page.expect_download(timeout=timeout) as dl_info:
+                    await interactions._click_with_overlay_fallback(session.page, selector)
+                download = await dl_info.value
+            except Exception as e:
+                navigated = page.url != url_before
+                if navigated:
+                    session.url = page.url
+                    return {"success": False, "navigated_instead": True, "final_url": page.url,
+                            "error": "the click navigated to the file instead of downloading it "
+                                     "(the response has no Content-Disposition: attachment, so the "
+                                     "browser rendered it inline)",
+                            "hint": "If the file must download, the server needs "
+                                    "'Content-Disposition: attachment'. To read the inline content, "
+                                    "use get_response_body or get_page_html on this session."}
+                return {"success": False, "navigated_instead": False,
+                        "error": f"No download started within {timeout}ms after clicking "
+                                 f"'{selector}': {e}",
+                        "hint": "If the click opens a new tab that then downloads, adopt the "
+                                "tab with select_page first. If the file is served inline "
+                                "(opens in the browser), use get_response_body instead."}
+        finally:
+            try:
+                page.remove_listener("response", on_response)
+            except Exception:
+                pass
+        hdrs = headers_by_url.get(download.url, {})
 
         downloads_dir = os.path.join(config.DATA_DIR, "downloads")
         os.makedirs(downloads_dir, exist_ok=True)
@@ -267,6 +297,9 @@ async def handle_download_file(args: dict) -> dict:
             "sha256": hashlib.sha256(data).hexdigest(),
             "source_url": download.url[:200],
             "capture_method": capture_method,
+            "content_type": hdrs.get("content_type"),
+            "content_disposition": hdrs.get("content_disposition"),
+            "navigated_instead": False,
         }
         # Small text files: include a head preview so content can be asserted
         # without another tool call.

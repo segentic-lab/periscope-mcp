@@ -809,7 +809,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="download_file",
-            description="Click a trigger and capture the file it downloads — the honest way to verify exports (CSV, PDF, invoices). The download waiter is armed BEFORE the click so fast downloads aren't missed, and the click uses the same overlay-fallback as click_element (export buttons inside Radix menus work). Returns the saved path, size, sha256, source URL, and for small text files a text_head preview so content can be asserted without another call. Files land in data/downloads/.",
+            description="Click a trigger and capture the file it downloads: path, size, sha256, text preview, plus the response's content_type and content_disposition. If the click NAVIGATES to the file instead (no Content-Disposition: attachment), the result says navigated_instead=true with the final_url — the precise assertion for \"must download, not open\" fixes. Falls back to a context refetch (flagged capture_method) when the browser artifact is empty",
             inputSchema={
                 "type": "object",
                 "properties": {

@@ -144,3 +144,16 @@ def test_download_file_captures_and_previews(run, handlers, popup_session):
     assert r["size_bytes"] > 0 and len(r["sha256"]) == 64
     assert os.path.exists(r["path"])
     assert "items" in r.get("text_head", ""), r
+
+
+def test_download_file_reports_headers(run, handlers, popup_session):
+    r = run(handlers["download_file"]({"session_id": popup_session, "selector": "#dl-pdf"}))
+    assert r["success"], r
+    assert r["filename"] == "report.pdf" and r["content_type"].startswith("application/pdf"), r
+    assert "attachment" in r["content_disposition"] and r["navigated_instead"] is False, r
+
+
+def test_download_navigated_instead(run, handlers, popup_session):
+    r = run(handlers["download_file"]({"session_id": popup_session, "selector": "#inline", "timeout": 3000}))
+    assert r["success"] is False and r["navigated_instead"] is True, r
+    assert r["final_url"].endswith("/inline.html") and "Content-Disposition" in r["error"], r
