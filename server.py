@@ -45,7 +45,7 @@ async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
     arguments = arguments if isinstance(arguments, dict) else {}
     start = time.time()
     try:
-        coerce_args(arguments)
+        coerce_args(arguments, name)
         handler = HANDLERS.get(name)
         if handler is None:
             result = {"success": False, "error": f"Unknown tool: {name}"}

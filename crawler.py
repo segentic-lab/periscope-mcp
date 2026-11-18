@@ -6,6 +6,30 @@ import config
 from nav import resilient_goto
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _host_key(parsed) -> str:
+    """host[:port] with the host lowercased and the scheme's default port dropped."""
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    if port and port != _DEFAULT_PORTS.get(parsed.scheme.lower()):
+        return f"{host}:{port}"
+    return host
+
+
+def decode_sitemap_body(body: bytes) -> bytes:
+    """Sitemaps are often served as .xml.gz with a plain content type —
+    gunzip by magic bytes."""
+    if body[:2] == b"\x1f\x8b":
+        import gzip
+        try:
+            return gzip.decompress(body)
+        except OSError:
+            return body
+    return body
+
+
 class Crawler:
     """Crawl a website to discover pages.
 
@@ -24,18 +48,19 @@ class Crawler:
         self.known = set()
 
     def _normalize_url(self, url: str) -> str:
-        """Normalize URL by removing fragments and trailing slashes.
-        Query strings are kept — /items?page=2 and /items?page=3 are distinct pages."""
+        """Normalize URL: lowercase scheme/host, drop default ports, fragments
+        and trailing slashes. Query strings are kept — /items?page=2 and
+        /items?page=3 are distinct pages."""
         parsed = urlparse(url)
-        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-        normalized = normalized or f"{parsed.scheme}://{parsed.netloc}"
+        normalized = f"{parsed.scheme.lower()}://{_host_key(parsed)}{parsed.path}".rstrip("/")
+        normalized = normalized or f"{parsed.scheme.lower()}://{_host_key(parsed)}"
         if parsed.query:
             normalized += f"?{parsed.query}"
         return normalized
 
     def _is_same_domain(self, url: str, base_url: str) -> bool:
-        """Check if URL is on the same domain as base URL."""
-        return urlparse(url).netloc == urlparse(base_url).netloc
+        """Same host (case-insensitive) and same effective port."""
+        return _host_key(urlparse(url)) == _host_key(urlparse(base_url))
 
     def _is_valid_url(self, url: str) -> bool:
         """Check if URL is valid for crawling."""
@@ -114,7 +139,7 @@ class Crawler:
                 resp = await context.request.get(sm_url, timeout=8000)
                 if not resp.ok:
                     continue
-                body = await resp.body()
+                body = decode_sitemap_body(await resp.body())
                 root = ElementTree.fromstring(body)
             except Exception:
                 continue
