@@ -131,8 +131,11 @@ def median_run(reports: list[dict]) -> tuple[dict, dict]:
     and compute min/median/max spread per metric and per category score."""
     if not reports:
         raise ValueError("median_run needs at least one report")
-    ranked = sorted(reports, key=lambda r: _metric(r, "largest-contentful-paint") or 0)
-    chosen = ranked[len(ranked) // 2]
+    # Runs without an LCP (failed load, NO_LCP) must not become "the median":
+    # rank only the runs that measured one; fall back to the first run.
+    measured = [r for r in reports if _metric(r, "largest-contentful-paint") is not None]
+    ranked = sorted(measured, key=lambda r: _metric(r, "largest-contentful-paint"))
+    chosen = ranked[len(ranked) // 2] if ranked else reports[0]
     spread = {}
     for mid in METRIC_IDS:
         vals = [v for v in (_metric(r, mid) for r in reports) if v is not None]
@@ -146,3 +149,12 @@ def median_run(reports: list[dict]) -> tuple[dict, dict]:
             scores[cat] = {"min": _round(min(vals)), "median": _round(_median(vals)), "max": _round(max(vals))}
     spread["scores"] = scores
     return chosen, spread
+
+
+def runtime_error(report: dict) -> str | None:
+    """'CODE: message' when Lighthouse itself failed to audit the page."""
+    rt = (report or {}).get("runtimeError") or {}
+    code = rt.get("code")
+    if not code or code == "NO_ERROR":
+        return None
+    return f"{code}: {rt.get('message') or ''}".strip().rstrip(":")

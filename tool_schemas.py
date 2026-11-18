@@ -328,7 +328,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="interact_and_test",
-            description="Execute a multi-step interaction workflow. Supports 25 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network. Can work on an existing session or create an ephemeral page.",
+            description="Execute a multi-step interaction workflow. Supports 26 actions: click, force_click, fill, force_fill, type, select, select_option, wait, wait_for, wait_for_text, screenshot, navigate, hover, press_key, check, uncheck, scroll_to, scroll_within, evaluate_js, drag, right_click, go_back, go_forward, upload_file, wait_for_network, consent. Can work on an existing session or create an ephemeral page.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -712,7 +712,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="flow",
-            description="Save and re-run named step sequences — define a workflow once (login, checkout, smoke path), replay it in any session. action='save' stores steps (interact_and_test's exact format, all 25 actions); action='run' executes a saved flow on a session via the same engine as interact_and_test; action='list' shows saved flows; action='delete' removes one. Deliberately minimal: verify outcomes by following a run with assert_all or visual_check. Flows persist in data/flows/ across sessions and server restarts.",
+            description="Save and re-run named step sequences — define a workflow once (login, checkout, smoke path), replay it in any session. action='save' stores steps (interact_and_test's exact format, all 26 actions); action='run' executes a saved flow on a session via the same engine as interact_and_test; action='list' shows saved flows; action='delete' removes one. Deliberately minimal: verify outcomes by following a run with assert_all or visual_check. Flows persist in data/flows/ across sessions and server restarts.",
             inputSchema={
                 "type": "object",
                 "properties": {

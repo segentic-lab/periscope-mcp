@@ -36,7 +36,8 @@ async def snapshot(page, network_log: list | None = None, request_counter=None) 
     except Exception:
         dom_hash = None
     return {"url": page.url, "dom_hash": dom_hash,
-            "net_count": _net_count(network_log, request_counter)}
+            "net_count": _net_count(network_log, request_counter),
+            "popups": getattr(request_counter, "popups", 0)}
 
 
 async def diff(page, before: dict, network_log: list | None = None, request_counter=None) -> dict:
@@ -52,4 +53,6 @@ async def diff(page, before: dict, network_log: list | None = None, request_coun
         change.append("dom")
     if _net_count(network_log, request_counter) != before.get("net_count", 0):
         change.append("network")
+    if getattr(request_counter, "popups", 0) != before.get("popups", 0):
+        change.append("popup")   # a new tab/window opened (adopt it with select_page)
     return {"changed": bool(change), "change": change}

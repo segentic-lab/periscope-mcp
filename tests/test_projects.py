@@ -62,8 +62,10 @@ def test_persistence_round_trip(manager):
 
 def test_delete_removes_custom_screenshot_dir(manager, tmp_path):
     custom = tmp_path / "custom"
-    (custom / "demo").mkdir(parents=True)
+    custom.mkdir()
     manager.create("demo", "https://example.com", screenshot_dir=str(custom))
+    manager.claim_screenshot_dir("demo")   # Periscope creates (and marks) the dir
+    assert (custom / "demo").is_dir()
     assert manager.delete("demo") is True
     assert not (custom / "demo").exists()
     assert manager.get("demo") is None

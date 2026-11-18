@@ -6,6 +6,131 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version i
 defined once in [`_version.py`](_version.py) and reported to MCP clients during the
 initialize handshake.
 
+## [0.12.0] - 2026-11-18
+
+Hardening release: the server now speaks the 2.x `mcp` SDK, and a full
+independent bug hunt (2 critical, 18 important, 12 minor findings, most
+reproduced by running code) is fixed, each with a failing-first test.
+
+### Changed
+- **Ported to the `mcp` Python SDK 2.x** (1.x still supported). SDK 2.0 removed
+  the low-level decorator API, so every fresh install broke; `server.py` now
+  registers its handlers through the 2.x `Server` constructor and falls back to
+  the 1.x decorators. Requirement is `mcp>=1.0.0,<3`; CI runs both lines, and a
+  real stdio round-trip test (initialize → list tools → call tool) guards it.
+- Numeric tool arguments sent as strings are coerced from each tool's schema —
+  the server no longer depends on SDK-side validation for types.
+- **Project names** must be 1-80 characters of letters, digits, `.`, `_`, `-`
+  (they become path components). Existing projects keep working.
+- A `project` argument that names no project is now an error instead of
+  silently running in a fresh, logged-out context.
+- Text/URL/title assertions require a non-empty `expected` (an omitted one used
+  to pass, since "" is contained in everything).
+
+### Fixed — security and data safety
+- **`delete_project` could delete directories that were not Periscope's**: a
+  pre-existing folder inside a custom `screenshot_dir` that shared the project
+  name, or — for a project named `..` — the whole data directory. Deletion is
+  now confined to strict children of the base, and a custom directory is only
+  removed when Periscope created it (marker file).
+- **`get_report` could read any JSON file**, including `projects.json` (stored
+  passwords) and saved login sessions. It now reads only reports inside the
+  reports directory.
+- **The call journal / `session_report` leaked secrets** it claimed to redact:
+  values typed into password-like fields, `set_local_storage` entries,
+  credentials embedded in URLs, and the results of `get_cookies`,
+  `get_local_storage` and `get_response_body`. All are masked now.
+- A malformed `projects.json` (not an object, an entry without a name, a field
+  from a newer version) no longer prevents the server from starting.
+
+### Fixed — wrong verdicts
+- **`login_project` reported "already authenticated" when the login URL merely
+  redirected to another login path** (SSO, `/login` → `/accounts/sign-in`), so
+  crawls audited the login wall as a clean run. A landing page with a visible
+  password field is a login page: the login is performed there, and failures
+  are reported as failures.
+- Login-redirect detection compares host, path (locale prefixes count), and —
+  for hash- or query-routed apps — the login route itself. Hash/query-router
+  apps no longer flag every page as `auth_lost`.
+- **The crawler found one page** when `base_url`'s host differed from the real
+  one in case, default port, or by redirect (apex → www): hosts are normalized
+  and the crawl adopts the host the site actually answers on (`crawl_scope`).
+  Redirecting URLs are recorded once, as their target. Gzipped sitemaps work.
+- A `select_option` step whose selection failed reported success; it now fails
+  the step. A custom dropdown with no value/label/index no longer clicks the
+  first option.
+- `get_page_map` / `find_element` / `auto_fill_form` fallback selectors were
+  cut at five levels and could resolve to a *different* element; they are now
+  anchored at `body` or a unique id.
+- `check_color_contrast` silently skipped `oklch()`, `oklab()`, `color-mix()`
+  and other modern colour syntaxes (the Tailwind v4 default), so a page could
+  report zero failures unchecked. Colours are resolved through a canvas;
+  anything still unreadable is counted in `unparsed_count`.
+- Accessibility check false errors: named anchors without `href`, and
+  links/buttons named by a descendant's `aria-label`.
+- `visual_check` / `compare_pages` treated `max_diff_percent=0` as the default.
+- Checks on iframe sessions reported every link "unreachable" and
+  `test_keyboard_navigation` crashed (a Frame was used as a Page).
+- robots.txt / llms.txt were cached for the life of the process, failures
+  included — a fix was invisible until restart. Now a 60 s TTL, failures not
+  cached.
+- `get_table_data` dropped cells under repeated or empty headers.
+- `run_lighthouse` treats a Lighthouse `runtimeError` as a failed run and kills
+  the whole process tree on timeout; the median ignores runs without an LCP.
+- `network_summary`: first-party means same registrable site (a CDN subdomain
+  is not third-party); 304s are not sized from `Content-Length`.
+
+### Fixed — found by driving all 79 tools through the live server
+- `nav_generation` counted fragment changes and same-URL `history.replaceState`
+  (scroll-spy sites inflated it by a dozen per screenshot). It now counts new
+  documents and SPA route changes only.
+- `page_state diff` could not see changes on elements without an id (a toggled
+  `aria-checked`, a re-texted list item) — the usual case. The signature is now
+  path-keyed with state attributes: `changed`, `changed_count`,
+  `changed_elements[]` with selectors, plus added/removed elements.
+- A click that opens a popup/new tab reported "no page change"; `popup` is now
+  a change kind.
+- Console "Failed to load resource" errors carry the failing URL.
+- `get_page_map`: `header`/`footer` inside a section are not landmarks, and
+  containers are named only by an explicit label (not their whole text).
+- `check_pwa` no longer reports Periscope's own `in-incognito` state, and a
+  site with neither manifest nor service worker gets one informational note
+  (`is_pwa: false`) instead of three defects.
+- `auto_fill_form` skips fields a user cannot reach (honeypots) and understands
+  Slovenian/German field hints (e-pošta, geslo, telefon, …).
+- `check_links` verifies same-page `#anchors` against the DOM and requests each
+  document once, instead of re-fetching the page per fragment.
+- `check_color_contrast` skips empty elements; `test_form_validation` lists
+  controls, not their fieldsets; `wait_for_gone` reports `was_present`;
+  `get_network_log` returns the sizes its description promised;
+  `select_iframe` also returns `session_id`; `open_session(consent=…)` handles
+  the banner before the opening screenshot; redirect aliases are no longer
+  listed as uncrawled pages; the unknown-project error suggests the closest
+  name instead of listing every project.
+
+### Fixed — behaviour
+- A default full-page screenshot reset the page scroll to the top; the scroll
+  position is restored after capture.
+- `intercept_network` with a method filter bypassed other mocks for the same
+  URL (and the project's basic-auth route); the basic-auth route no longer
+  swallows mocks either.
+- Reload / back / forward and `set_viewport(reload=true)` timed out after 30 s
+  on never-idle pages; they downgrade like navigation does, and a session
+  already known to be busy skips the wait.
+- `page_state restore` cleared cookies for the whole shared project context;
+  it now touches only the snapshot page's cookies.
+- `copy_auth` of an interactive-login project copies the saved session;
+  `login_project` on such a project without a saved session is an error.
+- `record_session` honours basic auth and saved login sessions.
+- Popups and adopted tabs are closed with the session that opened them.
+- `clear_site_data` refuses non-http pages; navigation from an iframe session
+  no longer crashes; `compare_pages` validates its device up front and closes
+  the page of a side that failed to load; `check_pwa` fails cleanly when the
+  page can't load; frame selectors are correct across different parents;
+  saved-Markdown filenames no longer collide; report lists no longer mix
+  `shop` with `shop_staging`; the update check compares against the branch
+  that will actually be pulled.
+
 ## [0.11.0] - 2026-11-02
 
 Field-feedback release: every ask from two real engagements — the klimacar.si

@@ -12,7 +12,7 @@ python server.py  # Runs as MCP stdio server (not a web server)
 First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS commands elsewhere).
 
 ## Key Files
-- `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead)
+- `server.py` - MCP entry point: stdio wiring + dispatch (tiny — start in handlers/ instead). Speaks the `mcp` SDK 2.x (constructor handlers) with a 1.x decorator fallback; `call_tool(name, args)` is the SDK-neutral dispatch
 - `tool_schemas.py` - All 79 MCP `Tool(...)` schema definitions
 - `handlers/` - Tool handlers grouped by category (projects, auth, static_testing, session_tools, interactive, analysis, advanced, agent_speed, web, discovery, system); `registry.py` holds the `@tool(name)` decorator
 - `runtime.py` - Shared singletons: `project_manager`, `session_manager`, `auth_handler`, `get_tester()`
@@ -36,7 +36,7 @@ First-time setup: `./install.sh` (automated on Debian/Ubuntu; prints per-OS comm
    async def handle_my_tool(args: dict) -> dict:
        ...
    ```
-3. If it takes array/bool args, add them to the whitelists in `coercion.py`
+3. If it takes array/bool args, add them to the whitelists in `coercion.py` (integer/number args are coerced from the schema automatically)
 4. `pytest` — `tests/test_registry.py` fails if schemas and handlers drift
 
 ## Adding a New Check
@@ -54,7 +54,7 @@ Note: `check_seo()` and `get_performance_metrics()` live in `checks/functionalit
 
 ## Project & Static Testing Tools
 
-- `create_project(name, base_url, max_pages?, max_depth?, screenshot_dir?)` / `list_projects()` / `get_project(name)` / `delete_project(name)`
+- `create_project(name, base_url, max_pages?, max_depth?, screenshot_dir?)` (name: 1-80 chars of letters, digits, `.`, `_`, `-`; a `project` arg naming no project is an error) / `list_projects()` / `get_project(name)` / `delete_project(name)`
 - `set_form_login(project, login_url, username, password, selectors?)` / `set_basic_auth(project, username, password)` / `set_cookies(project, cookies[])` — configure auth, then `login_project(project)` to execute
 - `interactive_login(project, login_url?)` → user logs in by hand in a **visible** window (for 2FA/SSO/CAPTCHA) → `save_login(project)` captures the session (storage_state → `data/sessions/{project}.json`, 0o600); project then runs authenticated + headless. Needs a display on the server.
 - `open_session(url, project?, headed?, device?, width?, height?, consent?)` — `headed=true` opens a real visible window (needs a display); `device` = viewport preset or a real device descriptor (`"iPhone 14"`, `samsung_internet`: UA/DPR/touch in a private context seeded with project auth); `consent=accept|deny` handles the cookie banner first

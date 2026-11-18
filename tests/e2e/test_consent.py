@@ -10,8 +10,11 @@ def _open(run, handlers, url, **kw):
 
 
 def _state(run, handlers, sid):
-    return run(handlers["assert_condition"]({
-        "session_id": sid, "assertion": "text_equals", "selector": "#consent-state", "expected": ""}))["actual"]
+    r = run(handlers["interact_and_test"]({
+        "session_id": sid, "screenshot_after": False,
+        "steps": [{"action": "evaluate_js",
+                   "script": "document.getElementById('consent-state').textContent"}]}))
+    return r["steps"][0]["result"]
 
 
 def test_consent_accept_complianz(run, handlers, good_site):

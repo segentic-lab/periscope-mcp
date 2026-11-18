@@ -4,6 +4,11 @@ from urllib.parse import urljoin, urlparse
 from checks.geo import SEARCH_CRAWLERS, fetch_origin_file, is_blocked, parse_robots
 
 
+def _ctx(page):
+    """BrowserContext of a Page — or of the Page owning a Frame (iframe sessions)."""
+    return page.context if hasattr(page, "context") else page.page.context
+
+
 async def check_functionality(page: Page) -> list[dict]:
     """
     Run functionality checks on a page.
@@ -129,10 +134,10 @@ async def _check_links(page: Page, base_url: str) -> list[str]:
             continue
 
         try:
-            response = await page.context.request.head(link, timeout=5000)
+            response = await _ctx(page).request.head(link, timeout=5000)
             status = response.status
             if status in (405, 501):  # server rejects HEAD, retry with GET
-                response = await page.context.request.get(link, timeout=5000)
+                response = await _ctx(page).request.get(link, timeout=5000)
                 status = response.status
             if status >= 400:
                 broken.append(f"{link} ({status})")
@@ -171,6 +176,9 @@ async def check_all_links(
     internal_results = []
     external_results = []
 
+    page_key = base_url.split("#", 1)[0]
+    fetched: dict = {}  # url without fragment -> status (one request per document)
+
     for link_info in links:
         href = link_info["href"]
         if href in checked or len(checked) >= max_links:
@@ -182,14 +190,38 @@ async def check_all_links(
         if not is_internal and not check_external:
             continue
 
+        doc_url, _, fragment = href.partition("#")
+        if fragment and doc_url == page_key:
+            # Same-page anchor: no request can verify it — the target element can.
+            try:
+                found = await page.evaluate(
+                    """(f) => { let id = f; try { id = decodeURIComponent(f); } catch (e) {}
+                        return !!(document.getElementById(id) || document.getElementsByName(id).length); }""",
+                    fragment)
+            except Exception:
+                found = True
+            internal_results.append({
+                "url": href, "text": link_info["text"],
+                "status": "anchor found" if found else "anchor not found on this page",
+                "ok": bool(found),
+            })
+            continue
+        if doc_url in fetched:
+            status = fetched[doc_url]
+            entry = {"url": href, "text": link_info["text"], "status": status,
+                     "ok": isinstance(status, int) and status < 400}
+            (internal_results if is_internal else external_results).append(entry)
+            continue
+
         try:
-            response = await page.context.request.head(href, timeout=10000)
+            response = await _ctx(page).request.head(doc_url, timeout=10000)
             status = response.status
             if status in (405, 501):  # server rejects HEAD, retry with GET
-                response = await page.context.request.get(href, timeout=10000)
+                response = await _ctx(page).request.get(doc_url, timeout=10000)
                 status = response.status
         except Exception as e:
             status = f"error: {str(e)[:60]}"
+        fetched[doc_url] = status
 
         entry = {
             "url": href,

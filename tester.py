@@ -3,7 +3,7 @@ import os
 import time
 import hashlib
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 import config
 import interactions
@@ -14,12 +14,45 @@ from checks.functionality import check_functionality, check_seo, get_performance
 from checks.geo import check_geo
 
 
+def _route(fragment: str) -> str:
+    """Route part of a hash-router fragment ('/login?next=x' -> '/login')."""
+    return fragment.split("?", 1)[0].rstrip("/")
+
+
 def redirected_to_login(current_url: str, login_url: str) -> bool:
     """True when a page load ended up on the project's configured login page —
-    the telltale of expired/lost auth (issue #11)."""
+    the telltale of expired/lost auth (issue #11).
+
+    Compares what actually identifies the login page: the host (when both
+    URLs have one), the path (a locale/base prefix such as /en/login still
+    counts), and — for query- or hash-routed apps, where the path is the same
+    on every page — the login URL's own query parameters and fragment route.
+    """
     if not login_url or not current_url:
         return False
-    return urlparse(current_url).path.rstrip("/") == urlparse(login_url).path.rstrip("/")
+    cur, login = urlparse(current_url), urlparse(login_url)
+    if cur.hostname and login.hostname and cur.hostname.lower() != login.hostname.lower():
+        return False
+    cur_path, login_path = cur.path.rstrip("/"), login.path.rstrip("/")
+    if cur_path != login_path and not (login_path and cur_path.endswith("/" + login_path.lstrip("/"))):
+        return False
+    # Query-routed apps (index.php?page=login): the login URL's route-like
+    # parameters must be present. 'next'/'callbackUrl'-style return targets
+    # in the configured URL are not part of the page's identity.
+    login_q = {k: v for k, v in parse_qs(login.query).items() if k.lower() not in _RETURN_PARAMS}
+    if login_q:
+        cur_q = parse_qs(cur.query)
+        if any(cur_q.get(k) != v for k, v in login_q.items()):
+            return False
+    if login.fragment and _route(cur.fragment) != _route(login.fragment):
+        return False
+    if not login_path and not login_q and not login.fragment:
+        return cur_path == login_path and not cur.fragment and not cur.query
+    return True
+
+
+_RETURN_PARAMS = {"next", "redirect", "redirect_to", "redirect_uri", "return", "returnto", "return_to",
+                  "returnurl", "callbackurl", "callback", "continue", "from", "r"}
 
 
 class WebsiteTester:
@@ -114,6 +147,10 @@ class WebsiteTester:
         """Get or create a browser context for a project (headless or visible)."""
         contexts = self.headed_contexts if headed else self.contexts
         if project_name not in contexts:
+            import runtime  # deferred: runtime imports tester at module load
+            missing = runtime.unknown_project_error(project_name)
+            if missing:
+                raise ValueError(missing)
             browser = await self.get_browser(headed)
             # The same project's context in the OTHER mode holds the freshest
             # auth (cookies live there after login_project) — carry it over so

@@ -8,7 +8,7 @@ import config
 import devices
 import interactions
 from crawler import Crawler
-from runtime import auth_handler, get_tester, project_manager, session_manager
+from runtime import auth_handler, get_tester, project_manager, session_manager, unknown_project_error
 from sessions import real_page
 
 from .registry import tool
@@ -18,6 +18,9 @@ from .registry import tool
 async def handle_open_session(args: dict) -> dict:
         t = await get_tester()
         project = args.get("project")
+        missing = unknown_project_error(project)
+        if missing:
+            return {"success": False, "error": missing}
         project_name = project or "default"
         headed = args.get("headed", False)
         proj_obj = project_manager.get(project) if project else None
@@ -69,6 +72,15 @@ async def handle_open_session(args: dict) -> dict:
                 await own_context.close()
             raise
         session.own_context = own_context
+        # Consent first, so the opening screenshot shows the page, not the banner.
+        consent_result = None
+        if args.get("consent"):
+            import consent
+            try:
+                consent_result = await consent.apply(session.page, args["consent"])
+            except Exception as e:  # the session is already open — report, don't lose it
+                consent_result = {"success": False, "action": args["consent"],
+                                  "error": f"consent handling failed: {str(e)[:200]}"}
         screenshot_path = await interactions.take_screenshot(
             session.page, project_name, "session_open", screenshot_dir=proj_screenshot_dir
         )
@@ -81,20 +93,17 @@ async def handle_open_session(args: dict) -> dict:
         }
         if headed:
             result["headed"] = True
-        if args.get("consent"):
-            import consent
-            try:
-                result["consent"] = await consent.apply(session.page, args["consent"])
-            except Exception as e:  # the session is already open — report, don't lose it
-                result["consent"] = {"success": False, "action": args["consent"],
-                                     "error": f"consent handling failed: {str(e)[:200]}"}
+        if consent_result is not None:
+            result["consent"] = consent_result
         if device:
             result["device"] = device
         if descriptor is not None:
             result["user_agent"] = descriptor.get("user_agent")
             result["viewport"] = descriptor.get("viewport")
-            result["device_context"] = ("private context emulating the device, seeded with the "
-                                        "project's login state; cookies set here stay in this session")
+            result["device_context"] = (
+                "private context emulating the device" +
+                (", seeded with the project's login state" if project else "") +
+                "; cookies set here stay in this session")
         elif viewport:
             result["viewport"] = viewport
         result["served_by_service_worker"] = session.served_by_service_worker
@@ -150,7 +159,10 @@ async def handle_set_viewport(args: dict) -> dict:
         reloaded = bool(args.get("reload"))
         if reloaded:
             # JS-driven breakpoints (Elementor, slider libs) only re-evaluate on load.
-            await real_page(session.page).reload(wait_until=config.WAIT_UNTIL)
+            from nav import resilient_nav
+            _, _dg = await resilient_nav(real_page(session.page), "reload",
+                                         wait_until="load" if session.wait_downgraded else None)
+            session.wait_downgraded = session.wait_downgraded or _dg
         result = {
             "success": True,
             "viewport": {"width": width, "height": height},
@@ -321,31 +333,43 @@ async def _cdp(session):
 
 @tool("navigate_session")
 async def handle_navigate_session(args: dict) -> dict:
-        from nav import from_service_worker, resilient_goto
+        from nav import from_service_worker, resilient_goto, resilient_nav
 
         session = session_manager.get_session(args["session_id"])
         action = args["action"]
         page = real_page(session.page)
-        wait_until = args.get("wait_until") or config.WAIT_UNTIL
+        # A page already known never to go network-idle (Turnstile, polling):
+        # don't burn the full timeout again on every reload/back/forward.
+        known_busy = session.wait_downgraded and not args.get("wait_until")
+        wait_until = args.get("wait_until") or ("load" if known_busy else config.WAIT_UNTIL)
         result = {"success": True, "action": action}
+        if known_busy:
+            result["wait_downgraded"] = "load"
 
         if action == "back":
-            await page.go_back(wait_until=wait_until)
+            _, downgraded = await resilient_nav(page, "go_back", wait_until=wait_until)
+            if downgraded:
+                result["wait_downgraded"] = "load"
         elif action == "forward":
-            await page.go_forward(wait_until=wait_until)
+            _, downgraded = await resilient_nav(page, "go_forward", wait_until=wait_until)
+            if downgraded:
+                result["wait_downgraded"] = "load"
         elif action == "reload":
             hard = bool(args.get("hard"))
             if hard:
                 # Bypass the HTTP cache for this load: a redeploy must not be
                 # masked by a cached document/asset.
                 cdp = await _cdp(session)
+                await cdp.send("Network.enable")  # setCacheDisabled is a no-op without it
                 await cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
                 try:
                     await cdp.send("Network.clearBrowserCache")
                 except Exception:
                     pass
             try:
-                response = await page.reload(wait_until=wait_until)
+                response, downgraded = await resilient_nav(page, "reload", wait_until=wait_until)
+                if downgraded:
+                    result["wait_downgraded"] = "load"
             finally:
                 if hard:
                     try:
@@ -372,14 +396,18 @@ async def handle_navigate_session(args: dict) -> dict:
                     "response", predicate=_network_predicate(args["wait_for_network"]),
                     timeout=int(args.get("timeout") or 30000)))
             try:
-                response, downgraded = await resilient_goto(page, url, wait_until=wait_until)
+                response, downgraded = await resilient_goto(
+                    page, url, wait_until=args.get("wait_until") or config.WAIT_UNTIL)
+                result.pop("wait_downgraded", None)
                 if downgraded:
                     result["wait_downgraded"] = "load"
+                # a goto lands on a (possibly different) page: re-learn its idleness
+                session.wait_downgraded = bool(downgraded)
                 result["status_code"] = response.status if response is not None else None
                 result["served_by_service_worker"] = from_service_worker(response)
                 session.served_by_service_worker = result["served_by_service_worker"]
                 if args.get("wait_for"):
-                    await session.page.locator(args["wait_for"]).first.wait_for(
+                    await page.locator(args["wait_for"]).first.wait_for(
                         state="visible", timeout=int(args.get("timeout") or 10000))
                     result["waited_for"] = args["wait_for"]
                 if armed is not None:
@@ -396,6 +424,10 @@ async def handle_navigate_session(args: dict) -> dict:
             # Cookies are NEVER touched — that would log a project session out.
             from urllib.parse import urlparse
             parts = urlparse(page.url)
+            if parts.scheme not in ("http", "https") or not parts.netloc:
+                return {"success": False, "error":
+                        f"clear_site_data needs an http(s) page — this session is on '{page.url}'. "
+                        "Navigate to the site first (navigate_session action='goto'), then clear."}
             origin = f"{parts.scheme}://{parts.netloc}"
             try:
                 sw_count = await page.evaluate(
@@ -412,7 +444,7 @@ async def handle_navigate_session(args: dict) -> dict:
                 await cdp.send("Network.clearBrowserCache")
             except Exception:
                 pass
-            response = await page.reload(wait_until=wait_until)
+            response, _dg = await resilient_nav(page, "reload", wait_until=wait_until)
             result.update({"origin": origin, "cleared": types + ["http_cache"],
                            "service_workers_unregistered": sw_count,
                            "served_by_service_worker": from_service_worker(response)})
@@ -422,5 +454,11 @@ async def handle_navigate_session(args: dict) -> dict:
                     f"Unknown action '{action}'. Valid: back, forward, reload, goto, clear_site_data"}
         session.url = page.url
         result["url"] = session.url
-        result["title"] = await session.page.title()
+        # Title from the owning Page: an iframe session's Frame is detached by
+        # a top-level navigation and would raise here.
+        result["title"] = await page.title()
+        if session.parent_session_id and not hasattr(session.page, "main_frame"):
+            result["frame_note"] = ("this is an iframe session and the top-level page navigated — its "
+                                    "frame is gone; continue with the parent session id (or select_iframe again)")
+            return result
         return await interactions.attach_observation(session, result, args, f"after_{action}")

@@ -28,7 +28,7 @@ async def handle_create_project(args: dict) -> dict:
             return {"success": False, "error": str(e)}
         if screenshot_dir:
             try:
-                os.makedirs(os.path.join(screenshot_dir, args["name"]), exist_ok=True)
+                project_manager.claim_screenshot_dir(args["name"])
             except OSError as e:
                 # Don't keep a project whose screenshot dir can't be created
                 project_manager.delete(args["name"])

@@ -6,6 +6,30 @@ import config
 from nav import resilient_goto
 
 
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _host_key(parsed) -> str:
+    """host[:port] with the host lowercased and the scheme's default port dropped."""
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    if port and port != _DEFAULT_PORTS.get(parsed.scheme.lower()):
+        return f"{host}:{port}"
+    return host
+
+
+def decode_sitemap_body(body: bytes) -> bytes:
+    """Sitemaps are often served as .xml.gz with a plain content type —
+    gunzip by magic bytes."""
+    if body[:2] == b"\x1f\x8b":
+        import gzip
+        try:
+            return gzip.decompress(body)
+        except OSError:
+            return body
+    return body
+
+
 class Crawler:
     """Crawl a website to discover pages.
 
@@ -24,18 +48,19 @@ class Crawler:
         self.known = set()
 
     def _normalize_url(self, url: str) -> str:
-        """Normalize URL by removing fragments and trailing slashes.
-        Query strings are kept — /items?page=2 and /items?page=3 are distinct pages."""
+        """Normalize URL: lowercase scheme/host, drop default ports, fragments
+        and trailing slashes. Query strings are kept — /items?page=2 and
+        /items?page=3 are distinct pages."""
         parsed = urlparse(url)
-        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-        normalized = normalized or f"{parsed.scheme}://{parsed.netloc}"
+        normalized = f"{parsed.scheme.lower()}://{_host_key(parsed)}{parsed.path}".rstrip("/")
+        normalized = normalized or f"{parsed.scheme.lower()}://{_host_key(parsed)}"
         if parsed.query:
             normalized += f"?{parsed.query}"
         return normalized
 
     def _is_same_domain(self, url: str, base_url: str) -> bool:
-        """Check if URL is on the same domain as base URL."""
-        return urlparse(url).netloc == urlparse(base_url).netloc
+        """Same host (case-insensitive) and same effective port."""
+        return _host_key(urlparse(url)) == _host_key(urlparse(base_url))
 
     def _is_valid_url(self, url: str) -> bool:
         """Check if URL is valid for crawling."""
@@ -114,7 +139,7 @@ class Crawler:
                 resp = await context.request.get(sm_url, timeout=8000)
                 if not resp.ok:
                     continue
-                body = await resp.body()
+                body = decode_sitemap_body(await resp.body())
                 root = ElementTree.fromstring(body)
             except Exception:
                 continue
@@ -185,6 +210,7 @@ class Crawler:
         page.set_default_timeout(config.TIMEOUT)
 
         ceiling_hit = False
+        scope, scope_note = start_url, None
         try:
             while self.to_visit and len(discovered) < cap:
                 url, depth = self.to_visit.pop(0)
@@ -200,6 +226,26 @@ class Crawler:
                 except Exception:
                     continue
 
+                # Where did we really land? A redirect means the page IS the
+                # target URL: record that one (once), not the alias.
+                final = self._normalize_url(page.url) if page.url.startswith("http") else url
+                if not discovered and not self._is_same_domain(final, scope):
+                    # The site's canonical host differs from base_url (apex ->
+                    # www, http -> another name): adopt it, or every link would
+                    # look off-domain and the "crawl" would be one page.
+                    scope_note = (f"base_url redirected to {_host_key(urlparse(final))} — "
+                                  "crawl scoped to that host")
+                    scope = final
+                if final != url:
+                    self.known.discard(url)   # an alias is not a page of its own
+                    if not self._is_same_domain(final, scope):
+                        continue          # redirected off-site: not one of our pages
+                    if final in self.visited:
+                        continue          # alias of a page already crawled
+                    self.visited.add(final)
+                    self.known.add(final)
+                    url = final
+
                 discovered.append(url)
 
                 if on_page is not None:
@@ -213,7 +259,7 @@ class Crawler:
                     continue
 
                 try:
-                    links = await self.extract_links(page, url)
+                    links = await self.extract_links(page, scope)
                 except Exception:
                     continue
 
@@ -240,4 +286,6 @@ class Crawler:
             "not_crawled_truncated": len(not_crawled) > listed,
             "sources": sources,
             "ceiling_hit": ceiling_hit,
+            "scope": _host_key(urlparse(scope)),
+            "scope_note": scope_note,
         }

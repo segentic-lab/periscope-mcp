@@ -130,7 +130,10 @@ async def _installability(page) -> dict:
                 await cdp.detach()
             except Exception:
                 pass
-        errors = [e.get("errorId") for e in (data or {}).get("installabilityErrors", [])]
+        # 'in-incognito' describes Periscope's own isolated automation context,
+        # not the site — it is never a finding.
+        errors = [e.get("errorId") for e in (data or {}).get("installabilityErrors", [])
+                  if e.get("errorId") != "in-incognito"]
         return {"source": "cdp", "errors": errors, "installable": not errors}
     except Exception as e:
         return {"source": "unavailable", "errors": None, "installable": None,
@@ -163,11 +166,12 @@ async def handle_check_pwa(args: dict) -> dict:
             from nav import resilient_goto
             try:
                 await resilient_goto(page, url)
-            except Exception:
+            except Exception as e:
                 await page.close()
                 if own_ctx:
                     await own_ctx.close()
-                raise
+                return {"success": False, "url": url,
+                        "error": f"check_pwa could not load the page: {str(e).splitlines()[0][:200]}"}
 
             async def cleanup():
                 await page.close()
@@ -193,29 +197,39 @@ async def handle_check_pwa(args: dict) -> dict:
                     bip = None
 
             issues = []
-            if not manifest["found"]:
-                issues.append({"type": "pwa", "severity": "error",
-                               "message": "No web app manifest — the page cannot be installed",
-                               "details": manifest.get("problems", [])})
-            elif manifest.get("problems"):
-                issues.append({"type": "pwa", "severity": "warning",
-                               "message": f"{len(manifest['problems'])} manifest problem(s) affect installability",
-                               "details": manifest["problems"][:8]})
-            if not sw.get("registered"):
-                issues.append({"type": "pwa", "severity": "warning",
-                               "message": "No service worker registered — no offline support, and Chrome "
-                                          "won't show the install prompt"})
-            elif sw.get("state") and sw["state"] != "activated":
+            # A site with neither a manifest nor a service worker isn't trying
+            # to be a PWA: say so once, as information — not as three defects.
+            is_pwa = bool(manifest["found"] or sw.get("registered"))
+            if not is_pwa:
                 issues.append({"type": "pwa", "severity": "info",
-                               "message": f"Service worker is '{sw['state']}', not activated yet"})
-            if install.get("errors"):
-                issues.append({"type": "pwa", "severity": "warning",
-                               "message": f"Chrome reports {len(install['errors'])} installability error(s)",
-                               "details": install["errors"][:8]})
+                               "message": "Not a PWA: no web app manifest and no service worker "
+                                          "(nothing to fix unless the site should be installable)"})
+            else:
+                if not manifest["found"]:
+                    issues.append({"type": "pwa", "severity": "error",
+                                   "message": "No web app manifest — the page cannot be installed",
+                                   "details": manifest.get("problems", [])})
+                elif manifest.get("problems"):
+                    issues.append({"type": "pwa", "severity": "warning",
+                                   "message": f"{len(manifest['problems'])} manifest problem(s) affect installability",
+                                   "details": manifest["problems"][:8]})
+                if not sw.get("registered"):
+                    issues.append({"type": "pwa", "severity": "warning",
+                                   "message": "No service worker registered — no offline support (Chrome 108+ "
+                                              "can still install the app from the manifest alone; other "
+                                              "browsers and richer install UI still expect one)"})
+                elif sw.get("state") and sw["state"] != "activated":
+                    issues.append({"type": "pwa", "severity": "info",
+                                   "message": f"Service worker is '{sw['state']}', not activated yet"})
+                if install.get("errors"):
+                    issues.append({"type": "pwa", "severity": "warning",
+                                   "message": f"Chrome reports {len(install['errors'])} installability error(s)",
+                                   "details": install["errors"][:8]})
 
             return {
                 "success": True,
                 "url": real_page(page).url,
+                "is_pwa": is_pwa,
                 "manifest": manifest,
                 "service_worker": sw,
                 "installability": install,

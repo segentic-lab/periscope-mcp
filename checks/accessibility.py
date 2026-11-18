@@ -20,7 +20,7 @@ async def check_keyboard_navigation(page: Page, max_tabs: int = 50) -> dict:
     issues = []
 
     for i in range(max_tabs):
-        await page.keyboard.press("Tab")
+        await (page if hasattr(page, "keyboard") else page.page).keyboard.press("Tab")
         await asyncio.sleep(0.1)
 
         element_info = await page.evaluate("""() => {
@@ -145,6 +145,10 @@ async def check_accessibility(page: Page) -> list[dict]:
             if (el.querySelector('img[alt]') && el.querySelector('img[alt]').alt.trim()) return true;
             const svgTitle = el.querySelector('svg title');
             if (svgTitle && svgTitle.textContent.trim()) return true;
+            // a labelled descendant names the control (icon links/buttons)
+            for (const d of el.querySelectorAll('[aria-label]')) {
+                if (d.getAttribute('aria-hidden') !== 'true' && d.getAttribute('aria-label').trim()) return true;
+            }
             return false;
         };
     """
@@ -152,7 +156,8 @@ async def check_accessibility(page: Page) -> list[dict]:
     # Check for empty links (aria-hidden links are exempt — not exposed to AT)
     empty_links = await page.evaluate("""() => {
         %s
-        const links = document.querySelectorAll('a');
+        // a[href] only: <a id="top"></a> / <a name="x"> are anchors, not links
+        const links = document.querySelectorAll('a[href]');
         let count = 0;
         links.forEach(a => {
             if (a.getAttribute('aria-hidden') === 'true' || a.closest('[aria-hidden="true"]')) return;

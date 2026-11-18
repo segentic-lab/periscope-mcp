@@ -22,9 +22,45 @@ _BOOL_ARGS = {
 }
 
 
-def coerce_args(args: dict):
+_numeric_cache: dict = {}
+
+
+def _numeric_params(tool: str) -> dict:
+    """{param: int|float} for a tool's integer/number schema properties."""
+    if tool not in _numeric_cache:
+        out = {}
+        try:
+            from tool_schemas import TOOLS
+            for t in TOOLS:
+                if t.name != tool:
+                    continue
+                schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
+                for key, prop in (schema.get("properties") or {}).items():
+                    types = prop.get("type")
+                    types = types if isinstance(types, list) else [types]
+                    if "integer" in types:
+                        out[key] = int
+                    elif "number" in types:
+                        out[key] = float
+        except Exception:
+            out = {}
+        _numeric_cache[tool] = out
+    return _numeric_cache[tool]
+
+
+def coerce_args(args: dict, tool: str = None):
     """Coerce JSON-string args in place: MCP clients with stale schemas may
-    serialize array/bool parameters as JSON strings."""
+    serialize array/bool parameters as JSON strings. With `tool`, numeric
+    parameters (per that tool's schema) sent as strings become numbers — the
+    server does not rely on SDK-side schema validation to guarantee types."""
+    if tool:
+        for key, cast in _numeric_params(tool).items():
+            val = args.get(key)
+            if isinstance(val, str) and val.strip():
+                try:
+                    args[key] = cast(float(val)) if cast is int and float(val).is_integer() else cast(val)
+                except ValueError:
+                    pass  # leave it; the handler reports the bad value
     for key, val in list(args.items()):
         if not isinstance(val, str):
             continue

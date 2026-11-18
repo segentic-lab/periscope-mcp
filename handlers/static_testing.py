@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import config
 import interactions
 from crawler import Crawler
-from runtime import auth_handler, get_tester, project_manager, session_manager
+from runtime import auth_handler, get_tester, project_manager, session_manager, unknown_project_error
 from sessions import real_page
 
 from .registry import tool
@@ -33,6 +33,23 @@ def _url_slug(url: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", slug)[:120]
 
 
+def unique_slug(url: str, used: set) -> str:
+    """_url_slug made unique within one crawl: /a/b and /a_b must not
+    overwrite each other's saved file."""
+    slug = _url_slug(url)
+    if slug in used:
+        import hashlib
+        slug = f"{slug[:110]}_{hashlib.md5(url.encode()).hexdigest()[:6]}"
+    used.add(slug)
+    return slug
+
+
+def _is_project_report(filename: str, project_name: str) -> bool:
+    """<project>_<YYYYMMDD>_<HHMMSS>.json exactly — 'shop' must not match
+    'shop_staging_…' reports."""
+    return re.fullmatch(re.escape(project_name) + r"_\d{8}_\d{6}\.json", filename) is not None
+
+
 def _coverage_fields(crawl: dict, tested: bool) -> dict:
     """Flatten the crawler's coverage report onto a handler result. `tested`
     picks the noun (pages_not_tested for test_project, pages_not_crawled for
@@ -44,7 +61,10 @@ def _coverage_fields(crawl: dict, tested: bool) -> dict:
         f"pages_not_{noun}_count": crawl["not_crawled_count"],
         f"pages_not_{noun}_truncated": crawl["not_crawled_truncated"],
         "crawl_sources": crawl["sources"],
+        "crawl_scope": crawl.get("scope"),
     }
+    if crawl.get("scope_note"):
+        fields["crawl_scope_note"] = crawl["scope_note"]
     if crawl["ceiling_hit"]:
         fields["ceiling_hit"] = True
         fields["ceiling"] = config.MAX_PAGES_CEILING
@@ -55,8 +75,7 @@ def _latest_report_urls(project_name: str):
     """The set of page URLs from this project's most recent saved report, plus
     the report's filename — for the coverage delta. None if no prior report."""
     try:
-        files = [f for f in os.listdir(config.REPORTS_DIR)
-                 if f.startswith(project_name + "_") and f.endswith(".json")]
+        files = [f for f in os.listdir(config.REPORTS_DIR) if _is_project_report(f, project_name)]
     except OSError:
         return None
     if not files:
@@ -94,7 +113,16 @@ async def _preflight_auth(t, project) -> dict | None:
         page.set_default_timeout(config.TIMEOUT)
         try:
             await resilient_goto(page, project.base_url)
-            return redirected_to_login(page.url, login_url)
+            if redirected_to_login(page.url, login_url):
+                return True
+            # Bounced somewhere else that shows a password field (SSO host,
+            # /accounts/sign-in): that is a login wall too.
+            moved = urlparse(page.url).path.rstrip("/") != urlparse(project.base_url).path.rstrip("/") \
+                or urlparse(page.url).netloc != urlparse(project.base_url).netloc
+            if moved:
+                from auth import _has_password_field
+                return await _has_password_field(page)
+            return False
         finally:
             await page.close()
 
@@ -117,6 +145,9 @@ async def handle_test_url(args: dict) -> dict:
         t = await get_tester()
         project_name = args.get("project")  # None -> isolated ephemeral context
         checks = args.get("checks")
+        missing = unknown_project_error(project_name)
+        if missing:
+            return {"url": args.get("url"), "status": "error", "success": False, "error": missing}
         proj_obj = project_manager.get(project_name) if project_name else None
         proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
 
@@ -154,6 +185,7 @@ async def handle_crawl_project(args: dict) -> dict:
         want_meta = _as_bool(args.get("meta"))
         save_md = _as_bool(args.get("save_md")) or bool(args.get("save_dir"))
         pages_meta = []
+        used_slugs = set()
         md_dir = None
         if save_md:
             md_dir = args.get("save_dir") or os.path.join(config.DATA_DIR, "fetches", project.name)
@@ -173,7 +205,7 @@ async def handle_crawl_project(args: dict) -> dict:
                         "document.querySelector('meta[property=\"og:description\"]')?.content || ''")
                 if save_md:
                     content, _ = extract_readable(await rp.content(), rp.url, "markdown")
-                    slug = _url_slug(url) + ".md"
+                    slug = unique_slug(url, used_slugs) + ".md"
                     fpath = os.path.join(md_dir, slug)
                     with open(fpath, "w", encoding="utf-8") as f:
                         f.write(content)
@@ -291,7 +323,7 @@ async def handle_list_reports(args: dict) -> dict:
 
         for filename in os.listdir(config.REPORTS_DIR):
             if filename.endswith(".json"):
-                if project_filter and not filename.startswith(project_filter + "_"):
+                if project_filter and not _is_project_report(filename, project_filter):
                     continue
                 filepath = os.path.join(config.REPORTS_DIR, filename)
                 stat = os.stat(filepath)
@@ -309,9 +341,20 @@ async def handle_list_reports(args: dict) -> dict:
 @tool("get_report")
 async def handle_get_report(args: dict) -> dict:
         report_path = args["report_path"]
-        if os.path.exists(report_path):
-            with open(report_path, "r") as f:
-                report = json.load(f)
+        # Reports only: this must never become a way to read projects.json
+        # (stored credentials) or saved login sessions.
+        real = os.path.realpath(report_path)
+        base = os.path.realpath(config.REPORTS_DIR)
+        if os.path.commonpath([real, base]) != base or not real.endswith(".json"):
+            return {"success": False, "error":
+                    f"get_report only reads .json reports inside {config.REPORTS_DIR} — "
+                    "use list_reports to get valid paths."}
+        if os.path.exists(real):
+            try:
+                with open(real, "r") as f:
+                    report = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                return {"success": False, "error": f"Report is unreadable: {e}"}
             return {"success": True, "report": report}
         return {"success": False, "error": "Report not found"}
 
@@ -375,7 +418,9 @@ async def handle_visual_check(args: dict) -> dict:
                              threshold=args.get("threshold", 10))
             if cmp.get("success") is False:
                 return cmp
-            max_diff = float(args.get("max_diff_percent") or 0.5)
+            # `or 0.5` would turn an explicit 0 (pixel-exact) into the default
+            _md = args.get("max_diff_percent")
+            max_diff = 0.5 if _md is None or _md == "" else float(_md)
             diff_pct = cmp.get("diff_percentage", 100.0)
             return {
                 "success": True, "action": "check", "name": name,

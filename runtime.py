@@ -33,3 +33,21 @@ async def get_tester() -> WebsiteTester:
                 print(f"periscope: browser crashed/disconnected — restarted; "
                       f"{dropped} session(s) dropped, login flags reset", file=sys.stderr)
         return tester
+
+
+def unknown_project_error(name) -> str | None:
+    """Error text when a `project` argument names no project — a typo must
+    not silently run in a fresh, logged-out context."""
+    if not name or name == "default" or project_manager.get(name) is not None:
+        return None
+    import difflib
+    names = sorted(project_manager.projects)
+    close = difflib.get_close_matches(name, names, n=3, cutoff=0.6)
+    shown = close + [n for n in names if n not in close][: max(0, 8 - len(close))]
+    more = len(names) - len(shown)
+    known = (", ".join(shown) + (f" and {more} more (list_projects shows all)" if more > 0
+                                 else "")) if names else "none yet (see list_projects)"
+    hint = f" Did you mean '{close[0]}'?" if close else ""
+    return (f"Project '{name}' not found.{hint} Create it with create_project first, or omit "
+            f"'project' for an isolated one-off context. Existing projects: {known}. "
+            "list_projects shows them all.")

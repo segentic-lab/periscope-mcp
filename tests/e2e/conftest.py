@@ -38,6 +38,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
     """Serves tests/e2e/fixtures plus origin files and a small JSON API."""
     mode = "good"
     slow_hits = 0
+    cached_hits = 0
 
     def do_GET(self):
         path = self.path.split("?")[0]
@@ -49,6 +50,39 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._text(json.dumps({"items": [1, 2, 3]}), "application/json")
         if path == "/submit":
             return self._text("<html><body>submitted</body></html>", "text/html")
+        # --- 0.12 hunt fixtures ---------------------------------------------
+        if path == "/sso-login":
+            # The configured login URL bounces to ANOTHER login path (SSO style).
+            if "sid=ok" in (self.headers.get("Cookie") or ""):
+                self.send_response(302); self.send_header("Location", "/app"); self.end_headers(); return
+            self.send_response(302); self.send_header("Location", "/accounts/sign-in"); self.end_headers(); return
+        if path == "/accounts/sign-in":
+            with open(os.path.join(FIXTURES, "login.html"), "rb") as f:
+                return self._text(f.read().decode(), "text/html")
+        if path == "/old-page":
+            self.send_response(301); self.send_header("Location", "/article.html"); self.end_headers(); return
+        if path == "/redir-host":
+            # apex -> www style: bounce to the same server under its other host name
+            port = self.server.server_address[1]
+            self.send_response(302); self.send_header("Location", f"http://127.0.0.1:{port}/hub.html")
+            self.end_headers(); return
+        if path == "/whoami":
+            cookie = self.headers.get("Cookie") or "NONE"
+            return self._text(f"<html><head><title>whoami</title></head><body><p id='c'>{cookie}</p></body></html>", "text/html")
+        if path == "/cached.js":
+            # Long-lived cacheable subresource with a hit counter: a normal
+            # reload serves it from cache, a hard reload must refetch it.
+            type(self).cached_hits += 1
+            data = b"window.__cached = true;"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript")
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == "/cached-count":
+            return self._text(json.dumps({"count": type(self).cached_hits}), "application/json")
         if path == "/api/slow-count":
             return self._text(json.dumps({"count": type(self).slow_hits}), "application/json")
         if path == "/basic":
@@ -132,7 +166,7 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         # Mirror GET's notion of existence — a blanket 200 would hide 404s
         # from checks that verify resources via HEAD (e.g. lazy images).
         path = self.path.split("?")[0]
-        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login", "/download.pdf", "/inline.html", "/api/slow-count", "/basic"}
+        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login", "/download.pdf", "/inline.html", "/api/slow-count", "/basic", "/cached.js", "/cached-count", "/sso-login", "/accounts/sign-in", "/old-page", "/redir-host", "/whoami"}
         if path in known or os.path.isfile(os.path.join(FIXTURES, path.lstrip("/"))):
             self.send_response(200)
         else:

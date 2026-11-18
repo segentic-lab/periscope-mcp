@@ -7,14 +7,21 @@ import config
 from nav import from_service_worker, resilient_goto
 
 
+def _nav_key(url: str) -> str:
+    """URL without its fragment — the identity of a page for nav counting."""
+    return (url or "").split("#", 1)[0]
+
+
 class RequestCounter:
-    """Monotonic count of requests STARTED on a page. Unlike the network log
-    (appended on response, and capped) it registers an in-flight request the
-    moment a click fires it — the signal change detection needs."""
-    __slots__ = ("n",)
+    """Monotonic counts of requests STARTED and popups opened on a page.
+    Unlike the network log (appended on response, and capped) it registers an
+    in-flight request the moment a click fires it — the signal change
+    detection needs. A popup/new tab is a page change too."""
+    __slots__ = ("n", "popups")
 
     def __init__(self):
         self.n = 0
+        self.popups = 0
 
 
 @dataclass
@@ -48,7 +55,11 @@ def attach_request_counter(page) -> RequestCounter:
 
     def on_request(_req):
         counter.n += 1
+
+    def on_popup(_p):
+        counter.popups += 1
     page.on("request", on_request)
+    page.on("popup", on_popup)
     return counter
 
 
@@ -61,7 +72,15 @@ def attach_capture(page) -> tuple[list, list, list, list, RequestCounter]:
 
     def on_console(msg):
         if msg.type == "error":
-            _capped_append(console_errors, msg.text, config.MAX_CONSOLE_LOG)
+            text = msg.text
+            # "Failed to load resource: … 503" is useless without the URL.
+            try:
+                loc = (msg.location or {}).get("url")
+                if loc and loc not in text and "Failed to load resource" in text:
+                    text = f"{text} — {loc}"
+            except Exception:
+                pass
+            _capped_append(console_errors, text, config.MAX_CONSOLE_LOG)
         else:
             _capped_append(console_log, msg.text, config.MAX_CONSOLE_LOG)
 
@@ -144,9 +163,16 @@ class SessionManager:
         """Fire-and-forget page close from sync context, holding a task ref so it isn't GC'd."""
         close = getattr(session.page, "close", None)  # Frame (iframe session) has no close()
         own_context = session.own_context
-        if close is None and own_context is None:
+        popup_pages = [e["page"] for e in session.popups]
+        if close is None and own_context is None and not popup_pages:
             return
         async def _close():
+            for p in popup_pages:
+                try:
+                    if not p.is_closed():
+                        await p.close()
+                except Exception:
+                    pass
             try:
                 if close is not None:
                     await close()
@@ -230,10 +256,28 @@ class SessionManager:
         if not isinstance(page, Page):
             return
 
+        # Count what an agent would call "I am on a different page now": a new
+        # document, or an SPA route change (path/query). Fragment changes and
+        # same-URL history.replaceState (scroll-spy, analytics) are noise.
+        state = {"key": _nav_key(page.url), "t": 0.0}
+
         def on_nav(frame, _s=session, _p=page):
-            if frame == _p.main_frame:
+            if frame != _p.main_frame:
+                return
+            key = _nav_key(frame.url)
+            if key != state["key"]:
+                state["key"] = key
+                state["t"] = time.time()
                 _s.nav_generation += 1
+
+        def on_doc(_page=None, _s=session):
+            # New document for the SAME url (reload) — a url change was
+            # already counted by on_nav a moment ago.
+            if time.time() - state["t"] > 5:
+                _s.nav_generation += 1
+            state["t"] = 0.0
         page.on("framenavigated", on_nav)
+        page.on("domcontentloaded", on_doc)
 
     def get_session(self, session_id: str) -> PageSession:
         """Get a session by ID, updating last_accessed. Raises KeyError if not found or expired."""
@@ -280,6 +324,14 @@ class SessionManager:
         if session_id in self.sessions:
             session = self.sessions.pop(session_id)
             self._remove_children(session_id, "parent session closed")
+            # Popups/new tabs this page opened die with it — in a shared
+            # project context nothing else would ever close them.
+            for entry in session.popups:
+                try:
+                    if not entry["page"].is_closed():
+                        await entry["page"].close()
+                except Exception:
+                    pass
             try:
                 await session.page.close()
             except Exception:

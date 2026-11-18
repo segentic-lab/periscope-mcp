@@ -11,6 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        mcp: ["mcp>=2,<3", "mcp>=1,<2"]   # server.py speaks both SDK lines
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,9 +19,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt "${{ matrix.mcp }}"
       - name: Compile check
-        run: python -m compileall -q server.py runtime.py coercion.py tool_schemas.py handlers/ checks/ tester.py sessions.py interactions.py projects.py auth.py crawler.py utils.py config.py
+        run: python -m compileall -q server.py runtime.py coercion.py tool_schemas.py handlers/ checks/ tester.py sessions.py interactions.py projects.py auth.py crawler.py utils.py config.py pagechange.py devices.py consent.py lighthouse_summary.py journal.py nav.py
       - name: Run unit tests
         run: pytest tests/ --ignore=tests/e2e -v
 

@@ -1,10 +1,22 @@
 import json
 import os
 import sys
-from dataclasses import dataclass, field, asdict
+import re
+from dataclasses import dataclass, field, fields, asdict
 from datetime import datetime
 from typing import Optional
 import config
+
+
+_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
+_MARKER = ".periscope-project"
+
+
+def _known(cls, data: dict) -> dict:
+    """Keep only the keys a dataclass declares (a store written by a newer
+    version may carry fields this one doesn't know)."""
+    names = {f.name for f in fields(cls)}
+    return {k: v for k, v in (data or {}).items() if k in names}
 
 
 @dataclass
@@ -83,11 +95,11 @@ class Project:
             auth_data = data["auth"]
             auth = ProjectAuth(method=auth_data.get("method", ""))
             if auth_data.get("form_login"):
-                auth.form_login = FormLogin(**auth_data["form_login"])
+                auth.form_login = FormLogin(**_known(FormLogin, auth_data["form_login"]))
             if auth_data.get("basic_auth"):
-                auth.basic_auth = BasicAuth(**auth_data["basic_auth"])
+                auth.basic_auth = BasicAuth(**_known(BasicAuth, auth_data["basic_auth"]))
             if auth_data.get("cookie_auth"):
-                auth.cookie_auth = CookieAuth(cookies=auth_data["cookie_auth"]["cookies"])
+                auth.cookie_auth = CookieAuth(cookies=auth_data["cookie_auth"].get("cookies", []))
 
         return cls(
             name=data["name"],
@@ -127,8 +139,20 @@ class ProjectManager:
                   f" starting empty{f', original moved to {backup}' if backup else ''}",
                   file=sys.stderr)
             return
+        if not isinstance(data, dict):
+            print(f"WARNING: {config.PROJECTS_FILE} is not a JSON object; starting empty",
+                  file=sys.stderr)
+            return
         for name, proj_data in data.items():
-            self.projects[name] = Project.from_dict(proj_data)
+            # One bad entry (hand-edited file, a field from a newer version)
+            # must not take the whole store — or server start-up — down.
+            try:
+                if "name" not in proj_data:
+                    proj_data = {**proj_data, "name": name}
+                self.projects[name] = Project.from_dict(proj_data)
+            except Exception as e:
+                print(f"WARNING: skipping unreadable project '{name}' in "
+                      f"{config.PROJECTS_FILE}: {e}", file=sys.stderr)
         # Login state lives in in-memory browser contexts, which don't survive
         # a server restart — a persisted True flag would always be stale.
         self.reset_login_flags(save=False)
@@ -202,6 +226,12 @@ class ProjectManager:
             self._save()
 
     def create(self, name: str, base_url: str, **kwargs) -> Project:
+        # The name becomes a path component (screenshots/<name>/,
+        # sessions/<name>.json, reports/<name>_*.json): keep it a plain token.
+        if not isinstance(name, str) or not _NAME_RE.fullmatch(name) or name in (".", ".."):
+            raise ValueError(
+                f"Invalid project name {name!r}: use 1-80 characters from letters, digits, "
+                "'.', '_' and '-', starting with a letter or digit (e.g. 'client-site').")
         if name in self.projects:
             raise ValueError(f"Project '{name}' already exists")
 
@@ -242,15 +272,38 @@ class ProjectManager:
         del self.projects[name]
         self.clear_session_state(name)
         self._save()
-        # Clean up project screenshots (default dir + custom screenshot_dir if set)
+        # Clean up project screenshots. Deleting is only safe for directories
+        # that are provably ours: a strict child of the base, and — for a
+        # user-supplied screenshot_dir — one Periscope created (marker file).
+        # Never rmtree a pre-existing user directory that shares the name.
         import shutil
-        for base in (config.SCREENSHOT_DIR, custom_dir):
+        for base, need_marker in ((config.SCREENSHOT_DIR, False), (custom_dir, True)):
             if not base:
                 continue
-            project_screenshot_dir = os.path.join(base, name)
-            if os.path.exists(project_screenshot_dir):
-                shutil.rmtree(project_screenshot_dir)
+            target = os.path.realpath(os.path.join(base, name))
+            base_real = os.path.realpath(base)
+            if os.path.dirname(target) != base_real or not os.path.isdir(target):
+                continue  # '..', '', nested or missing — not a project dir
+            if need_marker and not os.path.exists(os.path.join(target, _MARKER)):
+                continue
+            shutil.rmtree(target, ignore_errors=True)
         return True
+
+    def claim_screenshot_dir(self, name: str) -> bool:
+        """Create <screenshot_dir>/<name>/ for a project with a custom
+        screenshot_dir. Marks it as Periscope's only when it did not exist
+        before, so delete() never removes a directory the user already had.
+        Raises OSError when the directory can't be created."""
+        project = self.get(name)
+        if not project or not project.screenshot_dir:
+            return False
+        target = os.path.join(project.screenshot_dir, name)
+        existed = os.path.isdir(target)
+        os.makedirs(target, exist_ok=True)
+        if not existed:
+            with open(os.path.join(target, _MARKER), "w") as f:
+                f.write("created by periscope — safe to delete with the project\n")
+        return not existed
 
     def set_form_login(
         self,

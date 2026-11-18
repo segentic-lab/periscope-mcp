@@ -4,7 +4,7 @@ from datetime import datetime
 from playwright.async_api import Page
 import config
 import pagechange
-from nav import resilient_goto
+from nav import resilient_goto, resilient_nav
 
 
 # Injected before page scripts so it captures every interaction across a
@@ -499,6 +499,9 @@ async def select_option(
         return {"success": True, "method": "native_select"}
 
     # Custom dropdown (combobox, radix, shadcn, etc.)
+    if not (label or value) and index is None:
+        # An empty text match would "find" and click the first option.
+        return {"success": False, "error": "Provide value, label, or index"}
     await locator.click()
     await page.wait_for_timeout(300)  # let dropdown animate open
 
@@ -534,7 +537,7 @@ async def select_option(
             continue
 
     # Fallback failed — close dropdown by pressing Escape
-    await page.keyboard.press("Escape")
+    await _owner_page(page).keyboard.press("Escape")
     return {"success": False, "error": f"Could not find option matching '{search_text}' in custom dropdown"}
 
 
@@ -624,6 +627,14 @@ _STYLE_REMOVE_JS = "() => { const s = document.getElementById('periscope-cap-sty
 
 # Scroll through the whole page (then back to top) so IntersectionObserver-driven
 # reveals fire before capture. Bounded steps; short waits keep it quick.
+# The reveal pass scrolls the page; an observation must leave the page where
+# it found it (scroll-dependent state, "scroll then screenshot the viewport").
+_SCROLL_SAVE_JS = "() => { window.__periscope_scroll = [window.scrollX, window.scrollY]; }"
+_SCROLL_RESTORE_JS = """() => {
+    const s = window.__periscope_scroll;
+    if (s) { window.scrollTo(s[0], s[1]); delete window.__periscope_scroll; }
+}"""
+
 _REVEAL_SCROLL_JS = """async () => {
     const h = document.body.scrollHeight;
     const step = Math.max(200, window.innerHeight);
@@ -653,6 +664,7 @@ async def _apply_capture_prep(page: Page) -> list[str]:
     except Exception:
         pass
     try:
+        await page.evaluate(_SCROLL_SAVE_JS)
         await page.evaluate(_REVEAL_SCROLL_JS)
         prep.append("reveals_forced")
     except Exception:
@@ -662,7 +674,7 @@ async def _apply_capture_prep(page: Page) -> list[str]:
 
 async def _restore_capture_prep(page: Page) -> None:
     """Undo _apply_capture_prep — restore positions, styles, and media emulation."""
-    for js in (_STICKY_RESTORE_JS, _STYLE_REMOVE_JS):
+    for js in (_STICKY_RESTORE_JS, _STYLE_REMOVE_JS, _SCROLL_RESTORE_JS):
         try:
             await page.evaluate(js)
         except Exception:
@@ -1011,11 +1023,11 @@ async def _execute_steps(
                 await locator.wait_for(state="visible", timeout=timeout)
 
             elif action == "go_back":
-                await _owner_page(page).go_back(wait_until=config.WAIT_UNTIL)
+                await resilient_nav(_owner_page(page), "go_back")
                 step_result["url"] = page.url
 
             elif action == "go_forward":
-                await _owner_page(page).go_forward(wait_until=config.WAIT_UNTIL)
+                await resilient_nav(_owner_page(page), "go_forward")
                 step_result["url"] = page.url
 
             elif action == "upload_file":
@@ -1049,6 +1061,10 @@ async def _execute_steps(
                     element_index=int(step.get("element_index") or 0),
                 )
                 step_result["select_result"] = result
+                if not result.get("success"):
+                    # A failed selection is a failed step — not a success with
+                    # the failure tucked into a nested field.
+                    raise Exception(result.get("error") or "select_option failed")
 
             else:
                 step_result["success"] = False
@@ -1116,7 +1132,9 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
         validation = await page.evaluate("""([selector, formIndex]) => {
             const form = document.querySelectorAll(selector)[formIndex];
             if (!form) return [];
-            const invalids = form.querySelectorAll(':invalid');
+            // :invalid also matches <fieldset>/<form> wrappers of an invalid
+            // control — report the controls themselves.
+            const invalids = form.querySelectorAll('input:invalid, select:invalid, textarea:invalid');
             return Array.from(invalids).map(el => ({
                 tag: el.tagName.toLowerCase(),
                 name: el.name || el.id || null,
