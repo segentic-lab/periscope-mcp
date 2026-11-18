@@ -159,8 +159,12 @@ async def build_page_map(session, args: dict) -> dict:
                 if (t === 'button') return 'button';
                 if (t === 'nav') return 'navigation';
                 if (t === 'main') return 'main';
-                if (t === 'header') return 'banner';
-                if (t === 'footer') return 'contentinfo';
+                // header/footer are landmarks only at page level, not inside
+                // article/section/main/aside/nav (HTML-AAM)
+                if (t === 'header' || t === 'footer') {
+                    if (el.closest('article, section, main, aside, nav')) return null;
+                    return t === 'header' ? 'banner' : 'contentinfo';
+                }
                 if (t === 'aside') return 'complementary';
                 if (t === 'form') return 'form';
                 if (t === 'dialog') return 'dialog';
@@ -248,8 +252,15 @@ async def build_page_map(session, args: dict) -> dict:
                 if (nodes.length >= maxNodes) continue;  // keep counting for 'total'
 
                 const interactive = INTERACTIVE.has(role) || role === 'generic-interactive';
-                const name = accName(el);
-                const n = { role, name, selector: buildSelector(el) };
+                // Containers (landmarks, lists, groups) are named only by an
+                // explicit label — their text content is the whole subtree.
+                const explicit = (el.getAttribute('aria-label') || '').trim() ||
+                    (el.getAttribute('aria-labelledby') || '').split(/\\s+/).map(id => {
+                        const r = document.getElementById(id); return r ? (r.textContent || '').trim() : '';
+                    }).filter(Boolean).join(' ');
+                const name = (interactive || role === 'heading') ? accName(el) : explicit;
+                const n = { role, selector: buildSelector(el) };
+                if (name || interactive) n.name = name;
                 if (role === 'heading') n.level = parseInt((el.tagName[1] || el.getAttribute('aria-level') || 2), 10);
                 if (interactive) {
                     if (!name) n.unnamed = true;      // an a11y finding in itself
@@ -564,9 +575,18 @@ async def handle_auto_fill_form(args: dict) -> dict:
                 }
                 if (!resolves) selector = nthPath(el);
 
+                // Honeypots and other fields no human can reach must stay empty:
+                // filling them is how a bot gets its submission rejected.
+                const r = el.getBoundingClientRect();
+                const cs = getComputedStyle(el);
+                const offscreen = r.right < 0 || r.bottom < 0 || r.width === 0 || r.height === 0;
+                const unreachable = offscreen || cs.visibility === 'hidden' || cs.display === 'none' ||
+                    parseFloat(cs.opacity) === 0 || el.closest('[aria-hidden="true"]') !== null ||
+                    (el.getAttribute('tabindex') === '-1' && el.getAttribute('aria-hidden') === 'true');
                 return {
                     selector: selector,
                     type: type,
+                    unreachable: unreachable,
                     name: el.name || null,
                     id: el.id || null,
                     required: el.required,
@@ -600,6 +620,13 @@ async def handle_auto_fill_form(args: dict) -> dict:
             # semantic hints first — a type="text" field named "email"/"phone"
             # must still get plausible data, not "Test input"
             "email": "test@example.com", "e-mail": "test@example.com",
+            "e-pošt": "test@example.com", "eposta": "test@example.com", "e-naslov": "test@example.com",
+            "geslo": "TestPassword123!", "passwort": "TestPassword123!", "lozinka": "TestPassword123!",
+            "telefon": "+1234567890", "gsm": "+1234567890",
+            "priimek": "Doe", "nachname": "Doe", "vorname": "John",
+            "podjetje": "Test Corp", "firma": "Test Corp",
+            "sporočil": "This is a test message.", "nachricht": "This is a test message.",
+            "mesto": "San Francisco", "stadt": "San Francisco", "pošt": "94105", "plz": "94105",
             "phone": "+1234567890", "mobile": "+1234567890", "tel": "+1234567890",
             "website": "https://example.com", "url": "https://example.com",
             "username": "testuser",  # before "name" — 'username' contains 'name'
@@ -636,6 +663,9 @@ async def handle_auto_fill_form(args: dict) -> dict:
                         value = hint_value
                         break
 
+            if f.get("unreachable") and selector not in overrides:
+                filled.append({"selector": selector, "value": "skipped (not reachable by a user — likely a honeypot)"})
+                continue
             try:
                 if f["tag"] == "select" and f["options"]:
                     # Pick first non-empty option
@@ -713,6 +743,8 @@ async def handle_get_network_log(args: dict) -> dict:
                     "status": e["status"],
                     "method": e["method"],
                     "resource_type": e["resource_type"],
+                    "content_length": e.get("content_length"),
+                    "from_service_worker": e.get("from_service_worker", False),
                 }
                 for e in log
             ],
@@ -854,6 +886,41 @@ async def handle_page_state(args: dict) -> dict:
         return {"success": False, "error": f"Unknown action '{action}'. Valid: snapshot, restore, diff"}
 
 
+# DOM signature for page_state: every element under <body> (capped), keyed by
+# its nth-child path so elements WITHOUT an id are comparable too. Captures the
+# things an interaction changes: own text, classes, state attributes, values.
+_DOM_SIG_CAP = 4000
+_DOM_SIG_JS = """(cap) => {
+    const STATE = ['aria-checked','aria-expanded','aria-selected','aria-pressed','aria-hidden',
+                   'aria-disabled','aria-current','aria-invalid','hidden','disabled','open','data-state'];
+    const out = [];
+    const walk = (el, path) => {
+        if (out.length >= cap) return;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
+        const attrs = {};
+        for (const a of STATE) if (el.hasAttribute(a)) attrs[a] = el.getAttribute(a) || 'true';
+        if (el.checked === true) attrs.checked = 'true';
+        if (typeof el.value === 'string' && el.value && tag !== 'button' && tag !== 'li')
+            attrs.value = el.value.substring(0, 60);
+        let own = '';
+        for (const n of el.childNodes) if (n.nodeType === 3) own += n.textContent;
+        own = own.trim().replace(/\\s+/g, ' ').substring(0, 80);
+        out.push({
+            path, tag,
+            id: el.id || el.getAttribute('data-testid') || null,
+            cls: (typeof el.className === 'string' && el.className.trim()) || null,
+            text: own || null,
+            attrs,
+        });
+        let i = 0;
+        for (const child of el.children) { i++; walk(child, path + ' > ' + child.tagName.toLowerCase() + ':nth-child(' + i + ')'); }
+    };
+    if (document.body) walk(document.body, 'body');
+    return out;
+}"""
+
+
 async def _snapshot_page_state(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         snap_name = args["name"]
@@ -869,22 +936,9 @@ async def _snapshot_page_state(args: dict) -> dict:
                 const key = sessionStorage.key(i);
                 ss[key] = sessionStorage.getItem(key);
             }
-            // Capture a DOM signature for diff (all elements, up to 1000)
-            const elements = document.querySelectorAll('*');
-            const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 1000); i++) {
-                const el = elements[i];
-                const cls = el.className && typeof el.className === 'string'
-                    ? el.className.trim().split(/\\s+/).slice(0, 2).join(' ') : null;
-                domSig.push({
-                    tag: el.tagName.toLowerCase(),
-                    id: el.id || el.getAttribute('data-testid') || null,
-                    cls: cls || null,
-                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
-                });
-            }
-            return { localStorage: ls, sessionStorage: ss, domSignature: domSig };
+            return { localStorage: ls, sessionStorage: ss };
         }""")
+        state["domSignature"] = await session.page.evaluate(_DOM_SIG_JS, _DOM_SIG_CAP)
 
         # Only the cookies that apply to THIS page: a project context is shared
         # by every session of the project (and other sites it visited).
@@ -907,6 +961,7 @@ async def _snapshot_page_state(args: dict) -> dict:
             "name": snap_name,
             "url": session.page.url,
             "snapshot_count": len(session.snapshots),
+            "elements_captured": len(state["domSignature"]),
         }
 
 
@@ -975,66 +1030,70 @@ async def _diff_page_state(args: dict) -> dict:
 
         snap = session.snapshots[snap_name]
         old_dom = snap["domSignature"]
+        current_dom = await session.page.evaluate(_DOM_SIG_JS, _DOM_SIG_CAP)
 
-        # Get current DOM signature
-        current_dom = await session.page.evaluate("""() => {
-            const elements = document.querySelectorAll('*');
-            const domSig = [];
-            for (let i = 0; i < Math.min(elements.length, 1000); i++) {
-                const el = elements[i];
-                const cls = el.className && typeof el.className === 'string'
-                    ? el.className.trim().split(/\\s+/).slice(0, 2).join(' ') : null;
-                domSig.push({
-                    tag: el.tagName.toLowerCase(),
-                    id: el.id || el.getAttribute('data-testid') || null,
-                    cls: cls || null,
-                    text: el.children.length === 0 ? (el.textContent || '').trim().substring(0, 40) : null,
-                });
-            }
-            return domSig;
-        }""")
-
-        # Build index by id for comparison
-        old_by_id = {e["id"]: e for e in old_dom if e.get("id")}
-        new_by_id = {e["id"]: e for e in current_dom if e.get("id")}
-
-        added_ids = set(new_by_id.keys()) - set(old_by_id.keys())
-        removed_ids = set(old_by_id.keys()) - set(new_by_id.keys())
-        common_ids = set(old_by_id.keys()) & set(new_by_id.keys())
-
-        changed = []
-        for eid in common_ids:
-            old_e = old_by_id[eid]
-            new_e = new_by_id[eid]
+        # Compare by structural path, so id-less elements are covered: a
+        # re-texted <li>, a toggled aria-checked, a value typed into a field.
+        old_by_path = {e["path"]: e for e in old_dom}
+        new_by_path = {e["path"]: e for e in current_dom}
+        changed, added, removed = [], [], []
+        for path, new_e in new_by_path.items():
+            old_e = old_by_path.get(path)
+            if old_e is None:
+                added.append(new_e)
+                continue
             diffs = {}
-            for key in ["tag", "cls", "text"]:
+            for key in ("tag", "text", "cls"):
                 if old_e.get(key) != new_e.get(key):
                     diffs[key] = {"old": old_e.get(key), "new": new_e.get(key)}
+            oa, na = old_e.get("attrs") or {}, new_e.get("attrs") or {}
+            for k in sorted(set(oa) | set(na)):
+                if oa.get(k) != na.get(k):
+                    diffs[k] = {"old": oa.get(k), "new": na.get(k)}
             if diffs:
-                changed.append({"id": eid, "changes": diffs})
+                changed.append({"selector": ("#" + new_e["id"]) if new_e.get("id") and "#" not in path else path,
+                                "id": new_e.get("id"), "changes": diffs})
+        for path, old_e in old_by_path.items():
+            if path not in new_by_path:
+                removed.append(old_e)
 
-        # Also compare counts by tag
+        def brief(e):
+            return {"selector": e["path"], "tag": e["tag"], "id": e.get("id"), "text": e.get("text")}
+
         from collections import Counter
         old_tags = Counter(e["tag"] for e in old_dom)
         new_tags = Counter(e["tag"] for e in current_dom)
-        tag_diffs = {}
-        for tag in set(list(old_tags.keys()) + list(new_tags.keys())):
-            if old_tags.get(tag, 0) != new_tags.get(tag, 0):
-                tag_diffs[tag] = {"old": old_tags.get(tag, 0), "new": new_tags.get(tag, 0)}
+        tag_diffs = {t: {"old": old_tags.get(t, 0), "new": new_tags.get(t, 0)}
+                     for t in set(old_tags) | set(new_tags) if old_tags.get(t, 0) != new_tags.get(t, 0)}
 
-        return {
+        url_changed = snap["url"] != session.page.url
+        total = len(changed) + len(added) + len(removed)
+        result = {
             "success": True,
             "snapshot_name": snap_name,
-            "url_changed": snap["url"] != session.page.url,
+            "changed": bool(total or url_changed),
+            "changed_count": total,
+            "url_changed": url_changed,
             "old_url": snap["url"],
             "current_url": session.page.url,
-            "elements_added_ids": list(added_ids)[:20],
-            "elements_removed_ids": list(removed_ids)[:20],
-            "elements_changed": changed[:20],
+            "changed_elements": changed[:25],
+            "added_elements": [brief(e) for e in added[:25]],
+            "removed_elements": [brief(e) for e in removed[:25]],
+            # back-compat (id-keyed views of the same diff)
+            "elements_added_ids": [e["id"] for e in added if e.get("id")][:20],
+            "elements_removed_ids": [e["id"] for e in removed if e.get("id")][:20],
+            "elements_changed": [{"id": c["id"], "changes": c["changes"]} for c in changed if c.get("id")][:20],
             "tag_count_changes": tag_diffs,
             "old_element_count": len(old_dom),
             "new_element_count": len(current_dom),
         }
+        if max(len(old_dom), len(current_dom)) >= _DOM_SIG_CAP:
+            result["truncated_note"] = (f"only the first {_DOM_SIG_CAP} elements are compared — "
+                                        "changes further down the document are not seen")
+        if added or removed:
+            result["structure_note"] = ("elements were inserted/removed, which shifts the paths of their "
+                                        "later siblings — some entries may describe the same content at a new position")
+        return result
 
 
 @tool("get_cookies")

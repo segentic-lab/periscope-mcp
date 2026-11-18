@@ -34,5 +34,20 @@
 </ul>
 <p id="picked">none</p>
 
+<!-- live-run findings -->
+<section id="sec"><header id="sec-head">Section head text</header><p>body</p></section>
+<nav aria-label="Main menu" id="nav1"><a href="#top-h">Top</a></nav>
+<nav id="nav2"><a href="/hub.html">Hub</a></nav>
+<ul><li class="ok1" id="empty-li" style="width:20px;height:20px"></li></ul>
+<form id="vf" action="/submit">
+  <fieldset><legend>Step</legend><input name="who" required aria-label="Who"></fieldset>
+  <input name="mail" placeholder="Vaš e-poštni naslov" aria-label="E-pošta">
+  <input name="geslo" type="text" aria-label="Geslo">
+  <input name="website" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px">
+  <button type="submit">Send</button>
+</form>
+<ul id="plain"><li>one</li><li>two</li></ul>
+<button id="tog" role="switch" aria-checked="false" onclick="this.setAttribute('aria-checked','true')">Toggle</button>
+
 <select id="sel"><option value="a">A</option><option value="b">B</option></select>
 </body></html>

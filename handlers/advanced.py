@@ -353,6 +353,7 @@ async def handle_select_iframe(args: dict) -> dict:
 
         return {
             "success": True,
+            "session_id": iframe_session_id,          # same key every session-creating tool uses
             "iframe_session_id": iframe_session_id,
             "parent_session_id": session.session_id,
             "iframe_url": content_frame.url,

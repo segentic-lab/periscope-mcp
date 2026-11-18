@@ -415,22 +415,34 @@ async def handle_wait_for_gone(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
         timeout = args.get("timeout", 30000)
         start = time.time()
+        locator = session.page.locator(args["selector"]).first
+        # "Gone" is only meaningful if it was there: tell the agent when the
+        # selector never matched a visible element (typo, or already gone).
         try:
-            locator = session.page.locator(args["selector"]).first
+            was_present = await locator.count() > 0 and await locator.is_visible()
+        except Exception:
+            was_present = False
+        try:
             await locator.wait_for(state="hidden", timeout=timeout)
             elapsed_ms = round((time.time() - start) * 1000)
-            return {
+            result = {
                 "success": True,
                 "selector": args["selector"],
                 "elapsed_ms": elapsed_ms,
+                "was_present": was_present,
             }
+            if not was_present:
+                result["note"] = ("the selector matched no visible element when the wait started — "
+                                  "it was already gone, or the selector is wrong")
+            return result
         except Exception as e:
             elapsed_ms = round((time.time() - start) * 1000)
             return {
                 "success": False,
                 "selector": args["selector"],
                 "elapsed_ms": elapsed_ms,
-                "error": str(e),
+                "was_present": True,
+                "error": f"'{args['selector']}' is still visible after {timeout} ms: {str(e).splitlines()[0][:160]}",
             }
 
 

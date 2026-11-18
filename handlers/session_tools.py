@@ -72,6 +72,15 @@ async def handle_open_session(args: dict) -> dict:
                 await own_context.close()
             raise
         session.own_context = own_context
+        # Consent first, so the opening screenshot shows the page, not the banner.
+        consent_result = None
+        if args.get("consent"):
+            import consent
+            try:
+                consent_result = await consent.apply(session.page, args["consent"])
+            except Exception as e:  # the session is already open — report, don't lose it
+                consent_result = {"success": False, "action": args["consent"],
+                                  "error": f"consent handling failed: {str(e)[:200]}"}
         screenshot_path = await interactions.take_screenshot(
             session.page, project_name, "session_open", screenshot_dir=proj_screenshot_dir
         )
@@ -84,20 +93,17 @@ async def handle_open_session(args: dict) -> dict:
         }
         if headed:
             result["headed"] = True
-        if args.get("consent"):
-            import consent
-            try:
-                result["consent"] = await consent.apply(session.page, args["consent"])
-            except Exception as e:  # the session is already open — report, don't lose it
-                result["consent"] = {"success": False, "action": args["consent"],
-                                     "error": f"consent handling failed: {str(e)[:200]}"}
+        if consent_result is not None:
+            result["consent"] = consent_result
         if device:
             result["device"] = device
         if descriptor is not None:
             result["user_agent"] = descriptor.get("user_agent")
             result["viewport"] = descriptor.get("viewport")
-            result["device_context"] = ("private context emulating the device, seeded with the "
-                                        "project's login state; cookies set here stay in this session")
+            result["device_context"] = (
+                "private context emulating the device" +
+                (", seeded with the project's login state" if project else "") +
+                "; cookies set here stay in this session")
         elif viewport:
             result["viewport"] = viewport
         result["served_by_service_worker"] = session.served_by_service_worker

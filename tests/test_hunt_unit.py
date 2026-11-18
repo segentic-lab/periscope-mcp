@@ -288,3 +288,22 @@ def test_update_ref_prefers_the_current_branch_upstream():
     assert update_ref("origin/beta/x") == "origin/beta/x"
     assert update_ref("") == "origin/main"
     assert update_ref(None) == "origin/main"
+
+
+def test_unknown_project_error_lists_only_a_few(manager, monkeypatch):
+    import runtime
+    monkeypatch.setattr(runtime, "project_manager", manager)
+    for i in range(30):
+        manager.create(f"proj{i:02d}", "https://example.com")
+    msg = runtime.unknown_project_error("typo")
+    assert "typo" in msg and "and 22 more" in msg and len(msg) < 500, msg
+    assert "list_projects" in msg
+
+
+def test_step_action_count_in_descriptions_matches_the_enum():
+    from tool_schemas import TOOLS
+    for t in TOOLS:
+        if t.name == "interact_and_test":
+            schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)
+            n = len(schema["properties"]["steps"]["items"]["properties"]["action"]["enum"])
+            assert f"Supports {n} actions" in t.description, t.description[:80]

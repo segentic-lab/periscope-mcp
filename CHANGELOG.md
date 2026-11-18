@@ -80,6 +80,34 @@ reproduced by running code) is fixed, each with a failing-first test.
 - `network_summary`: first-party means same registrable site (a CDN subdomain
   is not third-party); 304s are not sized from `Content-Length`.
 
+### Fixed — found by driving all 79 tools through the live server
+- `nav_generation` counted fragment changes and same-URL `history.replaceState`
+  (scroll-spy sites inflated it by a dozen per screenshot). It now counts new
+  documents and SPA route changes only.
+- `page_state diff` could not see changes on elements without an id (a toggled
+  `aria-checked`, a re-texted list item) — the usual case. The signature is now
+  path-keyed with state attributes: `changed`, `changed_count`,
+  `changed_elements[]` with selectors, plus added/removed elements.
+- A click that opens a popup/new tab reported "no page change"; `popup` is now
+  a change kind.
+- Console "Failed to load resource" errors carry the failing URL.
+- `get_page_map`: `header`/`footer` inside a section are not landmarks, and
+  containers are named only by an explicit label (not their whole text).
+- `check_pwa` no longer reports Periscope's own `in-incognito` state, and a
+  site with neither manifest nor service worker gets one informational note
+  (`is_pwa: false`) instead of three defects.
+- `auto_fill_form` skips fields a user cannot reach (honeypots) and understands
+  Slovenian/German field hints (e-pošta, geslo, telefon, …).
+- `check_links` verifies same-page `#anchors` against the DOM and requests each
+  document once, instead of re-fetching the page per fragment.
+- `check_color_contrast` skips empty elements; `test_form_validation` lists
+  controls, not their fieldsets; `wait_for_gone` reports `was_present`;
+  `get_network_log` returns the sizes its description promised;
+  `select_iframe` also returns `session_id`; `open_session(consent=…)` handles
+  the banner before the opening screenshot; redirect aliases are no longer
+  listed as uncrawled pages; the unknown-project error suggests the closest
+  name instead of listing every project.
+
 ### Fixed — behaviour
 - A default full-page screenshot reset the page scroll to the top; the scroll
   position is restored after capture.

@@ -237,13 +237,13 @@ class Crawler:
                                   "crawl scoped to that host")
                     scope = final
                 if final != url:
+                    self.known.discard(url)   # an alias is not a page of its own
                     if not self._is_same_domain(final, scope):
                         continue          # redirected off-site: not one of our pages
                     if final in self.visited:
                         continue          # alias of a page already crawled
                     self.visited.add(final)
                     self.known.add(final)
-                    self.known.discard(url)
                     url = final
 
                 discovered.append(url)

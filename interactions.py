@@ -1132,7 +1132,9 @@ async def test_form_validation(page: Page, form_selector: str = None) -> dict:
         validation = await page.evaluate("""([selector, formIndex]) => {
             const form = document.querySelectorAll(selector)[formIndex];
             if (!form) return [];
-            const invalids = form.querySelectorAll(':invalid');
+            // :invalid also matches <fieldset>/<form> wrappers of an invalid
+            // control — report the controls themselves.
+            const invalids = form.querySelectorAll('input:invalid, select:invalid, textarea:invalid');
             return Array.from(invalids).map(el => ({
                 tag: el.tagName.toLowerCase(),
                 name: el.name || el.id || null,

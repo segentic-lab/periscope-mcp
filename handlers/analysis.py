@@ -510,6 +510,8 @@ async def handle_check_color_contrast(args: dict) -> dict:
             for (const el of els) {
                 const rect = el.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
+                // contrast is a property of TEXT: an empty box has none to read
+                if (!(el.textContent || '').trim()) continue;
 
                 const style = window.getComputedStyle(el);
                 const fg = parseColor(style.color);
