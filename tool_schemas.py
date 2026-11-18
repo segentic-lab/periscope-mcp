@@ -258,7 +258,11 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "url": {"type": "string", "description": "URL to open"},
                     "project": {"type": "string", "description": "Project name (optional). With a project: runs in its shared, authenticated context. Without: runs in an isolated context (no shared cookies/login)."},
-                    "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."}
+                    "headed": {"type": ["boolean", "string"], "description": "Open a VISIBLE browser window instead of headless (default: false). Requires a display on the server. Use when you want to watch or hand-drive the session."},
+                    "device": {"type": "string", "description": "Open already emulating a device. Size presets (mobile_sm, mobile, mobile_lg, tablet, tablet_lg, laptop, desktop, desktop_lg) just set the viewport. Any Playwright device name ('iPhone 14', 'Pixel 7', 'Galaxy S9+', 'iPad Pro 11') or 'samsung_internet' also emulates user agent, DPR and touch in a private context seeded with the project's login state."},
+                    "consent": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "Handle the cookie-consent banner right after the page loads (same as handle_consent)."},
+                    "width": {"type": "integer", "description": "Custom viewport width (applied before the first load)"},
+                    "height": {"type": "integer", "description": "Custom viewport height"},
                 },
                 "required": ["url"]
             }
@@ -283,13 +287,14 @@ TOOLS: list[Tool] = [
         # Interactive Tools
         Tool(
             name="click_element",
-            description="Click an element in a session page. Returns a screenshot and the new URL/title after click. If a full-screen portal overlay (Radix/shadcn dialogs & menus) intercepts the pointer, automatically falls back to an element-level JS click and flags click_method='js_dispatch' — no workaround needed. Use force=true to bypass actionability checks for other cases (hidden/animating elements).",
+            description="Click an element in a session page. Returns the new URL/title plus an HONEST change report: changed (bool), change (url/dom/network), click_method (pointer | pointer_force | js_dispatch), attempts. If nothing changed the result carries a hint. If a portal overlay (Radix/shadcn) or an unstable element blocks the pointer, the default strategy falls back to a synthetic JS click (flagged click_method='js_dispatch') — hosted payment pages ignore synthetic clicks (isTrusted), so use force=true (trusted pointer click at coordinates) or strategy='auto' (pointer → force → js_dispatch, stopping at the first attempt that changes the page; never re-clicks after a change).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "selector": {"type": "string", "description": "CSS selector of element to click"},
-                    "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks (default: false). Use when overlays intercept clicks."},
+                    "force": {"type": ["boolean", "string"], "description": "Trusted pointer click at the element's coordinates, skipping actionability checks (default: false). Use for controls that ignore synthetic clicks (Stripe/hosted checkouts) or animating elements."},
+                    "strategy": {"type": "string", "enum": ["single", "auto"], "description": "single (default): one attempt, honest change report. auto: escalate pointer → pointer_force → js_dispatch until the page changes."},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id", "selector"]
@@ -337,11 +342,11 @@ TOOLS: list[Tool] = [
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network", "consent"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector (for click, fill, type, select, hover, check, uncheck, wait_for, scroll_to, scroll_within, force_click, drag, right_click, wait_for_text container)"},
-                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "value": {"type": "string", "description": "Value (for fill, select); for consent: accept|deny|dismiss"},
                                 "text": {"type": "string", "description": "Text to type (for type action), or text to wait for (for wait_for_text)"},
                                 "target": {"type": "string", "description": "CSS selector of drop target (for drag action)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key, e.g. 'Enter', 'Tab')"},
@@ -349,10 +354,12 @@ TOOLS: list[Tool] = [
                                 "timeout": {"type": "integer", "description": "Timeout in ms (for wait — default 1000; wait_for — default 10000; wait_for_text, wait_for_network — default 30000)"},
                                 "state": {"type": "string", "description": "State to wait for (for wait_for: visible, hidden, attached, detached)"},
                                 "label": {"type": "string", "description": "Label for screenshot filename (screenshot action), or option label text (select_option action)"},
-                                "force": {"type": ["boolean", "string"], "description": "Bypass actionability checks on click (default: false)"},
+                                "force": {"type": ["boolean", "string"], "description": "Trusted pointer click at coordinates, skipping actionability checks (for click; default: false)"},
+                                "strategy": {"type": "string", "enum": ["single", "auto"], "description": "For click: 'auto' escalates pointer → pointer_force → js_dispatch until the page changes (default: single)"},
                                 "script": {"type": "string", "description": "JavaScript to evaluate (for evaluate_js)"},
                                 "direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction (for scroll_within)"},
                                 "amount": {"type": "integer", "description": "Scroll amount in pixels (for scroll_within, default: 300)"},
+                                "steps": {"type": "integer", "description": "For hover: intermediate mousemove steps (default: 8 — realistic pointer path for hover-intent menus)"},
                                 "files": {"type": "array", "items": {"type": "string"}, "description": "File paths (for upload_file)"},
                                 "url_pattern": {"type": "string", "description": "Required for wait_for_network: plain substring of the request URL (not a regex)"},
                                 "method": {"type": "string", "description": "For wait_for_network: HTTP method filter (e.g. 'POST'). For drag: 'auto' (default, Playwright drag_to) or 'mouse' (stepped manual drag — use when auto had no effect, e.g. @hello-pangea/dnd-style libraries)"},
@@ -516,11 +523,11 @@ TOOLS: list[Tool] = [
                             "properties": {
                                 "action": {
                                     "type": "string",
-                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network"],
+                                    "enum": ["click", "force_click", "fill", "force_fill", "type", "select", "select_option", "wait", "wait_for", "wait_for_text", "screenshot", "navigate", "hover", "press_key", "check", "uncheck", "scroll_to", "scroll_within", "evaluate_js", "drag", "right_click", "go_back", "go_forward", "upload_file", "wait_for_network", "consent"],
                                     "description": "Action to perform"
                                 },
                                 "selector": {"type": "string", "description": "CSS selector"},
-                                "value": {"type": "string", "description": "Value (for fill, select)"},
+                                "value": {"type": "string", "description": "Value (for fill, select); for consent: accept|deny|dismiss"},
                                 "text": {"type": "string", "description": "Text to type or wait for"},
                                 "target": {"type": "string", "description": "Drop target selector (for drag)"},
                                 "key": {"type": "string", "description": "Key to press (for press_key)"},
@@ -601,6 +608,7 @@ TOOLS: list[Tool] = [
                         ],
                         "description": "Device preset: mobile_sm (320x568 iPhone SE), mobile (375x812 iPhone 12), mobile_lg (428x926 iPhone 14 Pro Max), tablet (768x1024 iPad), tablet_lg (1024x1366 iPad Pro), laptop (1366x768), desktop (1920x1080), desktop_lg (2560x1440)"
                     },
+                    "reload": {"type": ["boolean", "string"], "description": "Reload after resizing so JS-driven breakpoints (Elementor, sliders) re-evaluate (default: false). For user-agent/touch emulation open a new session with open_session(device=...)."},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id"]
@@ -617,7 +625,9 @@ TOOLS: list[Tool] = [
                     "session_id": {"type": "string", "description": "Session ID"},
                     "full_page": {"type": "boolean", "description": "Capture full scrollable page (default: true)"},
                     "selector": {"type": "string", "description": "Clip to one element: screenshot just the first match (for citing evidence). Overrides full_page."},
-                    "raw": {"type": ["boolean", "string"], "description": "Skip full-page capture preparation (sticky neutralization, reveal forcing) and capture the raw Playwright stitch (default: false). Only affects full-page captures."}
+                    "raw": {"type": ["boolean", "string"], "description": "Skip full-page capture preparation (sticky neutralization, reveal forcing) and capture the raw Playwright stitch (default: false). Only affects full-page captures."},
+                    "mode": {"type": "string", "enum": ["full", "viewport", "tiles", "element"], "description": "full (default) | viewport | tiles: full-page capture split into legible tile_height-px images (use for pages taller than ~6000 px — the result also lists tiles[]) | element (needs selector)"},
+                    "tile_height": {"type": "integer", "description": "Tile height in px for mode='tiles' (default: 1600)"}
                 },
                 "required": ["session_id"]
             }
@@ -636,12 +646,19 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="navigate_session",
-            description="Browser history/reload on a session: back, forward, or reload. Returns the new URL/title and a screenshot. Reload tests state persistence and caching; back/forward exercise SPA history.",
+            description="Navigate a session: goto a URL (with optional wait_for selector / wait_for_network substring armed BEFORE the load), back, forward, reload (hard=true bypasses the HTTP cache), or clear_site_data (unregister service workers + clear CacheStorage for the origin, then reload — fresh-deploy mode; cookies are never touched; include_storage=true also clears localStorage/IndexedDB). Every navigation reports served_by_service_worker so a stale, SW-cached document is obvious. Returns the new URL/title and the chosen observation.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
-                    "action": {"type": "string", "enum": ["back", "forward", "reload"], "description": "History action to perform"},
+                    "action": {"type": "string", "enum": ["goto", "back", "forward", "reload", "clear_site_data"], "description": "Navigation action"},
+                    "url": {"type": "string", "description": "URL to load (required for goto)"},
+                    "wait_for": {"type": "string", "description": "goto: CSS selector to wait for (visible) after the load"},
+                    "wait_for_network": {"type": "string", "description": "goto: plain URL substring of a response to wait for — armed before navigation so it can't be missed"},
+                    "wait_until": {"type": "string", "enum": ["load", "domcontentloaded", "networkidle"], "description": "Navigation wait strategy for this call (default: server setting, networkidle)"},
+                    "timeout": {"type": "integer", "description": "ms for wait_for / wait_for_network (defaults 10000 / 30000)"},
+                    "hard": {"type": ["boolean", "string"], "description": "reload: bypass the HTTP cache (default: false)"},
+                    "include_storage": {"type": ["boolean", "string"], "description": "clear_site_data: also clear localStorage/sessionStorage/IndexedDB (default: false; cookies are never cleared)"},
                     **OBSERVE_PROP,
                 },
                 "required": ["session_id", "action"]
@@ -794,7 +811,7 @@ TOOLS: list[Tool] = [
         ),
         Tool(
             name="download_file",
-            description="Click a trigger and capture the file it downloads — the honest way to verify exports (CSV, PDF, invoices). The download waiter is armed BEFORE the click so fast downloads aren't missed, and the click uses the same overlay-fallback as click_element (export buttons inside Radix menus work). Returns the saved path, size, sha256, source URL, and for small text files a text_head preview so content can be asserted without another call. Files land in data/downloads/.",
+            description="Click a trigger and capture the file it downloads: path, size, sha256, text preview, plus the response's content_type and content_disposition. If the click NAVIGATES to the file instead (no Content-Disposition: attachment), the result says navigated_instead=true with the final_url — the precise assertion for \"must download, not open\" fixes. Falls back to a context refetch (flagged capture_method) when the browser artifact is empty",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -917,7 +934,8 @@ TOOLS: list[Tool] = [
                 "properties": {
                     "session_id": {"type": "string", "description": "Session ID"},
                     "max_nodes": {"type": "integer", "description": "Max nodes to return (default: 150); 'total' reports how many exist"},
-                    "include_hidden": {"type": ["boolean", "string"], "description": "Include invisible elements, flagged hidden (default: false)"}
+                    "include_hidden": {"type": ["boolean", "string"], "description": "Include invisible elements, flagged hidden (default: false)"},
+                    "include_frames": {"type": ["boolean", "string"], "description": "List the page's iframes (selector, url, name, cross_origin) with ready select_iframe selectors — the way into Stripe/hosted-checkout card fields (default: false; frame_count is always returned)"}
                 },
                 "required": ["session_id"]
             }
@@ -951,6 +969,19 @@ TOOLS: list[Tool] = [
                         "description": "Override auto-detected values: {selector: value} (e.g. {\"#email\": \"custom@test.com\"})"
                     },
                     "submit": {"type": "boolean", "description": "Submit the form after filling (default: false)"}
+                },
+                "required": ["session_id"]
+            }
+        ),
+        Tool(
+            name="network_summary",
+            description="Aggregate the session's captured network traffic: bytes and request counts by domain (with third_party flag) and by resource type, the heaviest requests, third-party share, and how many responses came from a service worker. since='open' (default, whole session), 'clear' (only traffic after get_network_log(clear=true) — the before/after-an-interaction pattern: clear, act, summarize), or an epoch-ms timestamp. Sizes come from Resource Timing (transfer bytes, current document) with Content-Length as fallback; unknowns are counted honestly. Use to verify a consent 'deny' really blocked GA/Meta/Vimeo, or to find what makes a page heavy.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "since": {"type": "string", "description": "'open' (default) | 'clear' | epoch milliseconds"},
+                    "top": {"type": "integer", "description": "How many of the largest requests to list (default: 10)"},
                 },
                 "required": ["session_id"]
             }
@@ -1007,8 +1038,41 @@ TOOLS: list[Tool] = [
             }
         ),
         Tool(
+            name="compare_pages",
+            description="Compare two URLs in one call — staging vs live, before vs after a deploy. Loads both (optionally after the same interact_and_test steps, a consent action, and a device emulation), then returns: side-by-side full-page screenshots + pixel diff (passed vs max_diff_percent), a facts diff (title, meta description, canonical, H1s, hreflang, lang, robots, og tags, link/image/form counts), a visible-text diff (similarity + added/removed lines), performance metric deltas (b − a), transfer-weight delta, and `same` (true when screenshot, facts and text all agree). A side that fails to load is reported with its error while the other side is still captured in full.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url_a": {"type": "string", "description": "First URL (e.g. staging)"},
+                    "url_b": {"type": "string", "description": "Second URL (e.g. live)"},
+                    "project": {"type": "string", "description": "Project whose authenticated context loads url_a (and url_b unless project_b is given)"},
+                    "project_b": {"type": "string", "description": "Project for url_b when the two sites have different logins"},
+                    "steps": {"type": "array", "items": {"type": "object"}, "description": "interact_and_test steps to run on BOTH pages before capturing (e.g. open a menu, switch language)"},
+                    "consent": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "Handle the cookie banner on both pages first"},
+                    "device": {"type": "string", "description": "Viewport preset or device name for both pages (see open_session.device)"},
+                    "run_checks": {"type": ["array", "string"], "items": {"type": "string"}, "description": "Audit checks to run on both sides (visual, accessibility, functionality, seo, geo, performance) — adds issues[] per side and issue_count_delta"},
+                    "max_diff_percent": {"type": "number", "description": "Screenshot diff threshold for passed (default: 1.0)"},
+                    "threshold": {"type": "integer", "description": "Per-pixel colour tolerance 0-255 (default: 10)"},
+                },
+                "required": ["url_a", "url_b"]
+            }
+        ),
+        Tool(
+            name="check_pwa",
+            description="Inspect a page as an installable web app: fetch + validate the manifest (name, short_name, 192/512 icons, display, start_url within scope, theme/background colours), report the service worker registration (scope, state, controlling), Chrome's own installability errors via CDP when available, and — in url mode — whether beforeinstallprompt fired. Returns issues[] with type 'pwa'. Pass session_id to inspect the live page (after your interactions) or url for a one-shot check.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL to check (one-shot page; enables beforeinstallprompt observation)"},
+                    "session_id": {"type": "string", "description": "Or an open session to inspect in place"},
+                    "project": {"type": "string", "description": "Project whose authenticated context to use in url mode"},
+                },
+                "required": []
+            }
+        ),
+        Tool(
             name="run_lighthouse",
-            description="Run a real Google Lighthouse audit against a URL. Returns 0-100 category scores, Core Web Vitals lab metrics (LCP, TBT, CLS, Speed Index), and the failed audits, and saves the full JSON report. Requires Node.js — finds it on PATH or auto-detects nvm installs (~/.nvm); if none exists, returns the exact nvm install commands. Launches its own headless Chrome: no session or project auth state applies.",
+            description="Run a real Google Lighthouse audit: 0-100 category scores, Core Web Vitals, failed audits, and a SUMMARY an agent otherwise computes by hand — LCP element + phase breakdown (TTFB / load delay / load time / render delay), TTFB with a >2 s warning, transfer bytes by domain with third-party share, top opportunities by savings. runs=N gives the median run plus min/median/max spread; warmup=true primes server caches first. Full JSON report(s) saved to data/reports/. Requires Node.js (npm i -g lighthouse or npx). Runs its own Chrome — no session/auth state",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -1019,7 +1083,9 @@ TOOLS: list[Tool] = [
                         "items": {"type": "string", "enum": ["performance", "accessibility", "best-practices", "seo"]}
                     },
                     "device": {"type": "string", "enum": ["mobile", "desktop"], "description": "Emulation preset (default: mobile, like Lighthouse's default)"},
-                    "timeout": {"type": "integer", "description": "Max seconds to wait (default: 180)"}
+                    "timeout": {"type": "integer", "description": "Max seconds to wait per run (default: 180)"},
+                    "runs": {"type": "integer", "description": "Run Lighthouse N times (1-5, default 1) and report the median-LCP run plus a min/median/max spread — use 3 for comparisons (staging vs live, before/after)"},
+                    "warmup": {"type": ["boolean", "string"], "description": "One plain GET before the runs to prime server-side page caches (WP Rocket, CDN), so a cold-cache TTFB doesn't poison the comparison (default: false)"}
                 },
                 "required": ["url"]
             }
@@ -1040,6 +1106,33 @@ TOOLS: list[Tool] = [
         ),
 
         # New Tools — Friction Reducers
+        Tool(
+            name="handle_consent",
+            description="Accept, deny, or dismiss the cookie-consent banner on a session page in one call. Detects the CMP (Complianz, Cookiebot, CookieYes, OneTrust, Borlabs, Usercentrics, Didomi, Osano, Iubenda, Klaro, Cookie Notice, Cookie Law Info, Moove GDPR, Quantcast, Termly, HubSpot) by its markup, else falls back to button text in English/Slovenian/German/Croatian/Italian/Spanish/French inside cookie/consent containers. Returns {found, cmp, clicked, banner_gone}; a page with no banner is success with found=false. Also available as open_session(consent=...) and the 'consent' step.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "action": {"type": "string", "enum": ["accept", "deny", "dismiss"], "description": "What to do with the banner (default: accept)"},
+                    **OBSERVE_PROP,
+                },
+                "required": ["session_id", "action"]
+            }
+        ),
+        Tool(
+            name="hover_element",
+            description="Hover an element with a REALISTIC pointer path: the mouse travels to the element in several mousemove steps (default 8, plus a short warm-up move), the way menus that watch pointer motion (SmartMenus/Elementor mega-menus, hover-intent libraries) expect — a single synthetic hover often never opens them. Returns {moves, changed, change} plus the chosen observation. The interact_and_test 'hover' step uses the same path (steps field overrides).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Session ID"},
+                    "selector": {"type": "string", "description": "CSS selector of the element to hover"},
+                    "steps": {"type": "integer", "description": "Intermediate mousemove steps on the way to the element (default: 8)"},
+                    **OBSERVE_PROP,
+                },
+                "required": ["session_id", "selector"]
+            }
+        ),
         Tool(
             name="scroll_into_view",
             description="Scroll an element into the viewport without clicking it. Returns {success}. Use to trigger lazy-loaded content/images or to bring a section into view before screenshotting.",

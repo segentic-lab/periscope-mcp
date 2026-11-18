@@ -51,3 +51,7 @@ def test_expiry_reason_reported(monkeypatch):
     with pytest.raises(KeyError) as e:
         m.get_session("idle99")
     assert "idle-expired" in str(e.value)
+
+
+def test_session_starts_at_nav_generation_zero():
+    assert _make("gen0").nav_generation == 0

@@ -62,3 +62,74 @@ def test_projectless_sessions_do_not_share_cookies(run, handlers, good_site):
     finally:
         run(handlers["close_session"]({"session_id": sid1}))
         run(handlers["close_session"]({"session_id": sid2}))
+
+
+# --- 0.11: device-aware sessions ------------------------------------------
+
+def test_open_session_device_descriptor_sets_ua(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/app.html", "device": "iPhone 13"}))
+    assert r["success"], r
+    try:
+        assert r["device"] == "iPhone 13" and r["viewport"]["width"] == 390, r
+        assert "iPhone" in r["user_agent"], r
+        ua = run(handlers["interact_and_test"]({
+            "session_id": r["session_id"], "screenshot_after": False,
+            "steps": [{"action": "evaluate_js", "script": "navigator.userAgent"}]}))
+        assert "iPhone" in ua["steps"][0]["result"], ua
+    finally:
+        run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def test_open_session_width_height(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/app.html", "width": 500, "height": 700}))
+    assert r["success"], r
+    try:
+        assert r["viewport"] == {"width": 500, "height": 700}, r
+        s = run(handlers["screenshot_session"]({"session_id": r["session_id"], "full_page": False}))
+        assert s["view"]["viewport"] == {"width": 500, "height": 700}, s
+    finally:
+        run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def test_open_session_unknown_device_is_actionable(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/app.html", "device": "nokia 3310"}))
+    assert r["success"] is False and "iPhone 14" in r["error"], r
+
+
+def test_device_session_inherits_project_auth(run, handlers, good_site):
+    p = "deviceproj"
+    try:
+        assert run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/app"}))["success"]
+        run(handlers["set_form_login"]({"project": p, "login_url": f"{good_site}/login.html",
+                                        "username": "u", "password": "pw"}))
+        assert run(handlers["login_project"]({"project": p}))["success"]
+        r = run(handlers["open_session"]({"url": f"{good_site}/app", "project": p, "device": "iPhone 13"}))
+        assert r["success"], r
+        try:
+            assert r["url"].endswith("/app") and "login" not in r["url"], r
+        finally:
+            run(handlers["close_session"]({"session_id": r["session_id"]}))
+    finally:
+        run(handlers["delete_project"]({"name": p}))
+
+
+def test_set_viewport_reload(run, handlers, session):
+    r = run(handlers["set_viewport"]({"session_id": session, "device": "tablet", "reload": True,
+                                      "observe": "none"}))
+    assert r["success"] and r["reloaded"] is True and r["viewport"] == {"width": 768, "height": 1024}, r
+
+
+def test_device_session_carries_basic_auth(run, handlers, good_site):
+    p = "basicdev"
+    try:
+        assert run(handlers["create_project"]({"name": p, "base_url": f"{good_site}/basic"}))["success"]
+        run(handlers["set_basic_auth"]({"project": p, "username": "u", "password": "p"}))
+        assert run(handlers["login_project"]({"project": p}))["success"]
+        r = run(handlers["open_session"]({"url": f"{good_site}/basic", "project": p, "device": "iPhone 13"}))
+        assert r["success"], r
+        try:
+            assert r["title"] == "Basic OK", r
+        finally:
+            run(handlers["close_session"]({"session_id": r["session_id"]}))
+    finally:
+        run(handlers["delete_project"]({"name": p}))

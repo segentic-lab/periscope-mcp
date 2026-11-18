@@ -264,14 +264,51 @@ async def handle_get_interaction_log(args: dict) -> dict:
         }
 
 
+async def _lighthouse_once(cmd: list, env: dict, timeout_s: int) -> tuple[dict | None, str | None]:
+    """One Lighthouse CLI run → (report, None) or (None, error)."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return None, f"Lighthouse timed out after {timeout_s}s"
+    try:
+        return json.loads(stdout.decode()), None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, f"Lighthouse failed (exit {proc.returncode}): {stderr.decode(errors='replace')[-500:]}"
+
+
+async def _warmup_visit(url: str) -> dict:
+    """One plain GET before the runs — primes server-side page caches (WP
+    Rocket & co.) so a cold-cache TTFB doesn't poison a comparison."""
+    import httpx
+    import time as _t
+    t0 = _t.time()
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0, verify=False) as client:
+            async with client.stream("GET", url) as resp:
+                ttfb_ms = round((_t.time() - t0) * 1000)
+                async for _ in resp.aiter_bytes():
+                    pass
+                return {"status_code": resp.status_code, "ttfb_ms": ttfb_ms,
+                        "total_ms": round((_t.time() - t0) * 1000)}
+    except Exception as e:
+        return {"error": str(e)[:200]}
+
+
 @tool("run_lighthouse")
 async def handle_run_lighthouse(args: dict) -> dict:
         from datetime import datetime
+        import lighthouse_summary
 
         url = args["url"]
         categories = args.get("categories") or ["performance", "accessibility", "best-practices", "seo"]
         device = args.get("device", "mobile")
         timeout_s = int(args.get("timeout", 180))
+        runs = max(1, min(5, int(args.get("runs") or 1)))
+        warmup = bool(args.get("warmup"))
 
         cmd, node_bin_dir, note = _find_lighthouse_cmd()
         if cmd is None:
@@ -306,39 +343,32 @@ async def handle_run_lighthouse(args: dict) -> dict:
         if config.CHROMIUM_PATH:
             env["CHROME_PATH"] = config.CHROMIUM_PATH  # lighthouse's chrome-launcher honors this
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-        except asyncio.TimeoutError:
-            proc.kill()
-            return {"success": False, "error": f"Lighthouse timed out after {timeout_s}s"}
+        warmup_info = await _warmup_visit(url) if warmup else None
 
-        try:
-            report = json.loads(stdout.decode())
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return {
-                "success": False,
-                "error": f"Lighthouse failed (exit {proc.returncode}): {stderr.decode(errors='replace')[-500:]}",
-            }
+        reports, errors = [], []
+        for _ in range(runs):
+            report, error = await _lighthouse_once(cmd, env, timeout_s)
+            if report is None:
+                errors.append(error)
+            else:
+                reports.append(report)
+        if not reports:
+            return {"success": False, "error": errors[0], "runs_attempted": runs}
+
+        report, spread = lighthouse_summary.median_run(reports)
 
         scores = {
             key: round(cat["score"] * 100) if cat.get("score") is not None else None
             for key, cat in report.get("categories", {}).items()
         }
         audits = report.get("audits", {})
-        metric_ids = [
-            "first-contentful-paint", "largest-contentful-paint", "total-blocking-time",
-            "cumulative-layout-shift", "speed-index", "interactive",
-        ]
         metrics = {
             mid: {
                 "value": audits[mid].get("numericValue"),
                 "display": audits[mid].get("displayValue"),
                 "score": audits[mid].get("score"),
             }
-            for mid in metric_ids if mid in audits
+            for mid in lighthouse_summary.METRIC_IDS if mid in audits
         }
         failed = [
             {"id": aid, "title": a.get("title"), "score": a["score"], "display": a.get("displayValue")}
@@ -348,27 +378,45 @@ async def handle_run_lighthouse(args: dict) -> dict:
         ]
         failed.sort(key=lambda a: a["score"])
 
-        # Persist the full report next to Periscope's own reports
+        # Persist every full report next to Periscope's own reports
         os.makedirs(config.REPORTS_DIR, exist_ok=True)
-        report_path = os.path.join(
-            config.REPORTS_DIR, f"lighthouse_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        )
-        with open(report_path, "w") as f:
-            json.dump(report, f, indent=2)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_paths = []
+        for i, r in enumerate(reports):
+            suffix = f"_run{i + 1}" if len(reports) > 1 else ""
+            path = os.path.join(config.REPORTS_DIR, f"lighthouse_{stamp}{suffix}.json")
+            with open(path, "w") as f:
+                json.dump(r, f, indent=2)
+            report_paths.append(path)
+        median_index = reports.index(report)
 
         result_note = {"note": note} if note else {}
-        return {
+        result = {
             "success": True,
             **result_note,
             "url": report.get("finalDisplayedUrl") or report.get("finalUrl") or url,
             "device": device,
             "lighthouse_version": report.get("lighthouseVersion"),
+            "runs": len(reports),
             "scores": scores,
             "metrics": metrics,
+            "summary": lighthouse_summary.summarize(report),
             "failed_audits": failed[:40],
             "failed_audit_count": len(failed),
-            "report_path": report_path,
+            "report_path": report_paths[median_index],
         }
+        if warmup_info is not None:
+            result["warmup"] = warmup_info
+        if len(reports) > 1:
+            result["spread"] = spread
+            result["report_paths"] = report_paths
+            result["median_note"] = "scores/metrics/summary are from the median-LCP run; spread shows min/median/max across runs"
+        if errors:
+            result["failed_runs"] = errors
+        if result["summary"]["ttfb_warning"]:
+            result["ttfb_note"] = (f"TTFB {result['summary']['ttfb_ms']} ms > {lighthouse_summary.TTFB_WARN_MS} ms — "
+                                   "likely a cold server cache; re-run with warmup=true and runs=3 before comparing")
+        return result
 
 
 @tool("check_color_contrast")

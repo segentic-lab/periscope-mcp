@@ -263,7 +263,7 @@ async def build_page_map(session, args: dict) -> dict:
             return { nodes, total: considered };
         }""", [max_nodes, include_hidden])
 
-        return {
+        result = {
             "url": real_page(session.page).url,
             "title": await session.page.title(),
             "total": data["total"],
@@ -272,6 +272,55 @@ async def build_page_map(session, args: dict) -> dict:
             "unnamed_interactive": sum(1 for n in data["nodes"] if n.get("unnamed")),
             "nodes": data["nodes"],
         }
+        frames = await _frame_inventory(session)
+        result["frame_count"] = len(frames)
+        if _as_bool(args.get("include_frames")):
+            result["frames"] = frames
+        elif frames:
+            result["frames_note"] = (f"{len(frames)} iframe(s) on the page — pass include_frames=true "
+                                     "to list them with ready select_iframe selectors")
+        return result
+
+
+def _as_bool(v) -> bool:
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes")
+    return bool(v)
+
+
+async def _frame_inventory(session) -> list[dict]:
+    """Child frames of the session's page: a selector for the <iframe>, url,
+    name, and whether it is cross-origin (Playwright can drive both; the flag
+    tells the agent why page-level selectors don't reach into it)."""
+    from urllib.parse import urlparse
+    page = real_page(session.page)
+    main_parts = urlparse(page.url)
+    main_origin = (main_parts.scheme, main_parts.hostname, main_parts.port)
+    out = []
+    for i, frame in enumerate(f for f in page.frames if f != page.main_frame):
+        try:
+            handle = await frame.frame_element()
+            selector = await handle.evaluate("""(el) => {
+                const q = (s) => { try { return document.querySelector(s) === el; } catch { return false; } };
+                if (el.id && q('#' + CSS.escape(el.id))) return '#' + CSS.escape(el.id);
+                if (el.name && q('iframe[name=' + JSON.stringify(el.name) + ']'))
+                    return 'iframe[name=' + JSON.stringify(el.name) + ']';
+                const src = el.getAttribute('src');
+                if (src && q('iframe[src=' + JSON.stringify(src) + ']'))
+                    return 'iframe[src=' + JSON.stringify(src) + ']';
+                const all = Array.from(document.querySelectorAll('iframe'));
+                return 'iframe:nth-of-type(' + (all.indexOf(el) + 1) + ')';
+            }""")
+            await handle.dispose()
+        except Exception:
+            selector = f"iframe:nth-of-type({i + 1})"
+        parts = urlparse(frame.url)
+        cross = bool(frame.url) and frame.url != "about:blank" and \
+            (parts.scheme, parts.hostname, parts.port) != main_origin
+        out.append({"index": i, "selector": selector, "url": frame.url, "name": frame.name or None,
+                    "cross_origin": cross,
+                    "use": f"select_iframe(session_id, selector={selector!r}) → drive the frame with the returned session id"})
+    return out
 
 
 @tool("find_element")
@@ -590,7 +639,7 @@ async def handle_auto_fill_form(args: dict) -> dict:
                 elif f["type"] == "file":
                     filled.append({"selector": selector, "value": "skipped"})
                 elif f["type"] in interactions._DATE_TYPES:
-                    await interactions._fill_date_input(session.page, selector, str(value))
+                    await interactions.set_value_native(session.page, selector, str(value))
                     filled.append({"selector": selector, "value": str(value)})
                 else:
                     locator = session.page.locator(selector).first
@@ -657,9 +706,91 @@ async def handle_get_network_log(args: dict) -> dict:
 
         if clear:
             session.network_log.clear()
+            session.network_cleared_at = time.time()
             result["cleared"] = True
 
         return result
+
+
+@tool("network_summary")
+async def handle_network_summary(args: dict) -> dict:
+        """Aggregate the session's captured traffic: bytes by domain and
+        resource type, the heaviest requests, third-party share. Sizes come
+        from in-page Resource Timing (transferSize, current document) with the
+        Content-Length header as fallback; unknown sizes are counted, not guessed."""
+        from urllib.parse import urlparse
+        session = session_manager.get_session(args["session_id"])
+        since = args.get("since") or "open"
+        top = int(args.get("top") or 10)
+
+        log = list(session.network_log)
+        if since == "clear":
+            if session.network_cleared_at is None:
+                return {"success": False, "error":
+                        "since='clear' needs a prior get_network_log(clear=true) on this session."}
+            log = [e for e in log if e["timestamp"] >= session.network_cleared_at]
+        elif since != "open":
+            try:
+                since_s = float(since) / 1000.0  # epoch ms
+            except (TypeError, ValueError):
+                return {"success": False, "error":
+                        "since must be 'open', 'clear', or an epoch timestamp in ms."}
+            log = [e for e in log if e["timestamp"] >= since_s]
+
+        # Resource Timing sizes for the current document (keyed by URL).
+        try:
+            timing = await session.page.evaluate("""() => {
+                const out = {};
+                const add = (e) => { if (e && e.name && e.transferSize) out[e.name] = e.transferSize; };
+                performance.getEntriesByType('navigation').forEach(add);
+                performance.getEntriesByType('resource').forEach(add);
+                return out;
+            }""")
+        except Exception:
+            timing = {}
+
+        page_host = urlparse(real_page(session.page).url).netloc
+        by_domain, by_type = {}, {}
+        rows = []
+        total, known = 0, 0
+        for e in log:
+            size = timing.get(e["url"]) or e.get("content_length")
+            host = urlparse(e["url"]).netloc
+            rtype = e.get("resource_type") or "other"
+            if size is not None:
+                total += size
+                known += 1
+            d = by_domain.setdefault(host, {"domain": host, "requests": 0, "bytes": 0,
+                                            "third_party": host != page_host})
+            d["requests"] += 1
+            d["bytes"] += size or 0
+            t = by_type.setdefault(rtype, {"type": rtype, "requests": 0, "bytes": 0})
+            t["requests"] += 1
+            t["bytes"] += size or 0
+            rows.append({"url": e["url"] if len(e["url"]) <= 120 else "..." + e["url"][-117:],
+                         "type": rtype, "bytes": size, "status": e.get("status"),
+                         "from_service_worker": e.get("from_service_worker", False)})
+
+        third_bytes = sum(d["bytes"] for d in by_domain.values() if d["third_party"])
+        largest = sorted(rows, key=lambda r: r["bytes"] or 0, reverse=True)[:top]
+        return {
+            "success": True,
+            "since": since,
+            "page_host": page_host,
+            "requests": len(log),
+            "bytes_total": total,
+            "bytes_total_kb": round(total / 1024, 1),
+            "bytes_known_for": known,
+            "size_unknown_count": len(log) - known,
+            "by_domain": sorted(by_domain.values(), key=lambda d: d["bytes"], reverse=True),
+            "by_type": sorted(by_type.values(), key=lambda t: t["bytes"], reverse=True),
+            "largest": largest,
+            "third_party_bytes": third_bytes,
+            "third_party_share": round(third_bytes / total, 3) if total else 0.0,
+            "served_by_service_worker_count": sum(1 for r in rows if r["from_service_worker"]),
+            "note": "sizes = transfer bytes from Resource Timing (current document) or Content-Length; "
+                    "requests with neither are counted in size_unknown_count",
+        }
 
 
 @tool("page_state")

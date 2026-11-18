@@ -16,11 +16,36 @@ from .registry import tool
 @tool("click_element")
 async def handle_click_element(args: dict) -> dict:
         session = session_manager.get_session(args["session_id"])
-        result = await interactions.click_element(
-            session.page, args["selector"], force=args.get("force", False)
-        )
+        try:
+            result = await interactions.click_element(
+                session.page, args["selector"], force=args.get("force", False),
+                strategy=args.get("strategy") or "single", network_log=session.network_log,
+                request_counter=session.request_counter,
+            )
+        except Exception as e:
+            return {"success": False, "selector": args["selector"], "error": str(e)}
         session.url = result["url"]
         return await interactions.attach_observation(session, result, args, "after_click")
+
+
+@tool("handle_consent")
+async def handle_handle_consent(args: dict) -> dict:
+        import consent
+        session = session_manager.get_session(args["session_id"])
+        result = await consent.apply(session.page, args.get("action") or "accept")
+        if not result.get("success"):
+            return result
+        return await interactions.attach_observation(session, result, args, "after_consent")
+
+
+@tool("hover_element")
+async def handle_hover_element(args: dict) -> dict:
+        session = session_manager.get_session(args["session_id"])
+        result = await interactions.hover_element(
+            session.page, args["selector"], steps=int(args.get("steps") or 8),
+            network_log=session.network_log, request_counter=session.request_counter)
+        result["success"] = True
+        return await interactions.attach_observation(session, result, args, "after_hover")
 
 
 @tool("fill_form")
@@ -64,6 +89,9 @@ async def handle_interact_and_test(args: dict) -> dict:
             return {"success": False, "error": "Provide either 'url' or 'session_id'"}
 
         touch = (lambda: setattr(session, "last_accessed", time.time())) if session else None
+        # Change detection needs a request counter; one-shot pages get their own.
+        from sessions import attach_request_counter
+        request_counter = session.request_counter if session else attach_request_counter(real_page(page))
 
         # Optional console capture via temporary listeners — immune to the
         # session buffers' front-trimming caps.
@@ -83,7 +111,8 @@ async def handle_interact_and_test(args: dict) -> dict:
         try:
             result = await interactions.execute_steps(
                 page, steps, project_name, continue_on_error, screenshot_dir=shot_dir,
-                touch=touch,
+                touch=touch, network_log=session.network_log if session else None,
+                request_counter=request_counter,
             )
             if capture_console:
                 result["console_log"] = new_logs
@@ -320,6 +349,7 @@ async def handle_flow(args: dict) -> dict:
                 continue_on_error=bool(args.get("continue_on_error")),
                 screenshot_dir=session.screenshot_dir,
                 touch=lambda: session_manager.get_session(session.session_id),
+                network_log=session.network_log, request_counter=session.request_counter,
             )
             session.url = real_page(session.page).url
             return {"flow": name, **result}

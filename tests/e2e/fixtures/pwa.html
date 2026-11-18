@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PWA Fixture Page</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2a7de1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <h1>PWA fixture</h1>
+  <p id="sw-state">registering</p>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(() => {
+        document.getElementById('sw-state').textContent = 'registered';
+      }).catch(err => {
+        document.getElementById('sw-state').textContent = 'failed: ' + err;
+      });
+    }
+  </script>
+</body>
+</html>

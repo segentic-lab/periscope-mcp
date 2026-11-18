@@ -57,3 +57,25 @@ def test_viewport_capture_is_never_prepped(run, handlers, sticky_session):
     # viewport (full_page=false) shots capture exactly what's on screen — no prep
     r = run(handlers["screenshot_session"]({"session_id": sticky_session, "full_page": False}))
     assert r["success"] and "capture_prep" not in r
+
+
+# --- 0.11: tiled screenshots for very long pages ---------------------------
+
+@pytest.fixture()
+def long_session(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/long.html"}))
+    assert r["success"], r
+    yield r["session_id"]
+    run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def test_screenshot_tiles_count(run, handlers, long_session):
+    r = run(handlers["screenshot_session"]({"session_id": long_session, "mode": "tiles", "tile_height": 1600}))
+    assert r["success"] and r["mode"] == "tiles", r
+    assert len(r["tiles"]) == 8 and r["tile_height"] == 1600, r
+    assert r["page_height"] >= 12000 and os.path.exists(r["tiles"][0]) and os.path.exists(r["screenshot_path"]), r
+
+
+def test_long_page_full_gets_tiles_note(run, handlers, long_session):
+    r = run(handlers["screenshot_session"]({"session_id": long_session}))
+    assert r["success"] and "tiles" in r["note"] and "px tall" in r["note"], r

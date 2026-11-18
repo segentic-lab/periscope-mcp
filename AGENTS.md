@@ -3,7 +3,7 @@
 
 # Website & Web-App Testing with Periscope
 
-You have access to Periscope, an MCP server exposing 74 Playwright/Chrome tools
+You have access to Periscope, an MCP server exposing 79 Playwright/Chrome tools
 for testing websites and web apps (static sites, SPAs, and apps behind a login).
 Call `describe_tools(category?)` anytime for the full catalog with parameters
 and workflows.
@@ -81,7 +81,7 @@ authenticated sessions **headlessly** with the saved login. To simply watch or
 hand-drive any session, use `open_session(url, headed=true)`.
 
 **Multi-step flows:** batch steps into one `interact_and_test` call instead of
-many single calls — it supports 25 actions (click, fill, select, wait_for,
+many single calls — it supports 26 actions (click, fill, select, wait_for, consent,
 wait_for_text, wait_for_network, navigate, hover, press_key, upload_file,
 evaluate_js, drag, scroll…), takes a screenshot at the end, and can run checks
 via `run_checks`. Use `continue_on_error=true` when later steps make sense
@@ -145,8 +145,17 @@ anything?".
 
 ## Visual and responsive
 
-- `screenshot_session(session_id)` for current state; `set_viewport` with
-  presets `mobile_sm|mobile|mobile_lg|tablet|tablet_lg|laptop|desktop|desktop_lg`.
+- `screenshot_session(session_id)` for current state (`mode="tiles"` splits a
+  long page into legible 1600 px images — use it for anything over ~6000 px;
+  every screenshot result carries `view` = viewport, scroll offset, page height);
+  `set_viewport` with presets
+  `mobile_sm|mobile|mobile_lg|tablet|tablet_lg|laptop|desktop|desktop_lg`
+  (`reload=true` when the layout is driven by JS breakpoints).
+- **Real devices:** `open_session(url, device="iPhone 14")` (any Playwright
+  device name, or `samsung_internet`) emulates user agent, DPR and touch in a
+  private context seeded with the project's login state — the only way to
+  reproduce browser-specific bugs (install prompts, Samsung Internet quirks).
+  `width`/`height` on `open_session` size the page before the first load.
 - **Full-page screenshots are prepared for fidelity** (sticky/fixed headers
   neutralized so they don't duplicate mid-image, animations disabled,
   reduced-motion emulated, scroll-reveal sections forced visible), then the page
@@ -162,7 +171,12 @@ anything?".
 - Accessibility: `check_color_contrast` (WCAG AA/AAA ratios),
   `test_keyboard_navigation` (tab order + focus indicators).
 - `run_lighthouse(url)` runs a real Google Lighthouse audit (0-100 scores,
-  official Core Web Vitals, failed audits). Requires Node.js on the server;
+  official Core Web Vitals, failed audits) and a `summary`: the LCP element
+  with its phase breakdown (TTFB / load delay / load time / render delay), TTFB
+  with a > 2 s warning, bytes by domain with third-party share, and the top
+  opportunities. For comparisons use `runs=3` (median run + min/median/max
+  spread) and `warmup=true` (a priming GET so a cold server cache doesn't
+  poison the numbers). Requires Node.js on the server;
   it launches its own Chrome, so session/login state does not apply — use it
   for public pages, and Periscope's own checks for authenticated ones. The
   `performance` check also reports lab LCP/CLS/TBT natively, no Node needed.
@@ -177,7 +191,8 @@ anything?".
 ## Choosing what an action returns (`observe`)
 
 - `click_element`, `fill_form`, `select_option`, `scroll_into_view`,
-  `navigate_session`, and `set_viewport` take an optional `observe`:
+  `hover_element`, `handle_consent`, `navigate_session`, and `set_viewport`
+  take an optional `observe`:
   `screenshot` (default — a full-page image, the historical behavior),
   `none` (structured result only, no image — cheapest), `map` (bundles the
   `get_page_map` semantic map, token-light), or `checks` (bundles
@@ -186,6 +201,64 @@ anything?".
   `observe="map"` (or `"screenshot"`) on the step whose result you actually
   need — fewer tokens and no separate `get_page_map`/`screenshot_session`
   round-trip. Omit `observe` entirely to keep the default screenshot.
+
+## Hosted checkouts and other iframe-heavy pages (Stripe recipe)
+
+1. `get_page_map(session_id, include_frames=true)` lists every iframe with a
+   ready selector, its URL and `cross_origin` — Stripe's card number, expiry
+   and CVC each live in their own cross-origin frame.
+2. `select_iframe(session_id, selector)` returns a session id scoped to that
+   frame; fill inside it with `fill_form` (each field is verified: `verified`,
+   `fill_method`, `actual`). Keep the parent id for page-level actions.
+3. Controls that ignore synthetic clicks (payment-method accordions, "Pay"):
+   read `changed`/`hint` on every click. `click_method: "js_dispatch"` with
+   `changed: false` means the page checks `isTrusted` — retry with `force=true`
+   (a trusted pointer click at the element's coordinates) or
+   `strategy="auto"` (pointer → force → js_dispatch, stops after the first
+   change, never re-clicks a click that worked).
+4. Submit with `click` + `wait_for_network` as consecutive steps (the waiter is
+   armed before the click), then `get_response_body` for the API verdict.
+5. Downloads at the end of a flow (invoices, PDFs): `download_file` now reports
+   `content_type`/`content_disposition`, and `navigated_instead: true` when the
+   click opened the file inline — the exact assertion for "must download, not
+   navigate".
+
+## Verifying fresh deploys (service workers, caches)
+
+- Every navigation (`open_session`, `navigate_session` goto/reload) reports
+  `served_by_service_worker`. True after a redeploy = you are looking at the
+  pre-deploy document from the SW cache.
+- `navigate_session(action="reload", hard=true)` bypasses the HTTP cache;
+  `action="clear_site_data"` unregisters service workers and purges
+  CacheStorage for the origin (never cookies — the login survives;
+  `include_storage=true` also clears local/session storage + IndexedDB), then
+  reloads. A page re-registers its SW on that reload — that is normal.
+- `navigate_session(action="goto", url, wait_for=selector)` or
+  `wait_for_network=substring` folds navigate → wait → inspect into one call.
+- `nav_generation` rides on every session result (main-frame navigation
+  count): if it jumped when you didn't navigate, the page moved under you —
+  call `get_page_map` again before acting on old selectors.
+- `check_pwa(url|session_id)` validates the manifest, reports the service
+  worker's scope/state and Chrome's installability errors.
+
+## Cookie banners (consent)
+
+- `open_session(url, consent="accept"|"deny")` or `handle_consent(session_id,
+  action)` clears the banner in one call (CMP table + multilingual button-text
+  fallback; `found: false` is a success — no banner on the page). Also a
+  `consent` step in `interact_and_test`.
+- To prove a "deny" really blocked GA/Meta/Vimeo: `get_network_log(clear=true)`
+  → act → `network_summary(session_id, since="clear")` — bytes and requests by
+  domain with third-party flags.
+
+## Staging vs live
+
+`compare_pages(url_a, url_b, steps?, consent?, device?, run_checks?)` runs the
+same steps on both, then returns side-by-side screenshots + pixel diff, a facts
+diff (title, meta description, canonical, H1s, hreflang, lang, robots, og tags),
+a visible-text diff, performance and transfer-weight deltas, and `same`. Pair
+it with `run_lighthouse(runs=3, warmup=true)` on each URL for comparable
+performance numbers.
 
 ## Reading external web content
 
@@ -216,11 +289,20 @@ anything?".
   `wait_for_network` call after the click may miss a fast response. For
   after-the-fact inspection, `get_response_body` reads already-captured
   traffic instead.
-- Portal overlays (Radix/shadcn dialogs & menus) that intercept clicks are
-  handled automatically: the click falls back to an element-level JS dispatch
-  and the result is flagged `click_method: "js_dispatch"` — no `evaluate_js`
-  workaround needed. For fills blocked by overlays, use `fill_form` with
-  `force=true` after a normal attempt fails.
+- Every click reports `changed`, `change` and `click_method`; a click that
+  changed nothing carries a `hint` — read it before retrying. Portal overlays
+  (Radix/shadcn dialogs & menus) that intercept clicks are handled
+  automatically: the click falls back to an element-level JS dispatch and the
+  result is flagged `click_method: "js_dispatch"`. That click is *synthetic* —
+  hosted checkouts and `isTrusted` handlers ignore it (the hint says so): use
+  `force=true` or `strategy="auto"`. Fills verify themselves (`verified`,
+  `fill_method`); use `force=true` only when an overlay blocks the input.
+- Hover menus that need real pointer motion (SmartMenus, Elementor mega-menus):
+  `hover_element(session_id, selector)` and the `hover` step move the mouse in
+  steps; `moves` and `changed` tell you whether the menu reacted.
+- TLS: browser sessions ignore certificate errors already (expired/self-signed
+  certs don't block `open_session`); for the static `web_fetch` path pass
+  `verify_ssl=false`, or use `render=true`.
 - Custom dropdowns (Radix/shadcn): use `select_option`, not `click` + `click`.
 - Several attribute-less `<select>` elements on one page: pass
   `element_index` to `select_option` to target the Nth match of the selector

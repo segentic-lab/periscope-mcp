@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <title>Consent Banner Fixture Page</title>
+  <style>
+    .banner { position: fixed; bottom: 0; left: 0; right: 0; background: #222; color: #fff; padding: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Consent fixture</h1>
+  <p id="consent-state">none</p>
+  <div id="banners"></div>
+  <script>
+    const mode = new URLSearchParams(location.search).get('cmp') || 'complianz';
+    const host = document.getElementById('banners');
+    const state = document.getElementById('consent-state');
+    if (mode === 'complianz') {
+      host.innerHTML = `
+        <div id="cmplz-cookiebanner-container" class="banner">
+          <div class="cmplz-cookiebanner">
+            <p>Ta stran uporablja piškotke.</p>
+            <button class="cmplz-btn cmplz-accept">Sprejmi vse</button>
+            <button class="cmplz-btn cmplz-deny">Zavrni</button>
+          </div>
+        </div>`;
+      host.querySelector('.cmplz-accept').onclick = () => { state.textContent = 'accepted'; host.innerHTML = ''; };
+      host.querySelector('.cmplz-deny').onclick = () => { state.textContent = 'denied'; host.innerHTML = ''; };
+    } else if (mode === 'generic') {
+      host.innerHTML = `
+        <div class="cookie-bar banner">
+          <span>Uporabljamo piškotke.</span>
+          <button id="g-accept">Sprejmi vse</button>
+          <button id="g-deny">Samo nujni</button>
+        </div>`;
+      host.querySelector('#g-accept').onclick = () => { state.textContent = 'accepted'; host.innerHTML = ''; };
+      host.querySelector('#g-deny').onclick = () => { state.textContent = 'denied'; host.innerHTML = ''; };
+    }
+  </script>
+</body>
+</html>

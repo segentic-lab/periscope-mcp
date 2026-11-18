@@ -37,6 +37,7 @@ BAD_LLMS = "just some text without any heading\n"
 class _FixtureHandler(BaseHTTPRequestHandler):
     """Serves tests/e2e/fixtures plus origin files and a small JSON API."""
     mode = "good"
+    slow_hits = 0
 
     def do_GET(self):
         path = self.path.split("?")[0]
@@ -48,6 +49,28 @@ class _FixtureHandler(BaseHTTPRequestHandler):
             return self._text(json.dumps({"items": [1, 2, 3]}), "application/json")
         if path == "/submit":
             return self._text("<html><body>submitted</body></html>", "text/html")
+        if path == "/api/slow-count":
+            return self._text(json.dumps({"count": type(self).slow_hits}), "application/json")
+        if path == "/basic":
+            if self.headers.get("Authorization", "").startswith("Basic "):
+                return self._text("<html><head><title>Basic OK</title></head><body><h1>auth ok</h1></body></html>", "text/html")
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="fixture"')
+            self.end_headers()
+            return
+        if path == "/download.pdf":
+            # attachment: the browser must download, never navigate
+            data = b"%PDF-1.4 fixture"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", 'attachment; filename="report.pdf"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == "/inline.html":
+            # no disposition: a click here NAVIGATES instead of downloading
+            return self._text("<html><body><h1>Inline document</h1></body></html>", "text/html")
 
         # --- form-login protected area (auth expiry / issue #11 tests) ------
         if path in ("/app", "/app/page2"):
@@ -93,11 +116,23 @@ class _FixtureHandler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    def do_POST(self):
+        import time as _time
+        path = self.path.split("?")[0]
+        if path == "/api/slow":
+            # Slow (800 ms) request: a click handler that posts here must count
+            # as a page change while the request is still in flight.
+            type(self).slow_hits += 1
+            _time.sleep(0.8)
+            return self._text(json.dumps({"ok": True}), "application/json")
+        self.send_response(404)
+        self.end_headers()
+
     def do_HEAD(self):
         # Mirror GET's notion of existence — a blanket 200 would hide 404s
         # from checks that verify resources via HEAD (e.g. lazy images).
         path = self.path.split("?")[0]
-        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login"}
+        known = {"/robots.txt", "/llms.txt", "/api/items", "/submit", "/app", "/app/page2", "/do-login", "/download.pdf", "/inline.html", "/api/slow-count", "/basic"}
         if path in known or os.path.isfile(os.path.join(FIXTURES, path.lstrip("/"))):
             self.send_response(200)
         else:

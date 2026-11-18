@@ -1,0 +1,127 @@
+"""0.11: navigate_session goto / hard reload / clear_site_data, service-worker
+visibility, nav_generation on results, view on screenshots."""
+import pytest
+
+
+@pytest.fixture()
+def sw_session(run, handlers, good_site):
+    r = run(handlers["open_session"]({"url": f"{good_site}/sw.html"}))
+    assert r["success"], r
+    yield r["session_id"]
+    run(handlers["close_session"]({"session_id": r["session_id"]}))
+
+
+def _nav(run, handlers, sid, **kw):
+    return run(handlers["navigate_session"]({"session_id": sid, "observe": "none", **kw}))
+
+
+def test_goto_with_wait_for(run, handlers, session, good_site):
+    r = _nav(run, handlers, session, action="goto", url=f"{good_site}/overlay.html", wait_for="#status")
+    assert r["success"], r
+    assert r["url"].endswith("/overlay.html") and "Overlay" in r["title"], r
+    assert r["status_code"] == 200 and r["served_by_service_worker"] is False, r
+
+
+def test_goto_requires_url(run, handlers, session):
+    r = _nav(run, handlers, session, action="goto")
+    assert r["success"] is False and "url" in r["error"], r
+
+
+def test_goto_wait_for_network_armed_before_navigation(run, handlers, session, good_site):
+    r = _nav(run, handlers, session, action="goto", url=f"{good_site}/app.html",
+             wait_for_network="/app.html")
+    assert r["success"] and r["matched_url"].endswith("/app.html") and r["matched_status"] == 200, r
+
+
+def test_second_visit_served_by_service_worker(run, handlers, sw_session, good_site):
+    run(handlers["interact_and_test"]({"session_id": sw_session, "screenshot_after": False,
+                                       "steps": [{"action": "wait_for_text", "text": "registered"},
+                                                 {"action": "wait", "timeout": 500}]}))
+    r = _nav(run, handlers, sw_session, action="goto", url=f"{good_site}/sw.html?v=2")
+    assert r["success"] and r["served_by_service_worker"] is True, r
+
+
+def test_clear_site_data_removes_sw_and_keeps_cookies(run, handlers, sw_session, good_site):
+    run(handlers["interact_and_test"]({"session_id": sw_session, "screenshot_after": False,
+                                       "steps": [{"action": "wait_for_text", "text": "registered"},
+                                                 {"action": "wait", "timeout": 500},
+                                                 {"action": "evaluate_js", "script": "document.cookie = 'keep=me; path=/'"}]}))
+    r = _nav(run, handlers, sw_session, action="clear_site_data")
+    assert r["success"], r
+    assert r["service_workers_unregistered"] >= 1 and "service_workers" in r["cleared"], r
+    assert "cookies" not in r["cleared"]
+    # The reload clear_site_data performs is a network load (SW gone) — the
+    # page then re-registers its SW, as any real PWA would.
+    assert r["served_by_service_worker"] is False, r
+    cookies = run(handlers["get_cookies"]({"session_id": sw_session}))
+    assert any(c["name"] == "keep" for c in cookies["cookies"]), cookies
+
+
+def test_hard_reload_flag(run, handlers, session):
+    r = _nav(run, handlers, session, action="reload", hard=True)
+    assert r["success"] and r["hard"] is True and r["action"] == "reload", r
+
+
+def test_nav_generation_increments_on_goto(run, handlers, session, good_site):
+    before = run(handlers["assert_condition"]({"session_id": session, "assertion": "element_exists",
+                                               "selector": "body"}))
+    r = _nav(run, handlers, session, action="goto", url=f"{good_site}/overlay.html")
+    assert r["nav_generation"] == before["nav_generation"] + 1, (before, r)
+    after = run(handlers["get_page_map"]({"session_id": session}))
+    assert after["nav_generation"] == r["nav_generation"]
+
+
+def test_screenshot_result_has_view(run, handlers, session):
+    r = run(handlers["screenshot_session"]({"session_id": session}))
+    assert r["view"]["viewport"] == {"width": 1920, "height": 1080}, r
+    assert r["view"]["scroll"] == {"x": 0, "y": 0} and r["view"]["page_height"] > 0, r
+    c = run(handlers["click_element"]({"session_id": session, "selector": "#btn"}))
+    assert "view" in c and c["view"]["viewport"]["width"] == 1920, c
+
+
+# --- review fixes ----------------------------------------------------------
+
+def test_popup_session_counts_navigations(run, handlers, good_site):
+    s = run(handlers["open_session"]({"url": f"{good_site}/popup.html"}))
+    assert s["success"], s
+    try:
+        run(handlers["click_element"]({"session_id": s["session_id"], "selector": "#open", "observe": "none"}))
+        p = run(handlers["select_page"]({"session_id": s["session_id"]}))
+        assert p["success"], p
+        g = _nav(run, handlers, p["session_id"], action="goto", url=f"{good_site}/app.html")
+        assert g["nav_generation"] >= 1, g
+    finally:
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
+def test_iframe_session_reports_owner_generation_and_shares_network(run, handlers, good_site):
+    s = run(handlers["open_session"]({"url": f"{good_site}/frames.html"}))
+    assert s["success"], s
+    try:
+        f = run(handlers["select_iframe"]({"session_id": s["session_id"], "selector": "#inner"}))
+        assert f["success"], f
+        parent = run(handlers["get_page_map"]({"session_id": s["session_id"]}))
+        child = run(handlers["get_page_map"]({"session_id": f["iframe_session_id"]}))
+        assert child["nav_generation"] == parent["nav_generation"], (parent, child)
+        log = run(handlers["get_network_log"]({"session_id": f["iframe_session_id"]}))
+        assert log["total_requests"] > 0, log
+        # a network-only click inside the frame is a change
+        c = run(handlers["click_element"]({"session_id": f["iframe_session_id"], "selector": "#btn", "observe": "none"}))
+        assert c["changed"] is True, c
+        # after the owner page navigates, the (now stale) frame session reports the new generation
+        f2 = run(handlers["select_iframe"]({"session_id": s["session_id"], "selector": "#inner"}))
+        g = _nav(run, handlers, s["session_id"], action="goto", url=f"{good_site}/frames.html")
+        child2 = run(handlers["get_cookies"]({"session_id": f2["iframe_session_id"]}))
+        assert child2["nav_generation"] == g["nav_generation"] == parent["nav_generation"] + 1, (g, child2)
+    finally:
+        run(handlers["close_session"]({"session_id": s["session_id"]}))
+
+
+def test_goto_wait_for_timeout_cancels_armed_waiter(run, handlers, session, good_site, loop):
+    import asyncio
+    with pytest.raises(Exception):
+        _nav(run, handlers, session, action="goto", url=f"{good_site}/app.html",
+             wait_for_network="/never-requested", wait_for="#nope", timeout=500)
+    pending = [t for t in asyncio.all_tasks(loop) if not t.done()
+               and "wait_for_event" in repr(t.get_coro())]
+    assert not pending, pending
