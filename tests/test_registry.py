@@ -20,7 +20,8 @@ def test_no_duplicate_tool_names():
 def test_all_schemas_have_descriptions():
     for t in TOOLS:
         assert t.description, f"{t.name} has no description"
-        assert t.inputSchema.get("type") == "object", t.name
+        schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)  # mcp 2.x / 1.x
+        assert schema.get("type") == "object", t.name
 
 
 def test_catalog_mentions_every_tool():
