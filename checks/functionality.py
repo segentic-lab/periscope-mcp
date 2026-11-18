@@ -4,6 +4,11 @@ from urllib.parse import urljoin, urlparse
 from checks.geo import SEARCH_CRAWLERS, fetch_origin_file, is_blocked, parse_robots
 
 
+def _ctx(page):
+    """BrowserContext of a Page — or of the Page owning a Frame (iframe sessions)."""
+    return page.context if hasattr(page, "context") else page.page.context
+
+
 async def check_functionality(page: Page) -> list[dict]:
     """
     Run functionality checks on a page.
@@ -129,10 +134,10 @@ async def _check_links(page: Page, base_url: str) -> list[str]:
             continue
 
         try:
-            response = await page.context.request.head(link, timeout=5000)
+            response = await _ctx(page).request.head(link, timeout=5000)
             status = response.status
             if status in (405, 501):  # server rejects HEAD, retry with GET
-                response = await page.context.request.get(link, timeout=5000)
+                response = await _ctx(page).request.get(link, timeout=5000)
                 status = response.status
             if status >= 400:
                 broken.append(f"{link} ({status})")
@@ -183,10 +188,10 @@ async def check_all_links(
             continue
 
         try:
-            response = await page.context.request.head(href, timeout=10000)
+            response = await _ctx(page).request.head(href, timeout=10000)
             status = response.status
             if status in (405, 501):  # server rejects HEAD, retry with GET
-                response = await page.context.request.get(href, timeout=10000)
+                response = await _ctx(page).request.get(href, timeout=10000)
                 status = response.status
         except Exception as e:
             status = f"error: {str(e)[:60]}"

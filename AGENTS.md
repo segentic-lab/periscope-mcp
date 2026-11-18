@@ -25,6 +25,8 @@ and workflows.
   the cap, or the browser crashed/restarted (that one also drops login state,
   so re-run `login_project`). Reopen with `open_session` and continue; don't
   retry the dead id.
+- Project names are plain tokens (letters, digits, `.`, `_`, `-`); passing a
+  `project` that doesn't exist is an error, not an anonymous run.
 - Every tool returns JSON. Failures come back as `{"success": false, "error":
   ...}` — read the error, they are written to tell you the fix (wrong selector,
   expired session, missing argument).

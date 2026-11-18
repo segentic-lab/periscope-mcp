@@ -8,6 +8,7 @@ Covers what AI crawlers, answer engines, and in-browser agents need:
 
 Shared robots.txt helpers live here and are reused by the SEO check.
 """
+import time
 from urllib.parse import urlparse
 from playwright.async_api import Page
 
@@ -24,9 +25,11 @@ AI_CRAWLERS = [
 # Classic search engine crawlers (used by the SEO check).
 SEARCH_CRAWLERS = ["Googlebot", "Bingbot", "DuckDuckBot", "Slurp", "Baiduspider", "YandexBot"]
 
-# (origin, path) -> body text or None. Robots/llms files change rarely;
-# one fetch per origin per server process is enough.
+# (origin, path) -> (fetched_at, body text or None). A short TTL keeps a
+# multi-page audit to one fetch per origin while letting a fix-and-retest
+# loop see the fix; failed fetches (timeouts) are never cached.
 _origin_file_cache: dict = {}
+ORIGIN_FILE_TTL = 60  # seconds
 
 
 def _owner(page):
@@ -46,13 +49,16 @@ async def fetch_origin_file(page, path: str):
         return None, None
     origin = f"{parts.scheme}://{parts.netloc}"
     key = (origin, path)
-    if key not in _origin_file_cache:
-        try:
-            resp = await p.context.request.get(origin + path, timeout=5000)
-            _origin_file_cache[key] = await resp.text() if resp.status == 200 else None
-        except Exception:
-            _origin_file_cache[key] = None
-    return _origin_file_cache[key], origin
+    hit = _origin_file_cache.get(key)
+    if hit is not None and time.time() - hit[0] < ORIGIN_FILE_TTL:
+        return hit[1], origin
+    try:
+        resp = await p.context.request.get(origin + path, timeout=5000)
+        body = await resp.text() if resp.status == 200 else None
+    except Exception:
+        return None, origin          # transient failure: don't remember it
+    _origin_file_cache[key] = (time.time(), body)
+    return body, origin
 
 
 def parse_robots(text: str) -> list:

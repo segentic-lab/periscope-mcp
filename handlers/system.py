@@ -59,18 +59,28 @@ def _is_git_install() -> bool:
     return (REPO_ROOT / ".git").exists()
 
 
+def update_ref(upstream: str | None) -> str:
+    """The ref an update would move to: the branch's upstream, else origin/main."""
+    return upstream.strip() if upstream and upstream.strip() else "origin/main"
+
+
 async def _update_check() -> dict:
     """Fetch origin and report how far behind we are. Read-only, best-effort."""
     code, out = await _git("fetch", "--quiet", "origin", timeout=15)
     if code != 0:
         return {"checked": False, "error": f"git fetch failed (offline?): {out}"}
-    code, count = await _git("rev-list", "--count", "HEAD..origin/main")
+    # Compare against what update.sh will actually pull: the current
+    # branch's upstream (origin/main only as the fallback).
+    _, upstream = await _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    ref = update_ref(upstream if "fatal" not in upstream and "/" in upstream else None)
+    code, count = await _git("rev-list", "--count", f"HEAD..{ref}")
     if code != 0:
         return {"checked": False, "error": count}
     behind = int(count)
-    result = {"checked": True, "update_available": behind > 0, "commits_behind": behind}
+    result = {"checked": True, "update_available": behind > 0, "commits_behind": behind,
+              "compared_to": ref}
     if behind:
-        _, log = await _git("log", "--oneline", "--no-decorate", "-15", "HEAD..origin/main")
+        _, log = await _git("log", "--oneline", "--no-decorate", "-15", f"HEAD..{ref}")
         result["incoming_commits"] = log.splitlines()
     return result
 

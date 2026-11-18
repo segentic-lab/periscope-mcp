@@ -222,3 +222,69 @@ def test_numeric_strings_are_coerced_from_the_schema():
     args = {"session_id": "s", "max_nodes": "lots"}                      # garbage is left for the handler
     coerce_args(args, "get_page_map")
     assert args["max_nodes"] == "lots"
+
+
+# --- I3: origin-file cache must expire and must not cache failures -----------
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status, self._body = status, body
+
+    async def text(self):
+        return self._body
+
+
+class _FakeOriginPage:
+    url = "http://site.test/page"
+
+    def __init__(self):
+        self.answers = []
+        self.calls = 0
+        outer = self
+
+        class _Req:
+            async def get(self, url, timeout=None):
+                outer.calls += 1
+                a = outer.answers.pop(0)
+                if isinstance(a, Exception):
+                    raise a
+                return a
+        self.context = type("Ctx", (), {"request": _Req()})()
+
+
+def test_origin_file_cache_expires_and_skips_failures(monkeypatch):
+    from checks import geo
+    geo._origin_file_cache.clear()
+    run = asyncio.new_event_loop().run_until_complete
+    now = [1000.0]
+    monkeypatch.setattr(geo.time, "time", lambda: now[0])
+    page = _FakeOriginPage()
+
+    page.answers = [TimeoutError("slow"), _Resp(404, "")]
+    assert run(geo.fetch_origin_file(page, "/llms.txt"))[0] is None       # failure…
+    assert run(geo.fetch_origin_file(page, "/llms.txt"))[0] is None       # …was not cached: refetched (404)
+    assert page.calls == 2
+    assert run(geo.fetch_origin_file(page, "/llms.txt"))[0] is None and page.calls == 2   # 404 cached briefly
+
+    now[0] += geo.ORIGIN_FILE_TTL + 1
+    page.answers = [_Resp(200, "# Site")]
+    assert run(geo.fetch_origin_file(page, "/llms.txt"))[0] == "# Site" and page.calls == 3
+
+
+# --- M12: a Lighthouse runtimeError is a failed run --------------------------
+
+def test_lighthouse_runtime_error_detected():
+    import lighthouse_summary as ls
+    assert ls.runtime_error({"runtimeError": {"code": "NO_FCP", "message": "The page did not paint"}}) \
+        == "NO_FCP: The page did not paint"
+    assert ls.runtime_error({"runtimeError": {"code": "NO_ERROR"}}) is None
+    assert ls.runtime_error({"audits": {}}) is None
+
+
+# --- M10: update check compares against the branch update.sh will pull -------
+
+def test_update_ref_prefers_the_current_branch_upstream():
+    from handlers.system import update_ref
+    assert update_ref("origin/beta/x") == "origin/beta/x"
+    assert update_ref("") == "origin/main"
+    assert update_ref(None) == "origin/main"

@@ -210,6 +210,7 @@ class Crawler:
         page.set_default_timeout(config.TIMEOUT)
 
         ceiling_hit = False
+        scope, scope_note = start_url, None
         try:
             while self.to_visit and len(discovered) < cap:
                 url, depth = self.to_visit.pop(0)
@@ -225,6 +226,26 @@ class Crawler:
                 except Exception:
                     continue
 
+                # Where did we really land? A redirect means the page IS the
+                # target URL: record that one (once), not the alias.
+                final = self._normalize_url(page.url) if page.url.startswith("http") else url
+                if not discovered and not self._is_same_domain(final, scope):
+                    # The site's canonical host differs from base_url (apex ->
+                    # www, http -> another name): adopt it, or every link would
+                    # look off-domain and the "crawl" would be one page.
+                    scope_note = (f"base_url redirected to {_host_key(urlparse(final))} — "
+                                  "crawl scoped to that host")
+                    scope = final
+                if final != url:
+                    if not self._is_same_domain(final, scope):
+                        continue          # redirected off-site: not one of our pages
+                    if final in self.visited:
+                        continue          # alias of a page already crawled
+                    self.visited.add(final)
+                    self.known.add(final)
+                    self.known.discard(url)
+                    url = final
+
                 discovered.append(url)
 
                 if on_page is not None:
@@ -238,7 +259,7 @@ class Crawler:
                     continue
 
                 try:
-                    links = await self.extract_links(page, url)
+                    links = await self.extract_links(page, scope)
                 except Exception:
                     continue
 
@@ -265,4 +286,6 @@ class Crawler:
             "not_crawled_truncated": len(not_crawled) > listed,
             "sources": sources,
             "ceiling_hit": ceiling_hit,
+            "scope": _host_key(urlparse(scope)),
+            "scope_note": scope_note,
         }

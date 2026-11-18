@@ -5,6 +5,14 @@ from nav import resilient_goto
 from projects import Project, FormLogin, BasicAuth, CookieAuth
 
 
+async def _has_password_field(page) -> bool:
+    """A visible password input = this is (still) a login page."""
+    try:
+        return await page.locator("input[type='password']:visible").count() > 0
+    except Exception:
+        return False
+
+
 class AuthHandler:
     """Handles authentication for projects."""
 
@@ -25,6 +33,11 @@ class AuthHandler:
         elif project.auth.method == "session":
             # Saved interactive-login session — the storage_state is seeded into
             # the context by get_context(), so there's nothing to execute here.
+            import runtime  # deferred: runtime imports auth at module load
+            if runtime.project_manager.load_session_state(project.name) is None:
+                return {"success": False, "error":
+                        f"Project '{project.name}' uses a saved login session but none is stored — "
+                        f"run interactive_login('{project.name}') then save_login to capture one."}
             return {"success": True, "message": "Loaded saved login session (from interactive_login)"}
         else:
             return {"success": False, "error": f"Unknown auth method: {project.auth.method}"}
@@ -41,8 +54,11 @@ class AuthHandler:
             # Already authenticated: sites redirect a logged-in visitor away
             # from the login page — there is no password field to fill, so
             # don't time out hunting for one (issue #20 note).
+            # "Away from the login page" alone is not proof: a login URL may
+            # bounce to ANOTHER login path (/login -> /accounts/sign-in, SSO).
+            # Only a landing page without a password field is a logged-in page.
             from tester import redirected_to_login
-            if not redirected_to_login(page.url, form.login_url):
+            if not redirected_to_login(page.url, form.login_url) and not await _has_password_field(page):
                 return {
                     "success": True,
                     "message": "Already authenticated — the login page redirected to "
@@ -121,8 +137,12 @@ class AuthHandler:
             await page.screenshot(path=debug_path)
             debug["debug_screenshot"] = debug_path
 
-            # Check if URL changed (success)
-            if current_url != login_url and "/login" not in current_url:
+            # Success = we left the login page (the configured one AND the one
+            # we actually landed on) and no password field is left on screen.
+            still_on_login = (redirected_to_login(current_url, form.login_url)
+                              or urlparse(current_url).path.rstrip("/") == urlparse(login_url).path.rstrip("/")
+                              or "/login" in current_url)
+            if not still_on_login and not await _has_password_field(page):
                 return {
                     "success": True,
                     "message": f"Login successful, redirected to {current_url}",
@@ -147,10 +167,8 @@ class AuthHandler:
                         }
 
             # Check if the page content changed (SPA login might stay on same URL)
-            has_login_form = await page.locator(
-                "input[type='password']"
-            ).count() > 0
-            if not has_login_form:
+            has_login_form = await _has_password_field(page)
+            if not has_login_form and not redirected_to_login(current_url, form.login_url):
                 return {
                     "success": True,
                     "message": "Login appears successful (password field gone)",
@@ -175,14 +193,17 @@ class AuthHandler:
             header = self._make_basic_auth_header(auth.username, auth.password)
 
             if base_url:
-                host = urlparse(base_url).netloc
+                from crawler import _host_key
+                host = _host_key(urlparse(base_url))   # case-insensitive, default port dropped
 
                 async def add_auth_header(route):
-                    if urlparse(route.request.url).netloc == host:
+                    # fallback(), not continue_(): other routes (network mocks)
+                    # must still get their turn.
+                    if _host_key(urlparse(route.request.url)) == host:
                         headers = {**route.request.headers, "authorization": header}
-                        await route.continue_(headers=headers)
+                        await route.fallback(headers=headers)
                     else:
-                        await route.continue_()
+                        await route.fallback()
 
                 await context.route("**/*", add_auth_header)
                 return {

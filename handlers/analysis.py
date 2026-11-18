@@ -266,13 +266,23 @@ async def handle_get_interaction_log(args: dict) -> dict:
 
 async def _lighthouse_once(cmd: list, env: dict, timeout_s: int) -> tuple[dict | None, str | None]:
     """One Lighthouse CLI run → (report, None) or (None, error)."""
+    # Own process group: on timeout the whole tree (npx -> node -> Chrome)
+    # must die, not just the launcher.
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
+        start_new_session=(os.name == "posix"),
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
     except asyncio.TimeoutError:
-        proc.kill()
+        try:
+            if os.name == "posix":
+                import signal
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            pass
         return None, f"Lighthouse timed out after {timeout_s}s"
     try:
         return json.loads(stdout.decode()), None
@@ -352,6 +362,16 @@ async def handle_run_lighthouse(args: dict) -> dict:
                 errors.append(error)
             else:
                 reports.append(report)
+        # A report with a runtimeError (page never painted, DNS failure…) is a
+        # failed run, not a result with null scores.
+        usable = []
+        for r in reports:
+            rt = lighthouse_summary.runtime_error(r)
+            if rt:
+                errors.append(f"Lighthouse could not audit the page — {rt}")
+            else:
+                usable.append(r)
+        reports = usable
         if not reports:
             return {"success": False, "error": errors[0], "runs_attempted": runs}
 
@@ -432,11 +452,37 @@ async def handle_check_color_contrast(args: dict) -> dict:
             const els = document.querySelectorAll(selector);
             const results = [];
 
+            // Resolve ANY CSS colour (oklch, oklab, color-mix, color(), hsl,
+            // named…) to sRGB through a canvas — Chrome reports modern colour
+            // syntaxes verbatim in computed style, and Tailwind v4 uses them
+            // for everything. Returns [r, g, b, a] or null.
+            const _cv = document.createElement('canvas');
+            _cv.width = _cv.height = 1;
+            const _cx = _cv.getContext('2d', { willReadFrequently: true });
+            const _colorCache = new Map();
             function parseColor(color) {
-                // Parse rgb/rgba string to [r, g, b]
-                const match = color.match(/rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)/);
-                if (match) return [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
-                return null;
+                if (_colorCache.has(color)) return _colorCache.get(color);
+                let out = null;
+                const m = color.match(/^rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)(?:,\\s*([\\d.]+))?\\)$/);
+                if (m) {
+                    out = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), m[4] === undefined ? 1 : parseFloat(m[4])];
+                } else if (_cx) {
+                    try {
+                        _cx.clearRect(0, 0, 1, 1);
+                        _cx.fillStyle = '#000';
+                        _cx.fillStyle = color;
+                        const applied = _cx.fillStyle;
+                        if (applied !== '#000000' || /black|#000|rgb\\(0, 0, 0\\)/.test(color)) {
+                            _cx.fillRect(0, 0, 1, 1);
+                            const d = _cx.getImageData(0, 0, 1, 1).data;
+                            const a = d[3] / 255;
+                            // un-premultiply is handled by the canvas; keep rgb as painted over transparent
+                            out = a === 0 ? [0, 0, 0, 0] : [d[0], d[1], d[2], a];
+                        }
+                    } catch (e) { out = null; }
+                }
+                _colorCache.set(color, out);
+                return out;
             }
 
             function luminance(r, g, b) {
@@ -460,19 +506,20 @@ async def handle_check_color_contrast(args: dict) -> dict:
             // the first repeated style in DOM order.
             const styleGroups = new Map();  // signature -> result index
             let truncatedGroups = 0;
+            let unparsed = 0;
             for (const el of els) {
                 const rect = el.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
 
                 const style = window.getComputedStyle(el);
                 const fg = parseColor(style.color);
-                if (!fg) continue;
+                if (!fg) { unparsed++; continue; }
 
                 // Most text elements have a transparent background and inherit
                 // the effective one from an ancestor — walk up to find it.
                 function isTransparent(colorStr) {
-                    const a = colorStr.match(/rgba\\([^,]+,[^,]+,[^,]+,\\s*([\\d.]+)/);
-                    return colorStr === 'transparent' || (a && parseFloat(a[1]) < 0.1);
+                    const c = parseColor(colorStr);
+                    return c ? c[3] < 0.1 : colorStr === 'transparent';
                 }
                 let bgEl = el;
                 let bgColor = style.backgroundColor;
@@ -482,7 +529,7 @@ async def handle_check_color_contrast(args: dict) -> dict:
                 }
                 if (!bgEl) bgColor = 'rgb(255, 255, 255)';  // default page background
                 const bg = parseColor(bgColor);
-                if (!bg) continue;
+                if (!bg) { unparsed++; continue; }
 
                 const fgLum = luminance(fg[0], fg[1], fg[2]);
                 const bgLum = luminance(bg[0], bg[1], bg[2]);
@@ -514,9 +561,10 @@ async def handle_check_color_contrast(args: dict) -> dict:
                     elements_with_style: 1,
                 });
             }
-            return { results, truncatedGroups };
+            return { results, truncatedGroups, unparsed };
         }""", [selector, max_results])
         truncated_groups = elements["truncatedGroups"]
+        unparsed = elements.get("unparsed", 0)
         elements = elements["results"]
 
         # Evaluate against WCAG thresholds
@@ -539,6 +587,7 @@ async def handle_check_color_contrast(args: dict) -> dict:
             "checked": len(elements),  # unique text-style combinations sampled
             "elements_represented": sum(e["elements_with_style"] for e in elements),
             "style_groups_skipped": truncated_groups,
+            "unparsed_count": unparsed,  # colours that could not be resolved — NOT checked
             "fail_count": len(failures),
             "failures": failures[:30],
             "failures_truncated": len(failures) > 30,
@@ -637,6 +686,17 @@ async def handle_get_table_data(args: dict) -> dict:
                 }
             }
 
+            // Unique, non-empty keys: empty headers become col_N and repeats
+            // get a _2/_3 suffix, so no cell overwrites another.
+            const seen = new Map();
+            const keys = headers.map((h, i) => {
+                let k = h || `col_${i}`;
+                const n = (seen.get(k) || 0) + 1;
+                seen.set(k, n);
+                return n > 1 ? `${k}_${n}` : k;
+            });
+            headers = keys;
+
             // Extract body rows
             const rows = [];
             const tbody = table.querySelector('tbody') || table;
@@ -648,8 +708,7 @@ async def handle_get_table_data(args: dict) -> dict:
                 if (cells.length === 0) continue;
                 const row = {};
                 for (let j = 0; j < cells.length; j++) {
-                    const key = j < headers.length ? headers[j] : `col_${j}`;
-                    row[key] = cells[j].textContent.trim();
+                    row[keys[j] !== undefined ? keys[j] : `col_${j}`] = cells[j].textContent.trim();
                 }
                 rows.push(row);
             }

@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hunt Fixture Page</title>
+<style>
+  .ok1 { color: oklch(0.95 0.01 100); background: #fff; }
+  .ok2 { color: color-mix(in oklab, white 92%, black); background: white; }
+  .good { color: oklch(0.2 0.02 260); background: #fff; }
+</style></head>
+<body>
+<h1 id="top-h">Hunt fixture</h1>
+
+<!-- I12: modern colour syntaxes -->
+<p class="ok1" id="c1">near white oklch text on white</p>
+<p class="ok2" id="c2">near white color-mix text on white</p>
+<p class="good" id="c3">dark oklch text on white</p>
+
+<!-- I13: things that are NOT accessibility errors -->
+<a id="top"></a><a name="section"></a>
+<a href="/x1"><svg role="img" aria-label="GitHub" width="10" height="10"></svg></a>
+<a href="/x2"><span aria-label="Twitter"></span></a>
+<button id="closer"><svg aria-label="Close" width="10" height="10"></svg></button>
+
+<!-- I9: identical lists nested deep, no ids/classes -->
+<div><div><div><div><div><div><ul><li><a href="#x1">x1</a></li><li><a href="#x2">x2</a></li></ul></div></div></div></div></div></div>
+<div><div><div><div><div><div><ul><li><a href="#y1">y1</a></li><li><a href="#y2">y2</a></li></ul></div></div></div></div></div></div>
+
+<!-- M4: table with repeated/empty headers -->
+<table id="t"><thead><tr><th>Name</th><th></th><th></th><th>Name</th></tr></thead>
+<tbody><tr><td>Ann</td><td>Edit</td><td>Delete</td><td>Second</td></tr></tbody></table>
+
+<!-- M8: custom dropdown -->
+<div id="combo" role="combobox" aria-haspopup="listbox" tabindex="0" onclick="document.getElementById('opts').hidden=false">Pick</div>
+<ul id="opts" role="listbox" hidden>
+  <li role="option" onclick="document.getElementById('picked').textContent='first'">First</li>
+  <li role="option" onclick="document.getElementById('picked').textContent='second'">Second</li>
+</ul>
+<p id="picked">none</p>
+
+<select id="sel"><option value="a">A</option><option value="b">B</option></select>
+</body></html>

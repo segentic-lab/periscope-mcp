@@ -33,3 +33,13 @@ async def get_tester() -> WebsiteTester:
                 print(f"periscope: browser crashed/disconnected — restarted; "
                       f"{dropped} session(s) dropped, login flags reset", file=sys.stderr)
         return tester
+
+
+def unknown_project_error(name) -> str | None:
+    """Error text when a `project` argument names no project — a typo must
+    not silently run in a fresh, logged-out context."""
+    if not name or name == "default" or project_manager.get(name) is not None:
+        return None
+    known = ", ".join(sorted(project_manager.projects)) or "none yet"
+    return (f"Project '{name}' not found — create it with create_project first, or omit "
+            f"'project' for an isolated one-off context. Existing projects: {known}.")

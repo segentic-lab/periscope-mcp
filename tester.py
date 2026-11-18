@@ -147,6 +147,10 @@ class WebsiteTester:
         """Get or create a browser context for a project (headless or visible)."""
         contexts = self.headed_contexts if headed else self.contexts
         if project_name not in contexts:
+            import runtime  # deferred: runtime imports tester at module load
+            missing = runtime.unknown_project_error(project_name)
+            if missing:
+                raise ValueError(missing)
             browser = await self.get_browser(headed)
             # The same project's context in the OTHER mode holds the freshest
             # auth (cookies live there after login_project) — carry it over so

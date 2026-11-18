@@ -149,3 +149,12 @@ def median_run(reports: list[dict]) -> tuple[dict, dict]:
             scores[cat] = {"min": _round(min(vals)), "median": _round(_median(vals)), "max": _round(max(vals))}
     spread["scores"] = scores
     return chosen, spread
+
+
+def runtime_error(report: dict) -> str | None:
+    """'CODE: message' when Lighthouse itself failed to audit the page."""
+    rt = (report or {}).get("runtimeError") or {}
+    code = rt.get("code")
+    if not code or code == "NO_ERROR":
+        return None
+    return f"{code}: {rt.get('message') or ''}".strip().rstrip(":")

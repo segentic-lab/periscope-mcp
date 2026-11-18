@@ -23,16 +23,13 @@ async def handle_record_session(args: dict) -> dict:
         video_dir = os.path.join(config.DATA_DIR, "videos", project_name)
         os.makedirs(video_dir, exist_ok=True)
 
-        context_kwargs = dict(
-            viewport={"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
-            record_video_dir=video_dir,
-            ignore_https_errors=True,
-        )
-        # Video recording needs a fresh context, so carry over the project
-        # context's cookies/storage — otherwise authenticated flows record logged-out.
-        if proj_obj and proj_obj.is_logged_in and project_name in t.contexts:
-            context_kwargs["storage_state"] = await t.contexts[project_name].storage_state()
-        context = await t.browser.new_context(**context_kwargs)
+        # Video recording needs a fresh context. Seed it exactly like a device
+        # session: live storage_state, else the saved login session, plus the
+        # basic-auth route — otherwise authenticated flows record logged-out.
+        context = await t.new_device_context(
+            project_name if proj_obj else None,
+            {"viewport": {"width": config.VIEWPORT_WIDTH, "height": config.VIEWPORT_HEIGHT},
+             "record_video_dir": video_dir})
         page = await context.new_page()
         page.set_default_timeout(config.TIMEOUT)
 
@@ -100,7 +97,9 @@ async def handle_intercept_network(args: dict) -> dict:
 
         async def handle_route(route):
             if method_filter and route.request.method.upper() != method_filter.upper():
-                await route.continue_()
+                # fallback(), not continue_(): let the other mocks for this URL
+                # (and the project's auth route) handle the request.
+                await route.fallback()
                 return
             await route.fulfill(
                 status=status,

@@ -187,9 +187,10 @@ async def handle_compare_pages(args: dict) -> dict:
                                    "the other side's capture is complete"})
             return result
 
-        max_diff = float(args.get("max_diff_percent") or 1.0)
+        _md = args.get("max_diff_percent")
+        max_diff = 1.0 if _md is None or _md == "" else float(_md)
         cmp = compare_screenshots(a["screenshot_path"], b["screenshot_path"],
-                                  threshold=int(args.get("threshold") or 10))
+                                  threshold=10 if args.get("threshold") in (None, "") else int(args["threshold"]))
         shot = {"diff_percentage": cmp.get("diff_percentage"), "diff_image_path": cmp.get("diff_image_path"),
                 "dimensions": cmp.get("dimensions"), "max_diff_percent": max_diff,
                 "passed": cmp.get("success", False) and cmp.get("diff_percentage", 100) <= max_diff}

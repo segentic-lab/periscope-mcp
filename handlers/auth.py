@@ -191,7 +191,18 @@ async def handle_copy_auth(args: dict) -> dict:
         session_copied = False
         copied = []
         note = None
-        if source.is_logged_in:
+        saved_state = (project_manager.load_session_state(source.name)
+                       if target.auth.method == "session" else None)
+        if saved_state is not None:
+            # An interactive-login project IS its saved session file: copy it,
+            # or the target would "log in" with nothing. Works after a restart
+            # too (no live context needed).
+            project_manager.set_session_state(target.name, saved_state)
+            t = await get_tester()
+            await t.close_context(target.name)   # next context is seeded from the copy
+            session_copied = True
+            copied = ["saved login session (cookies + localStorage)"]
+        elif source.is_logged_in:
             t = await get_tester()
             if target.auth.method == "basic":
                 # Basic auth lives in a context route, not cookies — install it

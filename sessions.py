@@ -144,9 +144,16 @@ class SessionManager:
         """Fire-and-forget page close from sync context, holding a task ref so it isn't GC'd."""
         close = getattr(session.page, "close", None)  # Frame (iframe session) has no close()
         own_context = session.own_context
-        if close is None and own_context is None:
+        popup_pages = [e["page"] for e in session.popups]
+        if close is None and own_context is None and not popup_pages:
             return
         async def _close():
+            for p in popup_pages:
+                try:
+                    if not p.is_closed():
+                        await p.close()
+                except Exception:
+                    pass
             try:
                 if close is not None:
                     await close()
@@ -280,6 +287,14 @@ class SessionManager:
         if session_id in self.sessions:
             session = self.sessions.pop(session_id)
             self._remove_children(session_id, "parent session closed")
+            # Popups/new tabs this page opened die with it — in a shared
+            # project context nothing else would ever close them.
+            for entry in session.popups:
+                try:
+                    if not entry["page"].is_closed():
+                        await entry["page"].close()
+                except Exception:
+                    pass
             try:
                 await session.page.close()
             except Exception:

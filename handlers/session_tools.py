@@ -8,7 +8,7 @@ import config
 import devices
 import interactions
 from crawler import Crawler
-from runtime import auth_handler, get_tester, project_manager, session_manager
+from runtime import auth_handler, get_tester, project_manager, session_manager, unknown_project_error
 from sessions import real_page
 
 from .registry import tool
@@ -18,6 +18,9 @@ from .registry import tool
 async def handle_open_session(args: dict) -> dict:
         t = await get_tester()
         project = args.get("project")
+        missing = unknown_project_error(project)
+        if missing:
+            return {"success": False, "error": missing}
         project_name = project or "default"
         headed = args.get("headed", False)
         proj_obj = project_manager.get(project) if project else None
@@ -150,7 +153,10 @@ async def handle_set_viewport(args: dict) -> dict:
         reloaded = bool(args.get("reload"))
         if reloaded:
             # JS-driven breakpoints (Elementor, slider libs) only re-evaluate on load.
-            await real_page(session.page).reload(wait_until=config.WAIT_UNTIL)
+            from nav import resilient_nav
+            _, _dg = await resilient_nav(real_page(session.page), "reload",
+                                         wait_until="load" if session.wait_downgraded else None)
+            session.wait_downgraded = session.wait_downgraded or _dg
         result = {
             "success": True,
             "viewport": {"width": width, "height": height},
@@ -321,18 +327,27 @@ async def _cdp(session):
 
 @tool("navigate_session")
 async def handle_navigate_session(args: dict) -> dict:
-        from nav import from_service_worker, resilient_goto
+        from nav import from_service_worker, resilient_goto, resilient_nav
 
         session = session_manager.get_session(args["session_id"])
         action = args["action"]
         page = real_page(session.page)
-        wait_until = args.get("wait_until") or config.WAIT_UNTIL
+        # A page already known never to go network-idle (Turnstile, polling):
+        # don't burn the full timeout again on every reload/back/forward.
+        known_busy = session.wait_downgraded and not args.get("wait_until")
+        wait_until = args.get("wait_until") or ("load" if known_busy else config.WAIT_UNTIL)
         result = {"success": True, "action": action}
+        if known_busy:
+            result["wait_downgraded"] = "load"
 
         if action == "back":
-            await page.go_back(wait_until=wait_until)
+            _, downgraded = await resilient_nav(page, "go_back", wait_until=wait_until)
+            if downgraded:
+                result["wait_downgraded"] = "load"
         elif action == "forward":
-            await page.go_forward(wait_until=wait_until)
+            _, downgraded = await resilient_nav(page, "go_forward", wait_until=wait_until)
+            if downgraded:
+                result["wait_downgraded"] = "load"
         elif action == "reload":
             hard = bool(args.get("hard"))
             if hard:
@@ -346,7 +361,9 @@ async def handle_navigate_session(args: dict) -> dict:
                 except Exception:
                     pass
             try:
-                response = await page.reload(wait_until=wait_until)
+                response, downgraded = await resilient_nav(page, "reload", wait_until=wait_until)
+                if downgraded:
+                    result["wait_downgraded"] = "load"
             finally:
                 if hard:
                     try:
@@ -373,9 +390,13 @@ async def handle_navigate_session(args: dict) -> dict:
                     "response", predicate=_network_predicate(args["wait_for_network"]),
                     timeout=int(args.get("timeout") or 30000)))
             try:
-                response, downgraded = await resilient_goto(page, url, wait_until=wait_until)
+                response, downgraded = await resilient_goto(
+                    page, url, wait_until=args.get("wait_until") or config.WAIT_UNTIL)
+                result.pop("wait_downgraded", None)
                 if downgraded:
                     result["wait_downgraded"] = "load"
+                # a goto lands on a (possibly different) page: re-learn its idleness
+                session.wait_downgraded = bool(downgraded)
                 result["status_code"] = response.status if response is not None else None
                 result["served_by_service_worker"] = from_service_worker(response)
                 session.served_by_service_worker = result["served_by_service_worker"]
@@ -417,7 +438,7 @@ async def handle_navigate_session(args: dict) -> dict:
                 await cdp.send("Network.clearBrowserCache")
             except Exception:
                 pass
-            response = await page.reload(wait_until=wait_until)
+            response, _dg = await resilient_nav(page, "reload", wait_until=wait_until)
             result.update({"origin": origin, "cleared": types + ["http_cache"],
                            "service_workers_unregistered": sw_count,
                            "served_by_service_worker": from_service_worker(response)})

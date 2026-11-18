@@ -24,6 +24,12 @@ async def _evaluate_assertion(page, args: dict) -> dict:
         passed = False
         actual = None
 
+        if assertion in ("text_contains", "text_equals", "url_contains", "title_contains") \
+                and (expected is None or expected == ""):
+            # '' is contained in everything — an omitted expectation must not pass.
+            return {"success": False, "passed": False, "assertion": assertion,
+                    "error": f"{assertion} requires a non-empty 'expected' value"}
+
         # inner_text = visible text; text_content would leak <script>/<style>
         # bodies into the 'actual' preview (issue #9)
         if assertion == "text_contains":
@@ -177,12 +183,12 @@ async def build_page_map(session, args: dict) -> dict:
             const nthPath = (el) => {
                 const parts = [];
                 let cur = el;
-                while (cur && cur !== document.documentElement && parts.length < 5) {
+                while (cur && cur !== document.documentElement) {   // to body or an id: unique by construction
                     const parent = cur.parentElement;
                     if (!parent) break;
                     const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
                     parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
-                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent.id && document.querySelectorAll('#' + CSS.escape(parent.id)).length === 1) { parts.unshift('#' + CSS.escape(parent.id)); break; }
                     if (parent === document.body) { parts.unshift('body'); break; }
                     cur = parent;
                 }
@@ -312,12 +318,12 @@ async def _frame_inventory(session) -> list[dict]:
                 // so a document-wide index is wrong across different parents).
                 const parts = [];
                 let cur = el;
-                while (cur && cur !== document.documentElement && parts.length < 6) {
+                while (cur && cur !== document.documentElement) {
                     const parent = cur.parentElement;
                     if (!parent) break;
                     const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
                     parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
-                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent.id && document.querySelectorAll('#' + CSS.escape(parent.id)).length === 1) { parts.unshift('#' + CSS.escape(parent.id)); break; }
                     if (parent === document.body) { parts.unshift('body'); break; }
                     cur = parent;
                 }
@@ -437,12 +443,12 @@ async def handle_find_element(args: dict) -> dict:
             const nthPath = (el) => {
                 const parts = [];
                 let cur = el;
-                while (cur && cur !== document.documentElement && parts.length < 5) {
+                while (cur && cur !== document.documentElement) {   // to body or an id: unique by construction
                     const parent = cur.parentElement;
                     if (!parent) break;
                     const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
                     parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
-                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent.id && document.querySelectorAll('#' + CSS.escape(parent.id)).length === 1) { parts.unshift('#' + CSS.escape(parent.id)); break; }
                     if (parent === document.body) { parts.unshift('body'); break; }
                     cur = parent;
                 }
@@ -523,12 +529,12 @@ async def handle_auto_fill_form(args: dict) -> dict:
             const nthPath = (el) => {
                 const parts = [];
                 let cur = el;
-                while (cur && cur !== document.documentElement && parts.length < 5) {
+                while (cur && cur !== document.documentElement) {   // to body or an id: unique by construction
                     const parent = cur.parentElement;
                     if (!parent) break;
                     const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
                     parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
-                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent.id && document.querySelectorAll('#' + CSS.escape(parent.id)).length === 1) { parts.unshift('#' + CSS.escape(parent.id)); break; }
                     if (parent === document.body) { parts.unshift('body'); break; }
                     cur = parent;
                 }
@@ -880,7 +886,11 @@ async def _snapshot_page_state(args: dict) -> dict:
             return { localStorage: ls, sessionStorage: ss, domSignature: domSig };
         }""")
 
-        cookies = await real_page(session.page).context.cookies()
+        # Only the cookies that apply to THIS page: a project context is shared
+        # by every session of the project (and other sites it visited).
+        _page_url = real_page(session.page).url
+        cookies = await real_page(session.page).context.cookies(
+            [_page_url] if _page_url.startswith("http") else None)
 
         session.snapshots[snap_name] = {
             "url": session.page.url,
@@ -915,8 +925,11 @@ async def _restore_page_state(args: dict) -> dict:
         page = session.page
         context = real_page(session.page).context
 
-        # Restore cookies
-        await context.clear_cookies()
+        # Restore cookies — scoped to the snapshot's page. Clearing the whole
+        # context would log out every other session sharing this project.
+        if snap["url"].startswith("http"):
+            for c in await context.cookies([snap["url"]]):
+                await context.clear_cookies(name=c["name"], domain=c["domain"], path=c["path"])
         if snap["cookies"]:
             await context.add_cookies(snap["cookies"])
 
@@ -939,7 +952,8 @@ async def _restore_page_state(args: dict) -> dict:
         # without this, an SPA that read storage on startup keeps its old state.
         # Frames have no reload(); a repeat goto serves the same purpose there.
         if hasattr(page, "reload"):
-            await page.reload(wait_until=config.WAIT_UNTIL)
+            from nav import resilient_nav
+            await resilient_nav(page, "reload")
         else:
             await resilient_goto(page, snap["url"])
 

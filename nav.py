@@ -33,6 +33,28 @@ async def resilient_goto(page, url: str, wait_until: str = None, timeout: int = 
         return response, True
 
 
+async def resilient_nav(page, method: str, wait_until: str = None, timeout: int = None):
+    """reload / go_back / go_forward with the same networkidle downgrade as
+    resilient_goto: a never-idle page (Turnstile, polling) must not turn a
+    reload into a 30 s timeout. Returns (response, downgraded)."""
+    wait_until = wait_until or config.WAIT_UNTIL
+    timeout = timeout or config.TIMEOUT
+    fn = getattr(page, method)
+    try:
+        return await fn(wait_until=wait_until, timeout=timeout), False
+    except PlaywrightTimeoutError:
+        if wait_until == "load":
+            raise
+        if method == "reload":
+            response = await page.reload(wait_until="load", timeout=timeout)
+        else:
+            # The history move itself happened; just wait for the lighter state.
+            await page.wait_for_load_state("load", timeout=timeout)
+            response = None
+        await page.wait_for_timeout(SETTLE_MS)
+        return response, True
+
+
 def from_service_worker(response) -> bool:
     """True when the main document came from a service worker (stale-deploy
     tell-tale). Tolerates None (about:blank, downgraded loads)."""

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import config
 import interactions
 from crawler import Crawler
-from runtime import auth_handler, get_tester, project_manager, session_manager
+from runtime import auth_handler, get_tester, project_manager, session_manager, unknown_project_error
 from sessions import real_page
 
 from .registry import tool
@@ -61,7 +61,10 @@ def _coverage_fields(crawl: dict, tested: bool) -> dict:
         f"pages_not_{noun}_count": crawl["not_crawled_count"],
         f"pages_not_{noun}_truncated": crawl["not_crawled_truncated"],
         "crawl_sources": crawl["sources"],
+        "crawl_scope": crawl.get("scope"),
     }
+    if crawl.get("scope_note"):
+        fields["crawl_scope_note"] = crawl["scope_note"]
     if crawl["ceiling_hit"]:
         fields["ceiling_hit"] = True
         fields["ceiling"] = config.MAX_PAGES_CEILING
@@ -110,7 +113,16 @@ async def _preflight_auth(t, project) -> dict | None:
         page.set_default_timeout(config.TIMEOUT)
         try:
             await resilient_goto(page, project.base_url)
-            return redirected_to_login(page.url, login_url)
+            if redirected_to_login(page.url, login_url):
+                return True
+            # Bounced somewhere else that shows a password field (SSO host,
+            # /accounts/sign-in): that is a login wall too.
+            moved = urlparse(page.url).path.rstrip("/") != urlparse(project.base_url).path.rstrip("/") \
+                or urlparse(page.url).netloc != urlparse(project.base_url).netloc
+            if moved:
+                from auth import _has_password_field
+                return await _has_password_field(page)
+            return False
         finally:
             await page.close()
 
@@ -133,6 +145,9 @@ async def handle_test_url(args: dict) -> dict:
         t = await get_tester()
         project_name = args.get("project")  # None -> isolated ephemeral context
         checks = args.get("checks")
+        missing = unknown_project_error(project_name)
+        if missing:
+            return {"url": args.get("url"), "status": "error", "success": False, "error": missing}
         proj_obj = project_manager.get(project_name) if project_name else None
         proj_screenshot_dir = proj_obj.screenshot_dir if proj_obj else None
 
@@ -403,7 +418,9 @@ async def handle_visual_check(args: dict) -> dict:
                              threshold=args.get("threshold", 10))
             if cmp.get("success") is False:
                 return cmp
-            max_diff = float(args.get("max_diff_percent") or 0.5)
+            # `or 0.5` would turn an explicit 0 (pixel-exact) into the default
+            _md = args.get("max_diff_percent")
+            max_diff = 0.5 if _md is None or _md == "" else float(_md)
             diff_pct = cmp.get("diff_percentage", 100.0)
             return {
                 "success": True, "action": "check", "name": name,
