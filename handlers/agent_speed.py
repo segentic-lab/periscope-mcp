@@ -308,8 +308,20 @@ async def _frame_inventory(session) -> list[dict]:
                 const src = el.getAttribute('src');
                 if (src && q('iframe[src=' + JSON.stringify(src) + ']'))
                     return 'iframe[src=' + JSON.stringify(src) + ']';
-                const all = Array.from(document.querySelectorAll('iframe'));
-                return 'iframe:nth-of-type(' + (all.indexOf(el) + 1) + ')';
+                // Precise nth-child path (nth-of-type counts among siblings only,
+                // so a document-wide index is wrong across different parents).
+                const parts = [];
+                let cur = el;
+                while (cur && cur !== document.documentElement && parts.length < 6) {
+                    const parent = cur.parentElement;
+                    if (!parent) break;
+                    const idx = Array.prototype.indexOf.call(parent.children, cur) + 1;
+                    parts.unshift(cur.tagName.toLowerCase() + ':nth-child(' + idx + ')');
+                    if (parent.id) { parts.unshift('#' + CSS.escape(parent.id)); break; }
+                    if (parent === document.body) { parts.unshift('body'); break; }
+                    cur = parent;
+                }
+                return parts.join(' > ');
             }""")
             await handle.dispose()
         except Exception:
@@ -712,6 +724,32 @@ async def handle_get_network_log(args: dict) -> dict:
         return result
 
 
+# Second-level labels that act as public suffixes under a 2-letter country
+# TLD (example.co.uk, example.com.au) — enough to tell a site from its CDN
+# subdomain without shipping the full Public Suffix List.
+_SLD_SUFFIXES = {"co", "com", "org", "net", "gov", "ac", "edu", "or", "ne", "go", "gob", "mil"}
+
+
+def _site_key(host: str) -> str:
+    """Registrable-site key of a netloc. IPs and single-label hosts
+    (localhost) compare exactly, port included."""
+    import re as _re
+    name = host.rsplit("@", 1)[-1].lower()
+    bare = name.split(":")[0] if name.count(":") == 1 else name
+    labels = bare.split(".")
+    if len(labels) < 2 or _re.fullmatch(r"[\d.]+", bare) or ":" in bare or bare.startswith("["):
+        return name
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SLD_SUFFIXES:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def same_site(host_a: str, host_b: str) -> bool:
+    """True when two netlocs belong to the same registrable site
+    (cdn.example.com and www.example.com are first-party to each other)."""
+    return _site_key(host_a) == _site_key(host_b)
+
+
 @tool("network_summary")
 async def handle_network_summary(args: dict) -> dict:
         """Aggregate the session's captured traffic: bytes by domain and
@@ -754,14 +792,18 @@ async def handle_network_summary(args: dict) -> dict:
         rows = []
         total, known = 0, 0
         for e in log:
-            size = timing.get(e["url"]) or e.get("content_length")
+            # A 304 transfers no body — its Content-Length describes the cached
+            # entity, so only Resource Timing may size it.
+            size = timing.get(e["url"])
+            if size is None and e.get("status") != 304:
+                size = e.get("content_length")
             host = urlparse(e["url"]).netloc
             rtype = e.get("resource_type") or "other"
             if size is not None:
                 total += size
                 known += 1
             d = by_domain.setdefault(host, {"domain": host, "requests": 0, "bytes": 0,
-                                            "third_party": host != page_host})
+                                            "third_party": not same_site(host, page_host)})
             d["requests"] += 1
             d["bytes"] += size or 0
             t = by_type.setdefault(rtype, {"type": rtype, "requests": 0, "bytes": 0})

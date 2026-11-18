@@ -81,3 +81,16 @@ def test_median_run_single_report():
     median, spread = ls.median_run([_fake(1500)])
     assert median["audits"]["largest-contentful-paint"]["numericValue"] == 1500
     assert spread["largest-contentful-paint"] == {"min": 1500, "median": 1500, "max": 1500}
+
+
+def test_median_run_ignores_runs_without_lcp():
+    broken = {"categories": {"performance": {"score": None}}, "audits": {}}
+    median, spread = ls.median_run([broken, _fake(1000), _fake(3000), broken])
+    assert median["audits"]["largest-contentful-paint"]["numericValue"] in (1000, 3000)
+    assert spread["largest-contentful-paint"]["min"] == 1000
+
+
+def test_median_run_all_runs_without_lcp_still_returns_one():
+    broken = {"categories": {}, "audits": {}}
+    median, _ = ls.median_run([broken])
+    assert median is broken

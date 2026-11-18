@@ -163,11 +163,12 @@ async def handle_check_pwa(args: dict) -> dict:
             from nav import resilient_goto
             try:
                 await resilient_goto(page, url)
-            except Exception:
+            except Exception as e:
                 await page.close()
                 if own_ctx:
                     await own_ctx.close()
-                raise
+                return {"success": False, "url": url,
+                        "error": f"check_pwa could not load the page: {str(e).splitlines()[0][:200]}"}
 
             async def cleanup():
                 await page.close()
@@ -203,8 +204,9 @@ async def handle_check_pwa(args: dict) -> dict:
                                "details": manifest["problems"][:8]})
             if not sw.get("registered"):
                 issues.append({"type": "pwa", "severity": "warning",
-                               "message": "No service worker registered — no offline support, and Chrome "
-                                          "won't show the install prompt"})
+                               "message": "No service worker registered — no offline support (Chrome 108+ "
+                                          "can still install the app from the manifest alone; other "
+                                          "browsers and richer install UI still expect one)"})
             elif sw.get("state") and sw["state"] != "activated":
                 issues.append({"type": "pwa", "severity": "info",
                                "message": f"Service worker is '{sw['state']}', not activated yet"})

@@ -45,17 +45,10 @@ _FACT_KEYS = ("title", "meta_description", "canonical", "h1", "hreflang", "lang"
 async def _capture(t, label: str, url: str, project, args: dict, shot_dir: str) -> dict:
     """Load one side, run the shared steps, capture everything comparable."""
     from checks.functionality import get_performance_metrics
-    device = args.get("device")
-    descriptor = None
-    if device:
-        import devices
-        kind, resolved = devices.resolve_device(device, t.playwright.devices if t.playwright else {})
-        descriptor = resolved if kind == "descriptor" else None
-        viewport = resolved if kind == "viewport" else None
-    else:
-        viewport = None
+    descriptor, viewport = args.get("_descriptor"), args.get("_viewport")
 
     own_ctx = None
+    page = None
     try:
         if descriptor is not None:
             own_ctx = await t.new_device_context(project, descriptor)
@@ -74,6 +67,12 @@ async def _capture(t, label: str, url: str, project, args: dict, shot_dir: str) 
         response, downgraded = await resilient_goto(page, url)
         load_ms = round((time.time() - t0) * 1000)
     except Exception as e:
+        # Close the page too: in a project's shared context nothing else would.
+        if page is not None:
+            try:
+                await page.close()
+            except Exception:
+                pass
         if own_ctx is not None:
             try:
                 await own_ctx.close()
@@ -158,6 +157,17 @@ async def handle_compare_pages(args: dict) -> dict:
             return {"success": False, "error": "compare_pages requires url_a and url_b "
                                                "(e.g. staging and live versions of the same page)."}
         t = await get_tester()
+        # Resolve the device once, up front: an unknown name is an input
+        # error for the whole call, not a per-side crash.
+        args = dict(args)
+        if args.get("device"):
+            import devices
+            try:
+                kind, resolved = devices.resolve_device(
+                    args["device"], t.playwright.devices if t.playwright else {})
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+            args["_descriptor" if kind == "descriptor" else "_viewport"] = resolved
         project_a = args.get("project")
         project_b = args.get("project_b") or project_a
         proj = project_manager.get(project_a) if project_a else None

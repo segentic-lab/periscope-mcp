@@ -339,6 +339,7 @@ async def handle_navigate_session(args: dict) -> dict:
                 # Bypass the HTTP cache for this load: a redeploy must not be
                 # masked by a cached document/asset.
                 cdp = await _cdp(session)
+                await cdp.send("Network.enable")  # setCacheDisabled is a no-op without it
                 await cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
                 try:
                     await cdp.send("Network.clearBrowserCache")
@@ -379,7 +380,7 @@ async def handle_navigate_session(args: dict) -> dict:
                 result["served_by_service_worker"] = from_service_worker(response)
                 session.served_by_service_worker = result["served_by_service_worker"]
                 if args.get("wait_for"):
-                    await session.page.locator(args["wait_for"]).first.wait_for(
+                    await page.locator(args["wait_for"]).first.wait_for(
                         state="visible", timeout=int(args.get("timeout") or 10000))
                     result["waited_for"] = args["wait_for"]
                 if armed is not None:
@@ -396,6 +397,10 @@ async def handle_navigate_session(args: dict) -> dict:
             # Cookies are NEVER touched — that would log a project session out.
             from urllib.parse import urlparse
             parts = urlparse(page.url)
+            if parts.scheme not in ("http", "https") or not parts.netloc:
+                return {"success": False, "error":
+                        f"clear_site_data needs an http(s) page — this session is on '{page.url}'. "
+                        "Navigate to the site first (navigate_session action='goto'), then clear."}
             origin = f"{parts.scheme}://{parts.netloc}"
             try:
                 sw_count = await page.evaluate(
@@ -422,5 +427,11 @@ async def handle_navigate_session(args: dict) -> dict:
                     f"Unknown action '{action}'. Valid: back, forward, reload, goto, clear_site_data"}
         session.url = page.url
         result["url"] = session.url
-        result["title"] = await session.page.title()
+        # Title from the owning Page: an iframe session's Frame is detached by
+        # a top-level navigation and would raise here.
+        result["title"] = await page.title()
+        if session.parent_session_id and not hasattr(session.page, "main_frame"):
+            result["frame_note"] = ("this is an iframe session and the top-level page navigated — its "
+                                    "frame is gone; continue with the parent session id (or select_iframe again)")
+            return result
         return await interactions.attach_observation(session, result, args, f"after_{action}")
